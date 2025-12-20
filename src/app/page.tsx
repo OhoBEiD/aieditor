@@ -4,36 +4,33 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ChatSelector } from '@/components/chat/ChatSelector';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { PreviewPanel } from '@/components/editor/PreviewPanel';
+import { supabase } from '@/lib/supabase/client';
 import { sendEditRequest, applyChanges, rollbackChanges } from '@/lib/n8n/client';
 import { cn } from '@/lib/utils';
 import { Bot, X } from 'lucide-react';
 
 // Configuration
-const DEMO_SITE_ID = 'demo-site-123';
-const DEMO_USER_ID = 'demo-user-123';
+const DEMO_CLIENT_ID = 'demo-client';
 
-// Local message type (no Supabase dependency)
-interface LocalMessage {
+// Types
+interface ChatSession {
     id: string;
-    role: 'user' | 'assistant';
-    content: string;
-    created_at: string;
-    metadata?: {
-        requestId?: string;
-        status?: string;
-        previewUrl?: string;
-    };
-}
-
-// Local session type
-interface LocalSession {
-    id: string;
+    client_id: string;
     title: string;
+    is_active: boolean;
     created_at: string;
     updated_at: string;
 }
 
-// Request tracking
+interface Message {
+    id: string;
+    session_id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    metadata?: Record<string, unknown>;
+    created_at: string;
+}
+
 interface RequestContext {
     requestId: string;
     status: 'preview_ready' | 'applied' | 'rolled_back';
@@ -45,122 +42,240 @@ interface RequestContext {
 export default function Home() {
     const [showPreview, setShowPreview] = useState(true);
     const [isPanelOpen, setIsPanelOpen] = useState(true);
-    const [sessions, setSessions] = useState<LocalSession[]>([]);
+    const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-    const [messages, setMessages] = useState<LocalMessage[]>([]);
+    const [messages, setMessages] = useState<Message[]>([]);
     const [isSending, setIsSending] = useState(false);
     const [isClient, setIsClient] = useState(false);
+    const [isLoadingSessions, setIsLoadingSessions] = useState(true);
 
     // n8n workflow state
     const [previewUrl, setPreviewUrl] = useState<string | undefined>();
     const [requestContexts, setRequestContexts] = useState<Map<string, RequestContext>>(new Map());
     const [isDeploying, setIsDeploying] = useState(false);
 
-    const messageIdRef = useRef(0);
-
     // Fix hydration
     useEffect(() => {
         setIsClient(true);
-        // Create initial session
-        const initialSession: LocalSession = {
-            id: 'session-1',
-            title: 'New Chat',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-        };
-        setSessions([initialSession]);
-        setActiveSessionId('session-1');
     }, []);
 
-    const generateMessageId = () => {
-        messageIdRef.current += 1;
-        return `msg-${Date.now()}-${messageIdRef.current}`;
+    // Load sessions on mount
+    useEffect(() => {
+        if (isClient) {
+            loadSessions();
+        }
+    }, [isClient]);
+
+    // Load messages when session changes
+    useEffect(() => {
+        if (isClient && activeSessionId) {
+            loadMessages(activeSessionId);
+        } else {
+            setMessages([]);
+        }
+    }, [isClient, activeSessionId]);
+
+    const loadSessions = async () => {
+        setIsLoadingSessions(true);
+        try {
+            const { data, error } = await supabase
+                .from('chat_sessions')
+                .select('*')
+                .eq('client_id', DEMO_CLIENT_ID)
+                .eq('is_active', true)
+                .order('updated_at', { ascending: false });
+
+            if (error) throw error;
+
+            const typedData = (data || []) as ChatSession[];
+            setSessions(typedData);
+
+            // Auto-select first session
+            if (typedData.length > 0 && !activeSessionId) {
+                setActiveSessionId(typedData[0].id);
+            }
+        } catch (err) {
+            console.error('Failed to load sessions:', err);
+        } finally {
+            setIsLoadingSessions(false);
+        }
     };
 
-    const handleNewChat = useCallback(() => {
-        const newSession: LocalSession = {
-            id: `session-${Date.now()}`,
-            title: 'New Chat',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-        };
-        setSessions((prev) => [newSession, ...prev]);
-        setActiveSessionId(newSession.id);
-        setMessages([]);
-        setPreviewUrl(undefined);
-        setRequestContexts(new Map());
+    const loadMessages = async (sessionId: string) => {
+        try {
+            const { data, error } = await supabase
+                .from('messages')
+                .select('*')
+                .eq('session_id', sessionId)
+                .order('created_at', { ascending: true });
+
+            if (error) throw error;
+            setMessages((data || []) as Message[]);
+
+            // Restore request contexts from message metadata
+            const contexts = new Map<string, RequestContext>();
+            (data || []).forEach((msg: Message) => {
+                if (msg.role === 'assistant' && msg.metadata?.requestId) {
+                    contexts.set(msg.id, {
+                        requestId: msg.metadata.requestId as string,
+                        status: (msg.metadata.status as 'preview_ready' | 'applied' | 'rolled_back') || 'preview_ready',
+                        previewUrl: msg.metadata.previewUrl as string || '',
+                        prUrl: msg.metadata.prUrl as string || '',
+                        messageId: msg.id,
+                    });
+                }
+            });
+            setRequestContexts(contexts);
+        } catch (err) {
+            console.error('Failed to load messages:', err);
+        }
+    };
+
+    const handleNewChat = useCallback(async () => {
+        try {
+            const { data, error } = await supabase
+                .from('chat_sessions')
+                .insert({
+                    client_id: DEMO_CLIENT_ID,
+                    title: 'New Chat',
+                    is_active: true,
+                })
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            const newSession = data as ChatSession;
+            setSessions(prev => [newSession, ...prev]);
+            setActiveSessionId(newSession.id);
+            setMessages([]);
+            setPreviewUrl(undefined);
+            setRequestContexts(new Map());
+        } catch (err) {
+            console.error('Failed to create chat:', err);
+        }
     }, []);
 
     const handleSendMessage = useCallback(async (content: string) => {
-        if (!activeSessionId || !content.trim()) return;
+        if (!content.trim()) return;
+
+        // Create session if none exists
+        let sessionId = activeSessionId;
+        if (!sessionId) {
+            try {
+                const { data, error } = await supabase
+                    .from('chat_sessions')
+                    .insert({
+                        client_id: DEMO_CLIENT_ID,
+                        title: content.slice(0, 40) + (content.length > 40 ? '...' : ''),
+                        is_active: true,
+                    })
+                    .select()
+                    .single();
+
+                if (error) throw error;
+
+                const newSession = data as ChatSession;
+                setSessions(prev => [newSession, ...prev]);
+                setActiveSessionId(newSession.id);
+                sessionId = newSession.id;
+            } catch (err) {
+                console.error('Failed to create session:', err);
+                return;
+            }
+        }
 
         setIsSending(true);
 
-        // Add user message immediately
-        const userMessage: LocalMessage = {
-            id: generateMessageId(),
-            role: 'user',
-            content: content.trim(),
-            created_at: new Date().toISOString(),
-        };
-        setMessages((prev) => [...prev, userMessage]);
-
-        // Update session title on first message
-        if (messages.length === 0) {
-            const title = content.slice(0, 40) + (content.length > 40 ? '...' : '');
-            setSessions((prev) =>
-                prev.map((s) => s.id === activeSessionId ? { ...s, title } : s)
-            );
-        }
-
         try {
-            // Send to n8n webhook
-            const response = await sendEditRequest({
-                siteId: DEMO_SITE_ID,
-                conversationId: activeSessionId,
-                userId: DEMO_USER_ID,
-                message: content.trim(),
-            });
+            // Save user message
+            const { data: userMsg, error: userError } = await supabase
+                .from('messages')
+                .insert({
+                    session_id: sessionId,
+                    role: 'user',
+                    content: content.trim(),
+                })
+                .select()
+                .single();
 
-            // Create AI response message
-            const aiContent = formatAIResponse(response);
-            const aiMessage: LocalMessage = {
-                id: generateMessageId(),
-                role: 'assistant',
-                content: aiContent,
-                created_at: new Date().toISOString(),
-                metadata: {
+            if (userError) throw userError;
+            setMessages(prev => [...prev, userMsg as Message]);
+
+            // Update session title if first message
+            if (messages.length === 0) {
+                const title = content.slice(0, 40) + (content.length > 40 ? '...' : '');
+                await supabase
+                    .from('chat_sessions')
+                    .update({ title, updated_at: new Date().toISOString() })
+                    .eq('id', sessionId);
+                setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title } : s));
+            }
+
+            // Call n8n webhook
+            try {
+                const response = await sendEditRequest({
+                    siteId: DEMO_CLIENT_ID,
+                    conversationId: sessionId,
+                    userId: DEMO_CLIENT_ID,
+                    message: content.trim(),
+                });
+
+                // Format AI response
+                const aiContent = formatAIResponse(response);
+
+                // Save AI message
+                const { data: aiMsg, error: aiError } = await supabase
+                    .from('messages')
+                    .insert({
+                        session_id: sessionId,
+                        role: 'assistant',
+                        content: aiContent,
+                        metadata: {
+                            requestId: response.requestId,
+                            status: response.status,
+                            previewUrl: response.previewUrl,
+                            prUrl: response.prUrl,
+                        },
+                    })
+                    .select()
+                    .single();
+
+                if (aiError) throw aiError;
+                setMessages(prev => [...prev, aiMsg as Message]);
+
+                // Store context
+                setRequestContexts(prev => new Map(prev).set(aiMsg.id, {
                     requestId: response.requestId,
                     status: response.status,
                     previewUrl: response.previewUrl,
-                },
-            };
+                    prUrl: response.prUrl,
+                    messageId: aiMsg.id,
+                }));
 
-            setMessages((prev) => [...prev, aiMessage]);
+                // Update preview
+                if (response.previewUrl) {
+                    setPreviewUrl(response.previewUrl);
+                }
+            } catch (n8nError) {
+                // Save error message
+                const errorContent = `❌ **Error:** ${n8nError instanceof Error ? n8nError.message : 'Failed to process request'}`;
+                const { data: errorMsg } = await supabase
+                    .from('messages')
+                    .insert({
+                        session_id: sessionId,
+                        role: 'assistant',
+                        content: errorContent,
+                    })
+                    .select()
+                    .single();
 
-            // Store request context for apply/rollback
-            setRequestContexts((prev) => new Map(prev).set(aiMessage.id, {
-                requestId: response.requestId,
-                status: response.status,
-                previewUrl: response.previewUrl,
-                prUrl: response.prUrl,
-                messageId: aiMessage.id,
-            }));
-
-            // Update preview URL
-            if (response.previewUrl) {
-                setPreviewUrl(response.previewUrl);
+                if (errorMsg) {
+                    setMessages(prev => [...prev, errorMsg as Message]);
+                }
             }
-
-        } catch (error) {
-            // Show error as AI message
-            const errorMessage: LocalMessage = {
-                id: generateMessageId(),
-                role: 'assistant',
-                content: `❌ **Error:** ${error instanceof Error ? error.message : 'Failed to process request. Please try again.'}`,
-                created_at: new Date().toISOString(),
-            };
-            setMessages((prev) => [...prev, errorMessage]);
+        } catch (err) {
+            console.error('Failed to send message:', err);
         } finally {
             setIsSending(false);
         }
@@ -168,83 +283,109 @@ export default function Home() {
 
     const handleRevert = useCallback(async (messageId: string) => {
         const context = requestContexts.get(messageId);
-        if (!context) return;
+        if (!context) {
+            console.log('No context found for message:', messageId);
+            return;
+        }
 
         try {
             const response = await rollbackChanges({
-                siteId: DEMO_SITE_ID,
+                siteId: DEMO_CLIENT_ID,
                 requestId: context.requestId,
-                userId: DEMO_USER_ID,
+                userId: DEMO_CLIENT_ID,
             });
 
             // Update context
-            setRequestContexts((prev) => {
+            setRequestContexts(prev => {
                 const updated = new Map(prev);
                 updated.set(messageId, { ...context, status: 'rolled_back' });
                 return updated;
             });
 
-            // Add confirmation message
-            const revertMessage: LocalMessage = {
-                id: generateMessageId(),
-                role: 'assistant',
-                content: `✅ **Changes reverted successfully!**\n\nRevert PR: [View](${response.revertPrUrl})`,
-                created_at: new Date().toISOString(),
-            };
-            setMessages((prev) => [...prev, revertMessage]);
-        } catch (error) {
-            const errorMessage: LocalMessage = {
-                id: generateMessageId(),
-                role: 'assistant',
-                content: `❌ **Revert failed:** ${error instanceof Error ? error.message : 'Unknown error'}`,
-                created_at: new Date().toISOString(),
-            };
-            setMessages((prev) => [...prev, errorMessage]);
+            // Save confirmation message
+            if (activeSessionId) {
+                const { data: revertMsg } = await supabase
+                    .from('messages')
+                    .insert({
+                        session_id: activeSessionId,
+                        role: 'assistant',
+                        content: `✅ **Changes reverted successfully!**\n\nRevert commit: \`${response.revertCommitSha?.substring(0, 7) || 'N/A'}\``,
+                    })
+                    .select()
+                    .single();
+
+                if (revertMsg) {
+                    setMessages(prev => [...prev, revertMsg as Message]);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to revert:', err);
+
+            if (activeSessionId) {
+                const { data: errorMsg } = await supabase
+                    .from('messages')
+                    .insert({
+                        session_id: activeSessionId,
+                        role: 'assistant',
+                        content: `❌ **Revert failed:** ${err instanceof Error ? err.message : 'Unknown error'}`,
+                    })
+                    .select()
+                    .single();
+
+                if (errorMsg) {
+                    setMessages(prev => [...prev, errorMsg as Message]);
+                }
+            }
         }
-    }, [requestContexts]);
+    }, [requestContexts, activeSessionId]);
 
     const handleDeploy = useCallback(async () => {
         const pendingContext = Array.from(requestContexts.values())
             .filter(ctx => ctx.status === 'preview_ready')
             .pop();
 
-        if (!pendingContext) return;
+        if (!pendingContext) {
+            console.log('No pending changes to deploy');
+            return;
+        }
 
         setIsDeploying(true);
         try {
             const response = await applyChanges({
-                siteId: DEMO_SITE_ID,
+                siteId: DEMO_CLIENT_ID,
                 requestId: pendingContext.requestId,
-                userId: DEMO_USER_ID,
+                userId: DEMO_CLIENT_ID,
             });
 
             // Update context
-            setRequestContexts((prev) => {
+            setRequestContexts(prev => {
                 const updated = new Map(prev);
                 updated.set(pendingContext.messageId, { ...pendingContext, status: 'applied' });
                 return updated;
             });
 
-            // Add success message
-            const deployMessage: LocalMessage = {
-                id: generateMessageId(),
-                role: 'assistant',
-                content: `🚀 **Deployed successfully!**\n\nCommit: \`${response.commitSha.substring(0, 7)}\`\nPR: [View](${response.mergedPrUrl})`,
-                created_at: new Date().toISOString(),
-            };
-            setMessages((prev) => [...prev, deployMessage]);
-        } catch (error) {
-            const errorMessage: LocalMessage = {
-                id: generateMessageId(),
-                role: 'assistant',
-                content: `❌ **Deploy failed:** ${error instanceof Error ? error.message : 'Unknown error'}`,
-                created_at: new Date().toISOString(),
-            };
-            setMessages((prev) => [...prev, errorMessage]);
+            // Save confirmation
+            if (activeSessionId) {
+                const { data: deployMsg } = await supabase
+                    .from('messages')
+                    .insert({
+                        session_id: activeSessionId,
+                        role: 'assistant',
+                        content: `🚀 **Deployed successfully!**\n\nCommit: \`${response.commitSha?.substring(0, 7) || 'N/A'}\``,
+                    })
+                    .select()
+                    .single();
+
+                if (deployMsg) {
+                    setMessages(prev => [...prev, deployMsg as Message]);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to deploy:', err);
         } finally {
             setIsDeploying(false);
         }
-    }, [requestContexts]);
+    }, [requestContexts, activeSessionId]);
 
     const hasPendingChanges = Array.from(requestContexts.values()).some(
         ctx => ctx.status === 'preview_ready'
@@ -364,9 +505,8 @@ export default function Home() {
     );
 }
 
-// Helper function to format AI response
 function formatAIResponse(response: { summary: string; diff: string; prUrl: string; warnings: string[] }): string {
-    let content = `### ${response.summary}\n\n`;
+    let content = `### ${response.summary || 'Changes Ready'}\n\n`;
 
     if (response.prUrl) {
         content += `📝 **PR:** [View Changes](${response.prUrl})\n\n`;

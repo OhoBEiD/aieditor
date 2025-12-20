@@ -1,9 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Use empty strings as fallbacks for build time - actual values required at runtime
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
+const supabaseUrl = 'https://jjrbnjubjiswvxeradzw.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-export default supabase;
+// Using untyped client for flexibility
+export const supabase = createClient(supabaseUrl, supabaseKey);
