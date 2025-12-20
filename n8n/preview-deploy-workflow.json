@@ -1,9 +1,9 @@
 {
-    "name": "AI Editor - Preview Deploy",
+    "name": "AI Editor - Preview Deploy (Netlify)",
     "nodes": [
         {
             "parameters": {
-                "content": "## 🚀 PREVIEW DEPLOY WEBHOOK\n\nTriggers Vercel deployment for PR branch\nReturns preview URL with custom subdomain",
+                "content": "## 🚀 NETLIFY PREVIEW DEPLOY\n\nTriggers Netlify build for PR branch\nReturns preview URL with custom subdomain",
                 "height": 120,
                 "width": 300,
                 "color": 4
@@ -36,7 +36,7 @@
         },
         {
             "parameters": {
-                "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst required = ['clientId', 'repoUrl', 'branch', 'requestId'];\nconst missing = required.filter(k => !body[k]);\nif (missing.length) throw new Error('Missing: ' + missing.join(', '));\n\n// Extract owner/repo from URL\nconst match = body.repoUrl.match(/github\\.com\\/([^/]+)\\/([^/.]+)/);\nif (!match) throw new Error('Invalid GitHub URL');\n\nreturn [{\n  json: {\n    clientId: body.clientId,\n    owner: match[1],\n    repo: match[2],\n    branch: body.branch,\n    requestId: body.requestId,\n    previewDomain: process.env.PREVIEW_DOMAIN || 'preview.yourdomain.com'\n  }\n}];"
+                "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst required = ['clientId', 'repoUrl', 'branch', 'requestId'];\nconst missing = required.filter(k => !body[k]);\nif (missing.length) throw new Error('Missing: ' + missing.join(', '));\n\nreturn [{\n  json: {\n    clientId: body.clientId,\n    repoUrl: body.repoUrl,\n    branch: body.branch,\n    requestId: body.requestId,\n    siteId: process.env.NETLIFY_SITE_ID,\n    previewDomain: process.env.PREVIEW_DOMAIN || 'preview.yourdomain.com'\n  }\n}];"
             },
             "id": "validate-1",
             "name": "Validate Input",
@@ -50,7 +50,7 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "https://api.vercel.com/v13/deployments",
+                "url": "=https://api.netlify.com/api/v1/sites/{{ $json.siteId }}/builds",
                 "authentication": "genericCredentialType",
                 "genericAuthType": "httpHeaderAuth",
                 "sendHeaders": true,
@@ -64,11 +64,11 @@
                 },
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={\n  \"name\": \"preview-{{ $json.clientId }}\",\n  \"gitSource\": {\n    \"type\": \"github\",\n    \"org\": \"{{ $json.owner }}\",\n    \"repo\": \"{{ $json.repo }}\",\n    \"ref\": \"{{ $json.branch }}\"\n  },\n  \"target\": \"preview\",\n  \"projectSettings\": {\n    \"framework\": null\n  }\n}",
+                "jsonBody": "={\n  \"clear_cache\": false,\n  \"branch\": \"{{ $json.branch }}\"\n}",
                 "options": {}
             },
-            "id": "vercel-deploy",
-            "name": "Vercel - Create Deployment",
+            "id": "netlify-build",
+            "name": "Netlify - Trigger Build",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
@@ -78,34 +78,12 @@
         },
         {
             "parameters": {
-                "method": "POST",
-                "url": "https://api.vercel.com/v1/projects/preview-{{ $('Validate Input').item.json.clientId }}/alias",
-                "authentication": "genericCredentialType",
-                "genericAuthType": "httpHeaderAuth",
-                "sendHeaders": true,
-                "headerParameters": {
-                    "parameters": [
-                        {
-                            "name": "Content-Type",
-                            "value": "application/json"
-                        }
-                    ]
-                },
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={\n  \"alias\": \"{{ $('Validate Input').item.json.clientId }}.{{ $('Validate Input').item.json.previewDomain }}\",\n  \"redirect\": null\n}",
-                "options": {
-                    "response": {
-                        "response": {
-                            "neverError": true
-                        }
-                    }
-                }
+                "jsCode": "const input = $('Validate Input').item.json;\nconst build = $input.first().json;\n\n// Netlify branch deploys use format: branch-name--site-name.netlify.app\n// But with custom domain, we use: clientId.preview.domain.com\nconst previewUrl = `https://${input.clientId}.${input.previewDomain}`;\n\nreturn [{\n  json: {\n    ...input,\n    buildId: build.id || build.build_id || 'pending',\n    deployId: build.deploy_id || null,\n    previewUrl: previewUrl,\n    status: build.state || 'building'\n  }\n}];"
             },
-            "id": "vercel-alias",
-            "name": "Vercel - Set Alias",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
+            "id": "build-url",
+            "name": "Build Preview URL",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
                 760,
                 100
@@ -138,7 +116,7 @@
                 },
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={\n  \"request_id\": \"{{ $('Validate Input').item.json.requestId }}\",\n  \"deployment_id\": \"{{ $('Vercel - Create Deployment').item.json.id || '' }}\",\n  \"preview_url\": \"https://{{ $('Validate Input').item.json.clientId }}.{{ $('Validate Input').item.json.previewDomain }}\",\n  \"status\": \"{{ $('Vercel - Create Deployment').item.json.readyState || 'queued' }}\"\n}",
+                "jsonBody": "={\n  \"request_id\": \"{{ $json.requestId }}\",\n  \"deployment_id\": \"{{ $json.buildId }}\",\n  \"preview_url\": \"{{ $json.previewUrl }}\",\n  \"status\": \"{{ $json.status }}\"\n}",
                 "options": {}
             },
             "id": "save-deployment",
@@ -153,7 +131,7 @@
         {
             "parameters": {
                 "respondWith": "json",
-                "responseBody": "={\n  \"success\": true,\n  \"previewUrl\": \"https://{{ $('Validate Input').item.json.clientId }}.{{ $('Validate Input').item.json.previewDomain }}\",\n  \"deploymentId\": \"{{ $('Vercel - Create Deployment').item.json.id || '' }}\",\n  \"status\": \"{{ $('Vercel - Create Deployment').item.json.readyState || 'queued' }}\",\n  \"requestId\": \"{{ $('Validate Input').item.json.requestId }}\"\n}",
+                "responseBody": "={\n  \"success\": true,\n  \"previewUrl\": \"{{ $('Build Preview URL').item.json.previewUrl }}\",\n  \"buildId\": \"{{ $('Build Preview URL').item.json.buildId }}\",\n  \"status\": \"{{ $('Build Preview URL').item.json.status }}\",\n  \"requestId\": \"{{ $('Build Preview URL').item.json.requestId }}\"\n}",
                 "options": {}
             },
             "id": "response-success",
@@ -163,23 +141,6 @@
             "position": [
                 1200,
                 100
-            ]
-        },
-        {
-            "parameters": {
-                "respondWith": "json",
-                "responseBody": "={\n  \"success\": false,\n  \"error\": \"{{ $json.message || 'Deployment failed' }}\"\n}",
-                "options": {
-                    "responseCode": 500
-                }
-            },
-            "id": "response-error",
-            "name": "Response - Error",
-            "type": "n8n-nodes-base.respondToWebhook",
-            "typeVersion": 1.1,
-            "position": [
-                760,
-                300
             ]
         }
     ],
@@ -199,25 +160,25 @@
             "main": [
                 [
                     {
-                        "node": "Vercel - Create Deployment",
+                        "node": "Netlify - Trigger Build",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Vercel - Create Deployment": {
+        "Netlify - Trigger Build": {
             "main": [
                 [
                     {
-                        "node": "Vercel - Set Alias",
+                        "node": "Build Preview URL",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Vercel - Set Alias": {
+        "Build Preview URL": {
             "main": [
                 [
                     {
