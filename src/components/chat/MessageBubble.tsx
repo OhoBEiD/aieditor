@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { Copy, Check, Bot, User, Undo2 } from 'lucide-react';
+import { Copy, Check, Bot, Undo2 } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Message } from '@/lib/supabase/types';
@@ -17,7 +17,6 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
     const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
     const [copiedMessage, setCopiedMessage] = React.useState(false);
     const isUser = message.role === 'user';
-    const isAssistant = message.role === 'assistant';
 
     // Parse code blocks from content
     const parseContent = (content: string) => {
@@ -64,6 +63,10 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
     };
 
     const parts = parseContent(message.content);
+    const timeString = new Date(message.created_at).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+    });
 
     // User message - rounded bubble style
     if (isUser) {
@@ -76,7 +79,7 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                             {message.content}
                         </p>
                     </div>
-                    {/* Metadata */}
+                    {/* Metadata - at bottom */}
                     <div className="flex items-center justify-end gap-2 mt-1 px-1">
                         <button
                             onClick={handleCopyMessage}
@@ -85,19 +88,14 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                         >
                             {copiedMessage ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                         </button>
-                        <span className="text-[10px] text-[var(--text-muted)]">
-                            {new Date(message.created_at).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                            })}
-                        </span>
+                        <span className="text-[10px] text-[var(--text-muted)]">{timeString}</span>
                     </div>
                 </div>
             </div>
         );
     }
 
-    // AI message - white background, full width
+    // AI message - white background, time at bottom
     return (
         <div className="group flex gap-2.5 p-3 bg-white">
             {/* Avatar */}
@@ -107,41 +105,12 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
 
             {/* Content */}
             <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-1">
+                {/* Header - just the name */}
+                <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs font-medium text-[var(--text-primary)]">AI</span>
-                    <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-[var(--text-muted)]">
-                            {new Date(message.created_at).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                            })}
-                        </span>
-                        {/* Copy Button */}
-                        <button
-                            onClick={handleCopyMessage}
-                            className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-hover)] transition-all"
-                            title="Copy message"
-                        >
-                            {copiedMessage ? (
-                                <><Check className="w-3 h-3" /> Copied</>
-                            ) : (
-                                <><Copy className="w-3 h-3" /> Copy</>
-                            )}
-                        </button>
-                        {/* Revert Button */}
-                        {onRevert && (
-                            <button
-                                onClick={() => onRevert(message.id)}
-                                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-hover)] transition-colors"
-                                title="Revert this change"
-                            >
-                                <Undo2 className="w-3 h-3" />
-                                Revert
-                            </button>
-                        )}
-                    </div>
                 </div>
 
+                {/* Message content */}
                 <div className="space-y-2">
                     {parts.map((part, index) => (
                         <React.Fragment key={index}>
@@ -187,6 +156,35 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                             )}
                         </React.Fragment>
                     ))}
+                </div>
+
+                {/* Footer - time and actions at bottom */}
+                <div className="flex items-center justify-between mt-2">
+                    <span className="text-[10px] text-[var(--text-muted)]">{timeString}</span>
+                    <div className="flex items-center gap-2">
+                        {/* Copy Button */}
+                        <button
+                            onClick={handleCopyMessage}
+                            className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-all"
+                            title="Copy message"
+                        >
+                            {copiedMessage ? (
+                                <><Check className="w-3 h-3" /> Copied</>
+                            ) : (
+                                <><Copy className="w-3 h-3" /> Copy</>
+                            )}
+                        </button>
+                        {/* Revert Button - Navy circular background */}
+                        {onRevert && (
+                            <button
+                                onClick={() => onRevert(message.id)}
+                                className="flex items-center justify-center w-6 h-6 rounded-full bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary-hover)] transition-colors"
+                                title="Revert this change"
+                            >
+                                <Undo2 className="w-3 h-3" />
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

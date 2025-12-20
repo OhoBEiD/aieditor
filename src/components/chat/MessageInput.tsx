@@ -85,26 +85,26 @@ export function MessageInput({
                 </div>
             )}
 
-            <form onSubmit={handleSubmit} className="flex items-center gap-2">
-                <div className="flex-1 flex items-center gap-2 p-2 rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border-default)]">
-                    {/* Image Upload Button */}
-                    <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex-shrink-0 p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-hover)] transition-colors"
-                        title="Upload image"
-                    >
-                        <Image className="w-4 h-4" />
-                    </button>
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageSelect}
-                        className="hidden"
-                    />
+            <form onSubmit={handleSubmit} className="flex items-center gap-3">
+                {/* Image Upload Button - Outside the bubble */}
+                <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-shrink-0 p-2 rounded-full text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+                    title="Upload image"
+                >
+                    <Image className="w-5 h-5" />
+                </button>
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="hidden"
+                />
 
-                    {/* Text Input - Centered */}
+                {/* Text Input Bubble - Rounded pill shape */}
+                <div className="flex-1 flex items-center px-4 py-2.5 rounded-full bg-[var(--bg-tertiary)] border-none">
                     <textarea
                         ref={textareaRef}
                         value={message}
@@ -116,31 +116,31 @@ export function MessageInput({
                         className={cn(
                             'flex-1 bg-transparent resize-none text-sm text-center',
                             'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
-                            'focus:outline-none focus:ring-0 focus:border-none border-none outline-none',
+                            'focus:outline-none focus:ring-0 border-none outline-none',
                             'disabled:opacity-50 max-h-[120px]',
                             'caret-[var(--accent-primary)]'
                         )}
                         style={{ caretColor: 'var(--accent-primary)' }}
                     />
-
-                    {/* Send Button */}
-                    <button
-                        type="submit"
-                        disabled={(!message.trim() && !selectedImage) || isLoading}
-                        className={cn(
-                            'flex-shrink-0 p-1.5 rounded-lg transition-all',
-                            (message.trim() || selectedImage) && !isLoading
-                                ? 'text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-white'
-                                : 'text-[var(--text-disabled)]'
-                        )}
-                    >
-                        {isLoading ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                            <Send className="w-4 h-4" />
-                        )}
-                    </button>
                 </div>
+
+                {/* Send Button - Outside the bubble */}
+                <button
+                    type="submit"
+                    disabled={(!message.trim() && !selectedImage) || isLoading}
+                    className={cn(
+                        'flex-shrink-0 p-2 rounded-full transition-all',
+                        (message.trim() || selectedImage) && !isLoading
+                            ? 'text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-white'
+                            : 'text-[var(--text-disabled)]'
+                    )}
+                >
+                    {isLoading ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                        <Send className="w-5 h-5" />
+                    )}
+                </button>
             </form>
 
             <p className="mt-1.5 text-[10px] text-[var(--text-muted)] text-center">
