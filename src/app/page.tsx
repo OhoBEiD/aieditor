@@ -48,6 +48,7 @@ export default function Home() {
     const [isSending, setIsSending] = useState(false);
     const [isClient, setIsClient] = useState(false);
     const [isLoadingSessions, setIsLoadingSessions] = useState(true);
+    const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
     // n8n workflow state
     const [previewUrl, setPreviewUrl] = useState<string | undefined>();
@@ -102,6 +103,7 @@ export default function Home() {
     };
 
     const loadMessages = async (sessionId: string) => {
+        setIsLoadingMessages(true);
         try {
             const { data, error } = await supabase
                 .from('messages')
@@ -128,6 +130,8 @@ export default function Home() {
             setRequestContexts(contexts);
         } catch (err) {
             console.error('Failed to load messages:', err);
+        } finally {
+            setIsLoadingMessages(false);
         }
     };
 
@@ -427,6 +431,7 @@ export default function Home() {
                                 onSendMessage={handleSendMessage}
                                 onRevert={handleRevert}
                                 isLoading={isSending}
+                                isLoadingMessages={isLoadingMessages}
                             />
                         </div>
                     </div>
@@ -483,6 +488,7 @@ export default function Home() {
                                 onSendMessage={handleSendMessage}
                                 onRevert={handleRevert}
                                 isLoading={isSending}
+                                isLoadingMessages={isLoadingMessages}
                             />
                         </div>
                     </div>

@@ -85,8 +85,8 @@ export function MessageInput({
                 </div>
             )}
 
-            <form onSubmit={handleSubmit} className="flex items-end gap-2">
-                <div className="flex-1 flex items-end gap-2 p-2 rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border-default)] transition-colors">
+            <form onSubmit={handleSubmit} className="flex items-center gap-2">
+                <div className="flex-1 flex items-center gap-2 p-2 rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border-default)]">
                     {/* Image Upload Button */}
                     <button
                         type="button"
@@ -104,7 +104,7 @@ export function MessageInput({
                         className="hidden"
                     />
 
-                    {/* Text Input */}
+                    {/* Text Input - Centered */}
                     <textarea
                         ref={textareaRef}
                         value={message}
@@ -114,11 +114,13 @@ export function MessageInput({
                         disabled={isLoading}
                         rows={1}
                         className={cn(
-                            'flex-1 bg-transparent resize-none text-sm',
+                            'flex-1 bg-transparent resize-none text-sm text-center',
                             'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
-                            'focus:outline-none disabled:opacity-50',
-                            'max-h-[120px]'
+                            'focus:outline-none focus:ring-0 focus:border-none border-none outline-none',
+                            'disabled:opacity-50 max-h-[120px]',
+                            'caret-[var(--accent-primary)]'
                         )}
+                        style={{ caretColor: 'var(--accent-primary)' }}
                     />
 
                     {/* Send Button */}

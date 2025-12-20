@@ -279,3 +279,92 @@ button:focus-visible {
 .transition-slow {
   transition: all 0.3s ease;
 }
+
+/* Chat transition animations */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s ease-out forwards;
+}
+
+.animate-fade-out {
+  animation: fadeOut 0.2s ease-out forwards;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.2s ease-out forwards;
+}
+
+/* Staggered message animations */
+.message-enter {
+  animation: slideUp 0.3s ease-out forwards;
+}
+
+.message-enter:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.message-enter:nth-child(2) {
+  animation-delay: 50ms;
+}
+
+.message-enter:nth-child(3) {
+  animation-delay: 100ms;
+}
+
+.message-enter:nth-child(4) {
+  animation-delay: 150ms;
+}
+
+.message-enter:nth-child(5) {
+  animation-delay: 200ms;
+}
+
+/* Skeleton pulse */
+@keyframes skeletonPulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.skeleton-pulse {
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+}

@@ -15,6 +15,7 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message, onRevert, isStreaming = false }: MessageBubbleProps) {
     const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
+    const [copiedMessage, setCopiedMessage] = React.useState(false);
     const isUser = message.role === 'user';
     const isAssistant = message.role === 'assistant';
 
@@ -56,37 +57,58 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
         setTimeout(() => setCopiedIndex(null), 2000);
     };
 
+    const handleCopyMessage = async () => {
+        await navigator.clipboard.writeText(message.content);
+        setCopiedMessage(true);
+        setTimeout(() => setCopiedMessage(false), 2000);
+    };
+
     const parts = parseContent(message.content);
 
+    // User message - rounded bubble style
+    if (isUser) {
+        return (
+            <div className="group flex justify-end p-3">
+                <div className="max-w-[80%]">
+                    {/* Bubble */}
+                    <div className="bg-[var(--bg-tertiary)] rounded-2xl rounded-br-sm px-4 py-2.5 shadow-sm">
+                        <p className="text-xs text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed">
+                            {message.content}
+                        </p>
+                    </div>
+                    {/* Metadata */}
+                    <div className="flex items-center justify-end gap-2 mt-1 px-1">
+                        <button
+                            onClick={handleCopyMessage}
+                            className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-all"
+                            title="Copy message"
+                        >
+                            {copiedMessage ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        </button>
+                        <span className="text-[10px] text-[var(--text-muted)]">
+                            {new Date(message.created_at).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                            })}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // AI message - white background, full width
     return (
-        <div
-            className={cn(
-                'flex gap-2.5 p-3',
-                isUser ? 'bg-[var(--bg-secondary)]' : 'bg-[var(--bg-tertiary)]'
-            )}
-        >
+        <div className="group flex gap-2.5 p-3 bg-white">
             {/* Avatar */}
-            <div
-                className={cn(
-                    'flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center',
-                    isUser
-                        ? 'bg-[var(--accent-primary)]'
-                        : 'bg-gradient-to-br from-[var(--accent-secondary)] to-[var(--accent-primary)]'
-                )}
-            >
-                {isUser ? (
-                    <User className="w-3 h-3 text-white" />
-                ) : (
-                    <Bot className="w-3 h-3 text-white" />
-                )}
+            <div className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center bg-gradient-to-br from-[var(--accent-secondary)] to-[var(--accent-primary)]">
+                <Bot className="w-3 h-3 text-white" />
             </div>
 
             {/* Content */}
             <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-medium text-[var(--text-primary)]">
-                        {isUser ? 'You' : 'AI'}
-                    </span>
+                    <span className="text-xs font-medium text-[var(--text-primary)]">AI</span>
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] text-[var(--text-muted)]">
                             {new Date(message.created_at).toLocaleTimeString([], {
@@ -94,8 +116,20 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                                 minute: '2-digit',
                             })}
                         </span>
-                        {/* Revert Button - only for AI messages */}
-                        {isAssistant && onRevert && (
+                        {/* Copy Button */}
+                        <button
+                            onClick={handleCopyMessage}
+                            className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-hover)] transition-all"
+                            title="Copy message"
+                        >
+                            {copiedMessage ? (
+                                <><Check className="w-3 h-3" /> Copied</>
+                            ) : (
+                                <><Copy className="w-3 h-3" /> Copy</>
+                            )}
+                        </button>
+                        {/* Revert Button */}
+                        {onRevert && (
                             <button
                                 onClick={() => onRevert(message.id)}
                                 className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-hover)] transition-colors"
@@ -131,15 +165,9 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                                             className="flex items-center gap-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                                         >
                                             {copiedIndex === index ? (
-                                                <>
-                                                    <Check className="w-3 h-3" />
-                                                    Copied
-                                                </>
+                                                <><Check className="w-3 h-3" /> Copied</>
                                             ) : (
-                                                <>
-                                                    <Copy className="w-3 h-3" />
-                                                    Copy
-                                                </>
+                                                <><Copy className="w-3 h-3" /> Copy</>
                                             )}
                                         </button>
                                     </div>
