@@ -86,7 +86,7 @@ export function MessageInput({
             )}
 
             <form onSubmit={handleSubmit} className="flex items-end gap-2">
-                <div className="flex-1 flex items-end gap-2 p-2 rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border-default)] focus-within:border-[var(--border-focus)] transition-colors">
+                <div className="flex-1 flex items-end gap-2 p-2 rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border-default)] transition-colors">
                     {/* Image Upload Button */}
                     <button
                         type="button"

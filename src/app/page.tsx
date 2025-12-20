@@ -9,8 +9,8 @@ import { sendEditRequest, applyChanges, rollbackChanges } from '@/lib/n8n/client
 import { cn } from '@/lib/utils';
 import { Bot, X } from 'lucide-react';
 
-// Configuration
-const DEMO_CLIENT_ID = 'demo-client';
+// Configuration - Use a valid UUID for the demo client
+const DEMO_CLIENT_ID = '00000000-0000-0000-0000-000000000001';
 
 // Types
 interface ChatSession {
