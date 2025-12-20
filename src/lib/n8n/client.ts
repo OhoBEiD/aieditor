@@ -1,6 +1,10 @@
-// n8n Webhook Client - Synced with AI Code Editor Workflow
+// n8n Webhook Client - Connected to Live Webhooks
 
-const N8N_BASE_URL = process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL || '';
+// Webhook URLs - Update these or use environment variables
+const EDIT_URL = process.env.NEXT_PUBLIC_N8N_EDIT_URL || 'https://daveisgm05.app.n8n.cloud/webhook/agent/edit-ui';
+const APPLY_URL = process.env.NEXT_PUBLIC_N8N_APPLY_URL || 'https://daveisgm05.app.n8n.cloud/webhook/agent/apply';
+const ROLLBACK_URL = process.env.NEXT_PUBLIC_N8N_ROLLBACK_URL || 'https://daveisgm05.app.n8n.cloud/webhook/agent/rollback';
+const PREVIEW_URL = process.env.NEXT_PUBLIC_N8N_PREVIEW_URL || 'https://daveisgm05.app.n8n.cloud/webhook-test/preview/deploy';
 
 // ============================================================================
 // EDIT-UI FLOW
@@ -31,18 +35,11 @@ export interface EditUIResponse {
 
 /**
  * Send an edit request to the AI code editor workflow.
- * Creates a PR with the proposed changes.
  */
 export async function sendEditRequest(request: EditUIRequest): Promise<EditUIResponse> {
-    if (!N8N_BASE_URL) {
-        throw new Error('N8N_WEBHOOK_URL is not configured');
-    }
-
-    const response = await fetch(`${N8N_BASE_URL}/agent/edit-ui`, {
+    const response = await fetch(EDIT_URL, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
     });
 
@@ -74,15 +71,9 @@ export interface ApplyResponse {
  * Apply (merge) an approved change request.
  */
 export async function applyChanges(request: ApplyRequest): Promise<ApplyResponse> {
-    if (!N8N_BASE_URL) {
-        throw new Error('N8N_WEBHOOK_URL is not configured');
-    }
-
-    const response = await fetch(`${N8N_BASE_URL}/agent/apply`, {
+    const response = await fetch(APPLY_URL, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
     });
 
@@ -114,15 +105,9 @@ export interface RollbackResponse {
  * Rollback (revert) a previously applied change request.
  */
 export async function rollbackChanges(request: RollbackRequest): Promise<RollbackResponse> {
-    if (!N8N_BASE_URL) {
-        throw new Error('N8N_WEBHOOK_URL is not configured');
-    }
-
-    const response = await fetch(`${N8N_BASE_URL}/agent/rollback`, {
+    const response = await fetch(ROLLBACK_URL, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
     });
 
@@ -135,81 +120,50 @@ export async function rollbackChanges(request: RollbackRequest): Promise<Rollbac
 }
 
 // ============================================================================
-// LEGACY COMPATIBILITY (for existing code)
+// PREVIEW DEPLOY FLOW
 // ============================================================================
 
-export interface ChatRequest {
-    session_id: string;
-    client_id: string;
-    message: string;
-    selected_files?: string[];
+export interface PreviewDeployRequest {
+    clientId: string;
+    repoUrl: string;
+    branch: string;
+    requestId: string;
 }
 
-export interface ChatResponse {
-    response: string;
-    code_changes?: Array<{
-        file_path: string;
-        action: 'create' | 'modify' | 'delete';
-        content: string;
-        diff?: string;
-    }>;
-    suggested_actions?: string[];
-}
-
-/**
- * @deprecated Use sendEditRequest instead
- */
-export async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
-    // Map legacy format to new format
-    const editRequest: EditUIRequest = {
-        siteId: request.client_id,
-        conversationId: request.session_id,
-        userId: request.client_id,
-        message: request.message,
-    };
-
-    const editResponse = await sendEditRequest(editRequest);
-
-    // Map new response to legacy format
-    return {
-        response: editResponse.summary,
-        suggested_actions: editResponse.warnings,
-    };
-}
-
-/**
- * @deprecated Use rollbackChanges instead
- */
-export async function revertChanges(request: { client_id: string; version_id: string }): Promise<{
+export interface PreviewDeployResponse {
     success: boolean;
-    message: string;
-    restored_files?: string[];
-}> {
-    const rollbackRequest: RollbackRequest = {
-        siteId: request.client_id,
-        requestId: request.version_id,
-        userId: request.client_id,
-    };
-
-    const rollbackResponse = await rollbackChanges(rollbackRequest);
-
-    return {
-        success: rollbackResponse.status === 'rolled_back',
-        message: `Reverted to ${rollbackResponse.revertCommitSha}`,
-    };
+    previewUrl: string;
+    deploymentId: string;
+    status: string;
 }
 
 /**
- * Upload an image (placeholder - workflow doesn't include this endpoint)
+ * Trigger a preview deployment.
  */
+export async function triggerPreviewDeploy(request: PreviewDeployRequest): Promise<PreviewDeployResponse> {
+    const response = await fetch(PREVIEW_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Preview deploy failed: ${response.status} - ${error}`);
+    }
+
+    return response.json();
+}
+
+// ============================================================================
+// IMAGE UPLOAD (Local only for now)
+// ============================================================================
+
 export async function uploadImage(
     clientId: string,
     file: File
 ): Promise<{ url: string; path: string }> {
-    // TODO: Implement image upload endpoint in n8n workflow
-    console.warn('Image upload not yet implemented in workflow');
-
-    // Return a mock response for now
+    // For now, just return a local blob URL
     return {
         url: URL.createObjectURL(file),
         path: `uploads/${clientId}/${file.name}`,

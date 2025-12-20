@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import type { CodeVersion } from '@/lib/supabase/types';
-import { revertChanges } from '@/lib/n8n/client';
+import { rollbackChanges } from '@/lib/n8n/client';
 
 interface UseCodeVersionsOptions {
     clientId: string;
@@ -49,17 +49,18 @@ export function useCodeVersions({ clientId, sessionId }: UseCodeVersionsOptions)
             setIsReverting(true);
             setError(null);
 
-            const result = await revertChanges({
-                client_id: clientId,
-                version_id: versionId,
+            const result = await rollbackChanges({
+                siteId: clientId,
+                requestId: versionId,
+                userId: clientId,
             });
 
-            if (result.success) {
+            if (result.status === 'rolled_back') {
                 // Refresh versions list (revert status handled by n8n workflow)
                 await fetchVersions();
             }
 
-            return result;
+            return { success: true, message: 'Reverted successfully' };
         } catch (err) {
             setError(err instanceof Error ? err : new Error('Failed to revert'));
             return { success: false, message: 'Revert failed' };

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import type { Message, InsertMessage } from '@/lib/supabase/types';
-import { sendChatMessage } from '@/lib/n8n/client';
+import { sendEditRequest } from '@/lib/n8n/client';
 import { generateSessionTitle } from '@/lib/utils';
 
 interface UseMessagesOptions {
@@ -74,22 +74,23 @@ export function useMessages({ sessionId, clientId, onTitleUpdate }: UseMessagesO
             }
 
             // Send to n8n and get AI response
-            const aiResponse = await sendChatMessage({
-                session_id: sessionId,
-                client_id: clientId,
+            const aiResponse = await sendEditRequest({
+                siteId: clientId,
+                conversationId: sessionId,
+                userId: clientId,
                 message: content,
-                selected_files: selectedFiles,
             });
 
             // Save AI response - cast metadata to satisfy Json type
             const metadataObj = {
-                code_changes: aiResponse.code_changes,
-                suggested_actions: aiResponse.suggested_actions,
+                requestId: aiResponse.requestId,
+                status: aiResponse.status,
+                prUrl: aiResponse.prUrl,
             };
             const assistantMessage: InsertMessage = {
                 session_id: sessionId,
                 role: 'assistant',
-                content: aiResponse.response,
+                content: aiResponse.summary + (aiResponse.diff ? `\n\n\`\`\`diff\n${aiResponse.diff.substring(0, 500)}\n\`\`\`` : ''),
                 metadata: JSON.parse(JSON.stringify(metadataObj)),
             };
 
