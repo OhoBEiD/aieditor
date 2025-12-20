@@ -1,10 +1,7 @@
-// n8n Webhook Client - Connected to Live Webhooks
+// n8n Webhook Client - Using Local API Proxy to bypass CORS
 
-// Webhook URLs - Update these or use environment variables
-const EDIT_URL = process.env.NEXT_PUBLIC_N8N_EDIT_URL || 'https://daveisgm05.app.n8n.cloud/webhook/agent/edit-ui';
-const APPLY_URL = process.env.NEXT_PUBLIC_N8N_APPLY_URL || 'https://daveisgm05.app.n8n.cloud/webhook/agent/apply';
-const ROLLBACK_URL = process.env.NEXT_PUBLIC_N8N_ROLLBACK_URL || 'https://daveisgm05.app.n8n.cloud/webhook/agent/rollback';
-const PREVIEW_URL = process.env.NEXT_PUBLIC_N8N_PREVIEW_URL || 'https://daveisgm05.app.n8n.cloud/webhook-test/preview/deploy';
+// Use local API proxy instead of direct n8n calls
+const API_BASE = '/api/webhook';
 
 // ============================================================================
 // EDIT-UI FLOW
@@ -37,15 +34,15 @@ export interface EditUIResponse {
  * Send an edit request to the AI code editor workflow.
  */
 export async function sendEditRequest(request: EditUIRequest): Promise<EditUIResponse> {
-    const response = await fetch(EDIT_URL, {
+    const response = await fetch(`${API_BASE}/edit-ui`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
     });
 
     if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Edit request failed: ${response.status} - ${error}`);
+        const error = await response.json().catch(() => ({ error: 'Request failed' }));
+        throw new Error(error.error || `Edit request failed: ${response.status}`);
     }
 
     return response.json();
@@ -71,15 +68,15 @@ export interface ApplyResponse {
  * Apply (merge) an approved change request.
  */
 export async function applyChanges(request: ApplyRequest): Promise<ApplyResponse> {
-    const response = await fetch(APPLY_URL, {
+    const response = await fetch(`${API_BASE}/apply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
     });
 
     if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Apply request failed: ${response.status} - ${error}`);
+        const error = await response.json().catch(() => ({ error: 'Request failed' }));
+        throw new Error(error.error || `Apply request failed: ${response.status}`);
     }
 
     return response.json();
@@ -105,15 +102,15 @@ export interface RollbackResponse {
  * Rollback (revert) a previously applied change request.
  */
 export async function rollbackChanges(request: RollbackRequest): Promise<RollbackResponse> {
-    const response = await fetch(ROLLBACK_URL, {
+    const response = await fetch(`${API_BASE}/rollback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
     });
 
     if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Rollback request failed: ${response.status} - ${error}`);
+        const error = await response.json().catch(() => ({ error: 'Request failed' }));
+        throw new Error(error.error || `Rollback request failed: ${response.status}`);
     }
 
     return response.json();
@@ -141,15 +138,15 @@ export interface PreviewDeployResponse {
  * Trigger a preview deployment.
  */
 export async function triggerPreviewDeploy(request: PreviewDeployRequest): Promise<PreviewDeployResponse> {
-    const response = await fetch(PREVIEW_URL, {
+    const response = await fetch(`${API_BASE}/preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
     });
 
     if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Preview deploy failed: ${response.status} - ${error}`);
+        const error = await response.json().catch(() => ({ error: 'Request failed' }));
+        throw new Error(error.error || `Preview deploy failed: ${response.status}`);
     }
 
     return response.json();
@@ -163,7 +160,6 @@ export async function uploadImage(
     clientId: string,
     file: File
 ): Promise<{ url: string; path: string }> {
-    // For now, just return a local blob URL
     return {
         url: URL.createObjectURL(file),
         path: `uploads/${clientId}/${file.name}`,
