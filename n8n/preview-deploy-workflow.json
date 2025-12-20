@@ -1,9 +1,9 @@
 {
-    "name": "AI Editor - Preview Deploy (Netlify)",
+    "name": "AI Editor - Preview Deploy (Cloudflare Pages)",
     "nodes": [
         {
             "parameters": {
-                "content": "## 🚀 NETLIFY PREVIEW DEPLOY\n\nTriggers Netlify build for PR branch\nReturns preview URL with custom subdomain",
+                "content": "## 🚀 CLOUDFLARE PAGES PREVIEW\n\nTriggers Cloudflare Pages deployment\nReturns preview URL with custom subdomain",
                 "height": 120,
                 "width": 300,
                 "color": 4
@@ -36,7 +36,7 @@
         },
         {
             "parameters": {
-                "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst required = ['clientId', 'repoUrl', 'branch', 'requestId'];\nconst missing = required.filter(k => !body[k]);\nif (missing.length) throw new Error('Missing: ' + missing.join(', '));\n\nreturn [{\n  json: {\n    clientId: body.clientId,\n    repoUrl: body.repoUrl,\n    branch: body.branch,\n    requestId: body.requestId,\n    siteId: process.env.NETLIFY_SITE_ID,\n    previewDomain: process.env.PREVIEW_DOMAIN || 'preview.yourdomain.com'\n  }\n}];"
+                "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst required = ['clientId', 'repoUrl', 'branch', 'requestId'];\nconst missing = required.filter(k => !body[k]);\nif (missing.length) throw new Error('Missing: ' + missing.join(', '));\n\n// Extract owner/repo from URL\nconst match = body.repoUrl.match(/github\\.com\\/([^/]+)\\/([^/.]+)/);\nconst owner = match ? match[1] : '';\nconst repo = match ? match[2] : '';\n\nreturn [{\n  json: {\n    clientId: body.clientId,\n    owner,\n    repo,\n    branch: body.branch,\n    requestId: body.requestId,\n    accountId: $env.CLOUDFLARE_ACCOUNT_ID,\n    projectName: $env.CLOUDFLARE_PROJECT_NAME,\n    previewDomain: $env.PREVIEW_DOMAIN || 'preview.automatelb.com'\n  }\n}];"
             },
             "id": "validate-1",
             "name": "Validate Input",
@@ -50,12 +50,14 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "=https://api.netlify.com/api/v1/sites/{{ $json.siteId }}/builds",
-                "authentication": "genericCredentialType",
-                "genericAuthType": "httpHeaderAuth",
+                "url": "=https://api.cloudflare.com/client/v4/accounts/{{ $json.accountId }}/pages/projects/{{ $json.projectName }}/deployments",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
+                        {
+                            "name": "Authorization",
+                            "value": "=Bearer {{ $env.CLOUDFLARE_API_TOKEN }}"
+                        },
                         {
                             "name": "Content-Type",
                             "value": "application/json"
@@ -64,11 +66,11 @@
                 },
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={\n  \"clear_cache\": false,\n  \"branch\": \"{{ $json.branch }}\"\n}",
+                "jsonBody": "={\n  \"branch\": \"{{ $json.branch }}\"\n}",
                 "options": {}
             },
-            "id": "netlify-build",
-            "name": "Netlify - Trigger Build",
+            "id": "cf-deploy",
+            "name": "Cloudflare - Create Deployment",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
@@ -78,7 +80,7 @@
         },
         {
             "parameters": {
-                "jsCode": "const input = $('Validate Input').item.json;\nconst build = $input.first().json;\n\n// Netlify branch deploys use format: branch-name--site-name.netlify.app\n// But with custom domain, we use: clientId.preview.domain.com\nconst previewUrl = `https://${input.clientId}.${input.previewDomain}`;\n\nreturn [{\n  json: {\n    ...input,\n    buildId: build.id || build.build_id || 'pending',\n    deployId: build.deploy_id || null,\n    previewUrl: previewUrl,\n    status: build.state || 'building'\n  }\n}];"
+                "jsCode": "const input = $('Validate Input').item.json;\nconst deploy = $input.first().json;\n\n// Build the custom preview URL\nconst previewUrl = `https://${input.clientId}.${input.previewDomain}`;\n\n// Cloudflare also provides a direct URL\nconst cfUrl = deploy.result?.url || deploy.url || null;\n\nreturn [{\n  json: {\n    ...input,\n    deploymentId: deploy.result?.id || deploy.id || 'pending',\n    previewUrl: previewUrl,\n    cloudflareUrl: cfUrl,\n    status: deploy.result?.latest_stage?.status || 'queued'\n  }\n}];"
             },
             "id": "build-url",
             "name": "Build Preview URL",
@@ -116,7 +118,7 @@
                 },
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={\n  \"request_id\": \"{{ $json.requestId }}\",\n  \"deployment_id\": \"{{ $json.buildId }}\",\n  \"preview_url\": \"{{ $json.previewUrl }}\",\n  \"status\": \"{{ $json.status }}\"\n}",
+                "jsonBody": "={\n  \"request_id\": \"{{ $json.requestId }}\",\n  \"deployment_id\": \"{{ $json.deploymentId }}\",\n  \"preview_url\": \"{{ $json.previewUrl }}\",\n  \"status\": \"{{ $json.status }}\"\n}",
                 "options": {}
             },
             "id": "save-deployment",
@@ -131,7 +133,7 @@
         {
             "parameters": {
                 "respondWith": "json",
-                "responseBody": "={\n  \"success\": true,\n  \"previewUrl\": \"{{ $('Build Preview URL').item.json.previewUrl }}\",\n  \"buildId\": \"{{ $('Build Preview URL').item.json.buildId }}\",\n  \"status\": \"{{ $('Build Preview URL').item.json.status }}\",\n  \"requestId\": \"{{ $('Build Preview URL').item.json.requestId }}\"\n}",
+                "responseBody": "={\n  \"success\": true,\n  \"previewUrl\": \"{{ $('Build Preview URL').item.json.previewUrl }}\",\n  \"cloudflareUrl\": \"{{ $('Build Preview URL').item.json.cloudflareUrl }}\",\n  \"deploymentId\": \"{{ $('Build Preview URL').item.json.deploymentId }}\",\n  \"status\": \"{{ $('Build Preview URL').item.json.status }}\",\n  \"requestId\": \"{{ $('Build Preview URL').item.json.requestId }}\"\n}",
                 "options": {}
             },
             "id": "response-success",
@@ -160,14 +162,14 @@
             "main": [
                 [
                     {
-                        "node": "Netlify - Trigger Build",
+                        "node": "Cloudflare - Create Deployment",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Netlify - Trigger Build": {
+        "Cloudflare - Create Deployment": {
             "main": [
                 [
                     {

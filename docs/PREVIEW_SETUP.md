@@ -1,65 +1,50 @@
-# Preview System Setup Guide (Netlify)
+# Preview System Setup Guide (Cloudflare Pages)
 
-## 1️⃣ Cloudflare DNS (2 min)
+## ✅ You've Already Done
+- Created Cloudflare Pages project
 
-Add in Cloudflare → DNS → Records:
+## Next Steps
 
-| Type | Name | Target | Proxy |
-|------|------|--------|-------|
-| CNAME | `*.preview` | `your-site.netlify.app` | ❌ DNS only |
+### 1. Add Custom Domain (2 min)
 
-> **Note:** Use "DNS only" (gray cloud) for Netlify compatibility.
+In Cloudflare Pages project → Custom domains:
+1. Add `*.preview.automatelb.com`
+2. Cloudflare will auto-configure DNS ✨
 
----
+### 2. Get API Token (2 min)
 
-## 2️⃣ Netlify Setup (10 min)
+1. Cloudflare Dashboard → My Profile → API Tokens
+2. Create Token → "Edit Cloudflare Workers" template (or custom)
+3. Permissions needed:
+   - Account: Cloudflare Pages: Edit
+4. Save token as `CLOUDFLARE_API_TOKEN`
 
-### Create Site
-1. Go to [Netlify](https://app.netlify.com)
-2. Add New Site → Import from Git → Connect your repo
-3. Note your site name (e.g., `aieditor-preview`)
+### 3. Get Account ID & Project Name
 
-### Add Custom Domain
-1. Site Settings → Domain management → Add custom domain
-2. Add: `*.preview.automatelb.com`
-3. Netlify will show "Awaiting external DNS" - that's OK
+1. Pages project → right sidebar → "Account ID" → Copy
+2. Note your project name (e.g., `aieditor-preview`)
 
-### Get API Token
-1. User Settings → Applications → Personal Access Tokens
-2. Create new token: `ai-editor-preview`
-3. Save token as `NETLIFY_TOKEN`
+### 4. Set n8n Environment Variables
 
-### Get Site ID
-1. Site Settings → General → Site ID
-2. Copy the ID (looks like `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)
+```
+CLOUDFLARE_API_TOKEN=your_token
+CLOUDFLARE_ACCOUNT_ID=your_account_id
+CLOUDFLARE_PROJECT_NAME=your_project_name
+PREVIEW_DOMAIN=preview.automatelb.com
+```
 
----
+### 5. Import n8n Workflow
 
-## 3️⃣ n8n Workflow (5 min)
-
-1. Import `n8n/preview-deploy-workflow.json` 
-2. Add credential: HTTP Header Auth
-   - Header: `Authorization`
-   - Value: `Bearer YOUR_NETLIFY_TOKEN`
-3. Set environment variables:
-   ```
-   NETLIFY_SITE_ID=your-site-id
-   PREVIEW_DOMAIN=preview.automatelb.com
-   ```
+Import `n8n/preview-deploy-workflow.json` and activate.
 
 ---
 
-## 4️⃣ Test
+## Test
 
 ```bash
 curl -X POST https://your-n8n.com/webhook/preview/deploy \
   -H "Content-Type: application/json" \
-  -d '{
-    "clientId": "demo",
-    "repoUrl": "https://github.com/org/repo",
-    "branch": "test-branch",
-    "requestId": "req_123"
-  }'
+  -d '{"clientId":"demo","repoUrl":"https://github.com/org/repo","branch":"main","requestId":"test123"}'
 ```
 
-Expected response: `https://demo.preview.automatelb.com`
+Result: `https://demo.preview.automatelb.com`
