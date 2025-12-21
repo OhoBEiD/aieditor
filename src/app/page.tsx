@@ -67,10 +67,11 @@ export default function Home() {
         }
     }, [isClient]);
 
-    // Load messages when session changes
+    // Load messages when session changes + persist to localStorage
     useEffect(() => {
         if (isClient && activeSessionId) {
             loadMessages(activeSessionId);
+            localStorage.setItem('lastActiveSessionId', activeSessionId);
         } else {
             setMessages([]);
         }
@@ -91,9 +92,15 @@ export default function Home() {
             const typedData = (data || []) as ChatSession[];
             setSessions(typedData);
 
-            // Auto-select first session
+            // Auto-select: prefer localStorage last session, then first session
             if (typedData.length > 0 && !activeSessionId) {
-                setActiveSessionId(typedData[0].id);
+                const lastSessionId = localStorage.getItem('lastActiveSessionId');
+                const sessionExists = typedData.some(s => s.id === lastSessionId);
+                if (lastSessionId && sessionExists) {
+                    setActiveSessionId(lastSessionId);
+                } else {
+                    setActiveSessionId(typedData[0].id);
+                }
             }
         } catch (err) {
             console.error('Failed to load sessions:', err);
@@ -185,6 +192,22 @@ export default function Home() {
             console.error('Failed to delete chat:', err);
         }
     }, [activeSessionId, sessions]);
+
+    const handleRenameChat = useCallback(async (sessionId: string, newTitle: string) => {
+        try {
+            await supabase
+                .from('chat_sessions')
+                .update({ title: newTitle, updated_at: new Date().toISOString() })
+                .eq('id', sessionId);
+
+            // Update local state
+            setSessions(prev => prev.map(s =>
+                s.id === sessionId ? { ...s, title: newTitle } : s
+            ));
+        } catch (err) {
+            console.error('Failed to rename chat:', err);
+        }
+    }, []);
 
     const handleSendMessage = useCallback(async (content: string) => {
         if (!content.trim()) return;
@@ -449,6 +472,7 @@ export default function Home() {
                                 onSelectSession={setActiveSessionId}
                                 onNewChat={handleNewChat}
                                 onDeleteChat={handleDeleteChat}
+                                onRenameChat={handleRenameChat}
                             />
                         </div>
                         {/* Chat */}
@@ -507,6 +531,7 @@ export default function Home() {
                                 onSelectSession={setActiveSessionId}
                                 onNewChat={handleNewChat}
                                 onDeleteChat={handleDeleteChat}
+                                onRenameChat={handleRenameChat}
                             />
                         </div>
                         {/* Chat */}

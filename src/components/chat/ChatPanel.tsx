@@ -93,17 +93,20 @@ function EmptyState() {
 
 function LoadingIndicator() {
     return (
-        <div className="flex gap-3 p-4 animate-slide-up bg-[var(--bg-tertiary)]">
-            <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-gradient-to-br from-[var(--accent-secondary)] to-[var(--accent-primary)] flex items-center justify-center">
-                <Bot className="w-3.5 h-3.5 text-white" />
-            </div>
-            <div className="flex-1 pt-1">
-                <div className="flex gap-1.5">
-                    <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-bounce" style={{ animationDelay: '300ms' }} />
+        <div className="p-3">
+            <div className="flex gap-3 p-3 animate-slide-up bg-gradient-to-r from-slate-50 to-blue-50 rounded-2xl">
+                <div className="flex-shrink-0 w-6 h-6 rounded-md bg-gradient-to-br from-[var(--accent-secondary)] to-[var(--accent-primary)] flex items-center justify-center">
+                    <Bot className="w-3 h-3 text-white" />
                 </div>
-                <p className="mt-2 text-xs text-[var(--text-muted)]">Thinking...</p>
+                <div className="flex-1">
+                    <span className="text-xs font-medium text-[var(--accent-primary)]">AutoMate Web Editor</span>
+                    <div className="flex gap-1.5 mt-2">
+                        <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                    <p className="mt-2 text-xs text-[var(--text-muted)]">Thinking...</p>
+                </div>
             </div>
         </div>
     );
