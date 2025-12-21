@@ -41,12 +41,34 @@ export function MessageInput({
     const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            setSelectedImage(file);
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setImagePreview(reader.result as string);
-            };
-            reader.readAsDataURL(file);
+            processImageFile(file);
+        }
+    };
+
+    const processImageFile = (file: File) => {
+        if (!file.type.startsWith('image/')) return;
+        setSelectedImage(file);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setImagePreview(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handlePaste = (e: React.ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (file) {
+                    processImageFile(file);
+                }
+                break;
+            }
         }
     };
 
@@ -114,6 +136,7 @@ export function MessageInput({
                             handleSubmit(e);
                         }
                     }}
+                    onPaste={handlePaste}
                     placeholder={placeholder}
                     disabled={isLoading}
                     className={cn(
