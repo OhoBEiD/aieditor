@@ -507,17 +507,17 @@ export default function Home() {
                             ? 'w-[320px] h-[80vh] opacity-100 scale-100'
                             : 'w-0 h-0 opacity-0 scale-95'
                     )}>
-                        {/* Top Bar */}
-                        <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)] flex items-center justify-between">
+                        {/* Top Bar - Gray */}
+                        <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)] flex items-center justify-between bg-[var(--bg-tertiary)]">
                             <button
                                 onClick={() => setShowPreview(true)}
-                                className="px-2 py-1 rounded-md text-xs font-medium text-[var(--accent-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+                                className="px-3 py-1.5 rounded-full text-xs font-medium bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary-hover)] transition-colors"
                             >
                                 Show Preview
                             </button>
                             <button
                                 onClick={() => setIsPanelOpen(false)}
-                                className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+                                className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
                             >
                                 <X className="w-4 h-4" />
                             </button>

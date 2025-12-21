@@ -67,7 +67,7 @@ export function MessageInput({
     }, [message]);
 
     return (
-        <div className="flex-shrink-0 p-4 border-t border-[var(--border-default)] bg-[var(--bg-secondary)]">
+        <div className="flex-shrink-0 p-4 border-t border-[var(--border-default)] bg-[var(--bg-tertiary)]">
             {/* Image Preview */}
             {imagePreview && (
                 <div className="mb-3 relative inline-block">
@@ -117,7 +117,7 @@ export function MessageInput({
                     placeholder={placeholder}
                     disabled={isLoading}
                     className={cn(
-                        'flex-1 px-4 py-2 rounded-full text-sm text-center',
+                        'flex-1 px-4 py-2 rounded-full text-xs text-center',
                         'bg-[var(--bg-tertiary)]',
                         'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
                         'focus:outline-none focus:ring-0 border-none outline-none',
