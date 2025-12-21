@@ -146,9 +146,14 @@ export function MessageInput({
                 </button>
             </form>
 
-            <p className="mt-2 text-[10px] text-[var(--text-muted)] text-center">
-                Press <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">Enter</kbd> to send
-            </p>
+            <a
+                href="https://automatelb.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 block text-[10px] text-[var(--text-muted)] text-center hover:text-[var(--accent-primary)] transition-colors"
+            >
+                Developed by <span className="font-medium">AutoMate</span>
+            </a>
         </div>
     );
 }
