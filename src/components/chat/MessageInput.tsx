@@ -152,7 +152,7 @@ export function MessageInput({
                 rel="noopener noreferrer"
                 className="mt-2 block text-[10px] text-[var(--text-muted)] text-center hover:text-[var(--accent-primary)] transition-colors"
             >
-                Developed by <span className="font-medium">AutoMate</span>
+                Developed by <span className="font-medium text-[var(--accent-primary)]">AutoMate</span>
             </a>
         </div>
     );
