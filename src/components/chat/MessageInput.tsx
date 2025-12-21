@@ -67,7 +67,7 @@ export function MessageInput({
     }, [message]);
 
     return (
-        <div className="flex-shrink-0 p-4 border-t border-[var(--border-default)] bg-[var(--bg-tertiary)]">
+        <div className="flex-shrink-0 p-4 border-t border-[var(--border-default)] bg-[var(--bg-secondary)]">
             {/* Image Preview */}
             {imagePreview && (
                 <div className="mb-3 relative inline-block">
