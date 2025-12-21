@@ -160,6 +160,32 @@ export default function Home() {
         }
     }, []);
 
+    const handleDeleteChat = useCallback(async (sessionId: string) => {
+        try {
+            // Soft delete - set is_active to false
+            await supabase
+                .from('chat_sessions')
+                .update({ is_active: false })
+                .eq('id', sessionId);
+
+            // Remove from local state
+            setSessions(prev => prev.filter(s => s.id !== sessionId));
+
+            // If deleted the active session, switch to first available
+            if (activeSessionId === sessionId) {
+                const remaining = sessions.filter(s => s.id !== sessionId);
+                if (remaining.length > 0) {
+                    setActiveSessionId(remaining[0].id);
+                } else {
+                    setActiveSessionId(null);
+                    setMessages([]);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to delete chat:', err);
+        }
+    }, [activeSessionId, sessions]);
+
     const handleSendMessage = useCallback(async (content: string) => {
         if (!content.trim()) return;
 
@@ -422,6 +448,7 @@ export default function Home() {
                                 activeSessionId={activeSessionId}
                                 onSelectSession={setActiveSessionId}
                                 onNewChat={handleNewChat}
+                                onDeleteChat={handleDeleteChat}
                             />
                         </div>
                         {/* Chat */}
@@ -479,6 +506,7 @@ export default function Home() {
                                 activeSessionId={activeSessionId}
                                 onSelectSession={setActiveSessionId}
                                 onNewChat={handleNewChat}
+                                onDeleteChat={handleDeleteChat}
                             />
                         </div>
                         {/* Chat */}

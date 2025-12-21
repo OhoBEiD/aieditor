@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { ChevronDown, Plus, MessageSquare } from 'lucide-react';
+import { ChevronDown, Plus, MessageSquare, Trash2 } from 'lucide-react';
 import type { ChatSession } from '@/lib/supabase/types';
 import { formatRelativeTime, truncate } from '@/lib/utils';
 
@@ -11,6 +11,7 @@ interface ChatSelectorProps {
     activeSessionId: string | null;
     onSelectSession: (sessionId: string) => void;
     onNewChat: () => void;
+    onDeleteChat?: (sessionId: string) => void;
 }
 
 export function ChatSelector({
@@ -18,6 +19,7 @@ export function ChatSelector({
     activeSessionId,
     onSelectSession,
     onNewChat,
+    onDeleteChat,
 }: ChatSelectorProps) {
     const [isOpen, setIsOpen] = React.useState(false);
     const dropdownRef = React.useRef<HTMLDivElement>(null);
@@ -34,6 +36,13 @@ export function ChatSelector({
         document.addEventListener('mousedown', handleClick);
         return () => document.removeEventListener('mousedown', handleClick);
     }, []);
+
+    const handleDelete = (e: React.MouseEvent, sessionId: string) => {
+        e.stopPropagation();
+        if (onDeleteChat) {
+            onDeleteChat(sessionId);
+        }
+    };
 
     return (
         <div className="flex items-center gap-2">
@@ -87,28 +96,42 @@ export function ChatSelector({
                             </div>
                         ) : (
                             sessions.map((session) => (
-                                <button
+                                <div
                                     key={session.id}
-                                    onClick={() => {
-                                        onSelectSession(session.id);
-                                        setIsOpen(false);
-                                    }}
                                     className={cn(
-                                        'w-full flex items-center gap-3 px-3 py-2 text-left',
+                                        'group flex items-center gap-2 px-3 py-2',
                                         'hover:bg-[var(--bg-hover)] transition-colors',
                                         session.id === activeSessionId && 'bg-[var(--bg-tertiary)]'
                                     )}
                                 >
-                                    <MessageSquare className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-[var(--text-primary)] truncate">
-                                            {truncate(session.title, 35)}
-                                        </p>
-                                        <p className="text-xs text-[var(--text-muted)]">
-                                            {formatRelativeTime(session.updated_at)}
-                                        </p>
-                                    </div>
-                                </button>
+                                    <button
+                                        onClick={() => {
+                                            onSelectSession(session.id);
+                                            setIsOpen(false);
+                                        }}
+                                        className="flex-1 flex items-center gap-3 text-left min-w-0"
+                                    >
+                                        <MessageSquare className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm text-[var(--text-primary)] truncate">
+                                                {truncate(session.title, 35)}
+                                            </p>
+                                            <p className="text-xs text-[var(--text-muted)]">
+                                                {formatRelativeTime(session.updated_at)}
+                                            </p>
+                                        </div>
+                                    </button>
+                                    {/* Delete Button */}
+                                    {onDeleteChat && (
+                                        <button
+                                            onClick={(e) => handleDelete(e, session.id)}
+                                            className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-danger)] hover:bg-red-50 transition-all"
+                                            title="Delete chat"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
+                                </div>
                             ))
                         )}
                     </div>

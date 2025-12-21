@@ -95,9 +95,9 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
         );
     }
 
-    // AI message - white background, time at bottom
+    // AI message - subtle blue/gray gradient background
     return (
-        <div className="group flex gap-2.5 p-3 bg-white">
+        <div className="group flex gap-2.5 p-3 bg-gradient-to-r from-slate-50 to-blue-50">
             {/* Avatar */}
             <div className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center bg-gradient-to-br from-[var(--accent-secondary)] to-[var(--accent-primary)]">
                 <Bot className="w-3 h-3 text-white" />
@@ -107,7 +107,7 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
             <div className="flex-1 min-w-0">
                 {/* Header - just the name */}
                 <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium text-[var(--text-primary)]">AI</span>
+                    <span className="text-xs font-medium text-[var(--accent-primary)]">AutoMate Web Editor</span>
                 </div>
 
                 {/* Message content */}
@@ -158,7 +158,7 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                     ))}
                 </div>
 
-                {/* Footer - time and actions at bottom */}
+                {/* Footer - time on left, actions on right */}
                 <div className="flex items-center justify-between mt-2">
                     <span className="text-[10px] text-[var(--text-muted)]">{timeString}</span>
                     <div className="flex items-center gap-2">
@@ -174,11 +174,11 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                                 <><Copy className="w-3 h-3" /> Copy</>
                             )}
                         </button>
-                        {/* Revert Button - Navy circular background */}
+                        {/* Revert Button - bottom right, circular navy */}
                         {onRevert && (
                             <button
                                 onClick={() => onRevert(message.id)}
-                                className="flex items-center justify-center w-6 h-6 rounded-full bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary-hover)] transition-colors"
+                                className="flex items-center justify-center w-6 h-6 rounded-full bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary-hover)] transition-colors shadow-sm"
                                 title="Revert this change"
                             >
                                 <Undo2 className="w-3 h-3" />
