@@ -67,10 +67,10 @@ export function MessageInput({
     }, [message]);
 
     return (
-        <div className="flex-shrink-0 p-3 border-t border-[var(--border-default)] bg-[var(--bg-secondary)]">
+        <div className="flex-shrink-0 p-4 border-t border-[var(--border-default)] bg-[var(--bg-secondary)]">
             {/* Image Preview */}
             {imagePreview && (
-                <div className="mb-2 relative inline-block">
+                <div className="mb-3 relative inline-block">
                     <img
                         src={imagePreview}
                         alt="Preview"
@@ -86,11 +86,11 @@ export function MessageInput({
             )}
 
             <form onSubmit={handleSubmit} className="flex items-center gap-3">
-                {/* Image Upload Button - Outside the bubble */}
+                {/* Image Upload Button */}
                 <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex-shrink-0 p-2 rounded-full text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+                    className="flex-shrink-0 p-2.5 rounded-full text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
                     title="Upload image"
                 >
                     <Image className="w-5 h-5" />
@@ -103,8 +103,8 @@ export function MessageInput({
                     className="hidden"
                 />
 
-                {/* Text Input Bubble - Rounded pill shape */}
-                <div className="flex-1 flex items-center px-4 py-2.5 rounded-full bg-[var(--bg-tertiary)] border-none">
+                {/* Text Input - Full rounded pill, no inner rectangle */}
+                <div className="flex-1">
                     <textarea
                         ref={textareaRef}
                         value={message}
@@ -114,25 +114,26 @@ export function MessageInput({
                         disabled={isLoading}
                         rows={1}
                         className={cn(
-                            'flex-1 bg-transparent resize-none text-sm text-center',
+                            'w-full px-5 py-3 rounded-full text-sm text-center',
+                            'bg-[var(--bg-tertiary)]',
                             'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
                             'focus:outline-none focus:ring-0 border-none outline-none',
-                            'disabled:opacity-50 max-h-[120px]',
+                            'disabled:opacity-50 max-h-[120px] resize-none',
                             'caret-[var(--accent-primary)]'
                         )}
                         style={{ caretColor: 'var(--accent-primary)' }}
                     />
                 </div>
 
-                {/* Send Button - Outside the bubble */}
+                {/* Send Button - Navy background */}
                 <button
                     type="submit"
                     disabled={(!message.trim() && !selectedImage) || isLoading}
                     className={cn(
-                        'flex-shrink-0 p-2 rounded-full transition-all',
+                        'flex-shrink-0 p-2.5 rounded-full transition-all',
                         (message.trim() || selectedImage) && !isLoading
-                            ? 'text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-white'
-                            : 'text-[var(--text-disabled)]'
+                            ? 'bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary-hover)]'
+                            : 'bg-[var(--bg-tertiary)] text-[var(--text-disabled)]'
                     )}
                 >
                     {isLoading ? (
@@ -143,8 +144,8 @@ export function MessageInput({
                 </button>
             </form>
 
-            <p className="mt-1.5 text-[10px] text-[var(--text-muted)] text-center">
-                Press <kbd className="px-1 py-0.5 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">Enter</kbd> to send
+            <p className="mt-2 text-[10px] text-[var(--text-muted)] text-center">
+                Press <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">Enter</kbd> to send
             </p>
         </div>
     );
