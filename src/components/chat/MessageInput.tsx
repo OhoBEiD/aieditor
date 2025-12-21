@@ -103,27 +103,29 @@ export function MessageInput({
                     className="hidden"
                 />
 
-                {/* Text Input - Compact rounded pill */}
-                <div className="flex-1">
-                    <textarea
-                        ref={textareaRef}
-                        value={message}
-                        onChange={(e) => setMessage(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder={placeholder}
-                        disabled={isLoading}
-                        rows={1}
-                        className={cn(
-                            'w-full px-4 py-2 rounded-full text-sm text-center',
-                            'bg-[var(--bg-tertiary)]',
-                            'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
-                            'focus:outline-none focus:ring-0 border-none outline-none',
-                            'disabled:opacity-50 max-h-[80px] resize-none',
-                            'caret-[var(--accent-primary)]'
-                        )}
-                        style={{ caretColor: 'var(--accent-primary)' }}
-                    />
-                </div>
+                {/* Text Input - Single line */}
+                <input
+                    type="text"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSubmit(e);
+                        }
+                    }}
+                    placeholder={placeholder}
+                    disabled={isLoading}
+                    className={cn(
+                        'flex-1 px-4 py-2 rounded-full text-sm text-center',
+                        'bg-[var(--bg-tertiary)]',
+                        'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
+                        'focus:outline-none focus:ring-0 border-none outline-none',
+                        'disabled:opacity-50',
+                        'caret-[var(--accent-primary)]'
+                    )}
+                    style={{ caretColor: 'var(--accent-primary)' }}
+                />
 
                 {/* Send Button - Navy background */}
                 <button
