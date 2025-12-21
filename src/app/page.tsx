@@ -478,7 +478,7 @@ export default function Home() {
                 <div className="h-full relative">
                     {/* Floating Side Panel */}
                     <div className={cn(
-                        'absolute right-4 top-1/2 -translate-y-1/2 flex flex-col bg-[var(--bg-secondary)] rounded-2xl shadow-2xl border border-[var(--border-default)] overflow-hidden transition-all duration-300 ease-in-out',
+                        'absolute right-4 top-1/2 -translate-y-1/2 flex flex-col bg-[var(--bg-secondary)] rounded-3xl shadow-2xl border border-[var(--border-default)] overflow-hidden transition-all duration-300 ease-in-out',
                         isPanelOpen
                             ? 'w-[320px] h-[80vh] opacity-100 scale-100'
                             : 'w-0 h-0 opacity-0 scale-95'
