@@ -485,32 +485,23 @@ export default function Home() {
                         'flex flex-col border-r border-[var(--border-default)] bg-[var(--bg-secondary)] transition-all duration-300 ease-in-out',
                         isPanelOpen ? 'w-[340px]' : 'w-0 overflow-hidden'
                     )}>
-                        {/* Header with Chat/Settings Toggle */}
+                        {/* Header */}
                         <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)] flex items-center justify-between">
-                            <div className="flex items-center gap-1 bg-[var(--bg-tertiary)] rounded-full p-1">
+                            <span className="text-sm font-medium text-[var(--text-primary)]">
+                                {showSettings ? 'Settings' : 'Chat'}
+                            </span>
+                            <div className="flex items-center gap-1">
                                 <button
-                                    onClick={() => setShowSettings(false)}
+                                    onClick={() => setShowSettings(!showSettings)}
                                     className={cn(
-                                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-                                        !showSettings
-                                            ? 'bg-white text-[var(--text-primary)] shadow-sm'
-                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                                    )}
-                                >
-                                    <MessageSquare className="w-3.5 h-3.5" />
-                                    Chat
-                                </button>
-                                <button
-                                    onClick={() => setShowSettings(true)}
-                                    className={cn(
-                                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+                                        'p-1.5 rounded-md transition-colors',
                                         showSettings
-                                            ? 'bg-white text-[var(--text-primary)] shadow-sm'
-                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                                            ? 'bg-[var(--accent-primary)] text-white'
+                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
                                     )}
+                                    title={showSettings ? 'Back to Chat' : 'Settings'}
                                 >
-                                    <Settings className="w-3.5 h-3.5" />
-                                    Settings
+                                    <Settings className="w-4 h-4" />
                                 </button>
                             </div>
                         </div>
@@ -577,40 +568,24 @@ export default function Home() {
                             >
                                 Show Preview
                             </button>
-                            <button
-                                onClick={() => setIsPanelOpen(false)}
-                                className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-
-                        {/* Chat/Settings Toggle */}
-                        <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)]">
-                            <div className="flex items-center gap-1 bg-[var(--bg-tertiary)] rounded-full p-1">
+                            <div className="flex items-center gap-1">
                                 <button
-                                    onClick={() => setShowSettings(false)}
+                                    onClick={() => setShowSettings(!showSettings)}
                                     className={cn(
-                                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-                                        !showSettings
-                                            ? 'bg-white text-[var(--text-primary)] shadow-sm'
-                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                                        'p-1.5 rounded-md transition-colors',
+                                        showSettings
+                                            ? 'bg-[var(--accent-primary)] text-white'
+                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
                                     )}
+                                    title={showSettings ? 'Back to Chat' : 'Settings'}
                                 >
-                                    <MessageSquare className="w-3.5 h-3.5" />
-                                    Chat
+                                    <Settings className="w-4 h-4" />
                                 </button>
                                 <button
-                                    onClick={() => setShowSettings(true)}
-                                    className={cn(
-                                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-                                        showSettings
-                                            ? 'bg-white text-[var(--text-primary)] shadow-sm'
-                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                                    )}
+                                    onClick={() => setIsPanelOpen(false)}
+                                    className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
                                 >
-                                    <Settings className="w-3.5 h-3.5" />
-                                    Settings
+                                    <X className="w-4 h-4" />
                                 </button>
                             </div>
                         </div>
