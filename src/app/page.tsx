@@ -55,9 +55,18 @@ export default function Home() {
     const [requestContexts, setRequestContexts] = useState<Map<string, RequestContext>>(new Map());
     const [isDeploying, setIsDeploying] = useState(false);
 
-    // Fix hydration
+    // Fix hydration + restore preferences
     useEffect(() => {
         setIsClient(true);
+        // Restore preview mode from localStorage
+        const savedShowPreview = localStorage.getItem('showPreview');
+        if (savedShowPreview !== null) {
+            setShowPreview(savedShowPreview === 'true');
+        }
+        const savedPanelOpen = localStorage.getItem('isPanelOpen');
+        if (savedPanelOpen !== null) {
+            setIsPanelOpen(savedPanelOpen === 'true');
+        }
     }, []);
 
     // Load sessions on mount
@@ -66,6 +75,14 @@ export default function Home() {
             loadSessions();
         }
     }, [isClient]);
+
+    // Save preview preferences to localStorage
+    useEffect(() => {
+        if (isClient) {
+            localStorage.setItem('showPreview', String(showPreview));
+            localStorage.setItem('isPanelOpen', String(isPanelOpen));
+        }
+    }, [isClient, showPreview, isPanelOpen]);
 
     // Load messages when session changes + persist to localStorage
     useEffect(() => {
