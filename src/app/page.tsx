@@ -4,10 +4,11 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ChatSelector } from '@/components/chat/ChatSelector';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { PreviewPanel } from '@/components/editor/PreviewPanel';
+import { DeploymentSettings } from '@/components/settings/DeploymentSettings';
 import { supabase } from '@/lib/supabase/client';
 import { sendEditRequest, applyChanges, rollbackChanges } from '@/lib/n8n/client';
 import { cn } from '@/lib/utils';
-import { Bot, X } from 'lucide-react';
+import { Bot, X, Settings, MessageSquare } from 'lucide-react';
 
 // Configuration - Use a valid UUID for the demo client
 const DEMO_CLIENT_ID = '00000000-0000-0000-0000-000000000001';
@@ -54,6 +55,9 @@ export default function Home() {
     const [previewUrl, setPreviewUrl] = useState<string | undefined>();
     const [requestContexts, setRequestContexts] = useState<Map<string, RequestContext>>(new Map());
     const [isDeploying, setIsDeploying] = useState(false);
+
+    // Settings view toggle
+    const [showSettings, setShowSettings] = useState(false);
 
     // Fix hydration + restore preferences
     useEffect(() => {
@@ -481,27 +485,68 @@ export default function Home() {
                         'flex flex-col border-r border-[var(--border-default)] bg-[var(--bg-secondary)] transition-all duration-300 ease-in-out',
                         isPanelOpen ? 'w-[340px]' : 'w-0 overflow-hidden'
                     )}>
-                        {/* Chat Selector */}
-                        <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)]">
-                            <ChatSelector
-                                sessions={sessions as any}
-                                activeSessionId={activeSessionId}
-                                onSelectSession={setActiveSessionId}
-                                onNewChat={handleNewChat}
-                                onDeleteChat={handleDeleteChat}
-                                onRenameChat={handleRenameChat}
-                            />
+                        {/* Header with Chat/Settings Toggle */}
+                        <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)] flex items-center justify-between">
+                            <div className="flex items-center gap-1 bg-[var(--bg-tertiary)] rounded-full p-1">
+                                <button
+                                    onClick={() => setShowSettings(false)}
+                                    className={cn(
+                                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+                                        !showSettings
+                                            ? 'bg-white text-[var(--text-primary)] shadow-sm'
+                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                                    )}
+                                >
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                    Chat
+                                </button>
+                                <button
+                                    onClick={() => setShowSettings(true)}
+                                    className={cn(
+                                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+                                        showSettings
+                                            ? 'bg-white text-[var(--text-primary)] shadow-sm'
+                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                                    )}
+                                >
+                                    <Settings className="w-3.5 h-3.5" />
+                                    Settings
+                                </button>
+                            </div>
                         </div>
-                        {/* Chat */}
-                        <div className="flex-1 overflow-hidden">
-                            <ChatPanel
-                                messages={messages as any}
-                                onSendMessage={handleSendMessage}
-                                onRevert={handleRevert}
-                                isLoading={isSending}
-                                isLoadingMessages={isLoadingMessages}
-                            />
-                        </div>
+
+                        {/* Conditional Content */}
+                        {showSettings ? (
+                            /* Settings View */
+                            <div className="flex-1 overflow-y-auto">
+                                <DeploymentSettings />
+                            </div>
+                        ) : (
+                            /* Chat View */
+                            <>
+                                {/* Chat Selector */}
+                                <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)]">
+                                    <ChatSelector
+                                        sessions={sessions as any}
+                                        activeSessionId={activeSessionId}
+                                        onSelectSession={setActiveSessionId}
+                                        onNewChat={handleNewChat}
+                                        onDeleteChat={handleDeleteChat}
+                                        onRenameChat={handleRenameChat}
+                                    />
+                                </div>
+                                {/* Chat */}
+                                <div className="flex-1 overflow-hidden">
+                                    <ChatPanel
+                                        messages={messages as any}
+                                        onSendMessage={handleSendMessage}
+                                        onRevert={handleRevert}
+                                        isLoading={isSending}
+                                        isLoadingMessages={isLoadingMessages}
+                                    />
+                                </div>
+                            </>
+                        )}
                     </div>
 
                     {/* Preview */}
@@ -540,27 +585,68 @@ export default function Home() {
                             </button>
                         </div>
 
-                        {/* Chat Selector */}
+                        {/* Chat/Settings Toggle */}
                         <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)]">
-                            <ChatSelector
-                                sessions={sessions as any}
-                                activeSessionId={activeSessionId}
-                                onSelectSession={setActiveSessionId}
-                                onNewChat={handleNewChat}
-                                onDeleteChat={handleDeleteChat}
-                                onRenameChat={handleRenameChat}
-                            />
+                            <div className="flex items-center gap-1 bg-[var(--bg-tertiary)] rounded-full p-1">
+                                <button
+                                    onClick={() => setShowSettings(false)}
+                                    className={cn(
+                                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+                                        !showSettings
+                                            ? 'bg-white text-[var(--text-primary)] shadow-sm'
+                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                                    )}
+                                >
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                    Chat
+                                </button>
+                                <button
+                                    onClick={() => setShowSettings(true)}
+                                    className={cn(
+                                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+                                        showSettings
+                                            ? 'bg-white text-[var(--text-primary)] shadow-sm'
+                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                                    )}
+                                >
+                                    <Settings className="w-3.5 h-3.5" />
+                                    Settings
+                                </button>
+                            </div>
                         </div>
-                        {/* Chat */}
-                        <div className="flex-1 overflow-hidden">
-                            <ChatPanel
-                                messages={messages as any}
-                                onSendMessage={handleSendMessage}
-                                onRevert={handleRevert}
-                                isLoading={isSending}
-                                isLoadingMessages={isLoadingMessages}
-                            />
-                        </div>
+
+                        {/* Conditional Content */}
+                        {showSettings ? (
+                            /* Settings View */
+                            <div className="flex-1 overflow-y-auto">
+                                <DeploymentSettings />
+                            </div>
+                        ) : (
+                            /* Chat View */
+                            <>
+                                {/* Chat Selector */}
+                                <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)]">
+                                    <ChatSelector
+                                        sessions={sessions as any}
+                                        activeSessionId={activeSessionId}
+                                        onSelectSession={setActiveSessionId}
+                                        onNewChat={handleNewChat}
+                                        onDeleteChat={handleDeleteChat}
+                                        onRenameChat={handleRenameChat}
+                                    />
+                                </div>
+                                {/* Chat */}
+                                <div className="flex-1 overflow-hidden">
+                                    <ChatPanel
+                                        messages={messages as any}
+                                        onSendMessage={handleSendMessage}
+                                        onRevert={handleRevert}
+                                        isLoading={isSending}
+                                        isLoadingMessages={isLoadingMessages}
+                                    />
+                                </div>
+                            </>
+                        )}
                     </div>
 
                     {/* Agent Button */}
