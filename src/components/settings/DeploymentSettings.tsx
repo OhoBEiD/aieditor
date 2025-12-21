@@ -39,9 +39,7 @@ interface ProviderConfig {
 interface ProviderInfo {
     id: Provider;
     name: string;
-    description: string;
-    icon: React.ReactNode;
-    color: string;
+    logo: string;
 }
 
 // ============================================
@@ -51,24 +49,18 @@ interface ProviderInfo {
 const providers: ProviderInfo[] = [
     {
         id: 'cloudflare',
-        name: 'Cloudflare Pages',
-        description: 'Global edge network',
-        icon: <Cloud className="w-6 h-6" />,
-        color: 'from-orange-500 to-orange-600',
+        name: 'Cloudflare',
+        logo: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/cloudflare/cloudflare-original.svg',
     },
     {
         id: 'vercel',
         name: 'Vercel',
-        description: 'Frontend cloud platform',
-        icon: <Triangle className="w-6 h-6" />,
-        color: 'from-black to-gray-800',
+        logo: 'https://assets.vercel.com/image/upload/v1588805858/repositories/vercel/logo.png',
     },
     {
         id: 'netlify',
         name: 'Netlify',
-        description: 'Web development platform',
-        icon: <Globe className="w-6 h-6" />,
-        color: 'from-teal-500 to-teal-600',
+        logo: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/netlify/netlify-original.svg',
     },
 ];
 
@@ -76,7 +68,7 @@ const providers: ProviderInfo[] = [
 // Sub-Components
 // ============================================
 
-/** Provider selection card */
+/** Provider selection card - compact */
 function ProviderCard({
     provider,
     isSelected,
@@ -90,31 +82,29 @@ function ProviderCard({
         <button
             onClick={onClick}
             className={cn(
-                'relative flex flex-col items-center p-4 rounded-xl border-2 transition-all duration-200',
-                'hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--accent-primary)]',
+                'relative flex flex-col items-center gap-2 p-3 rounded-lg border transition-all duration-200',
+                'hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-[var(--accent-primary)]',
                 isSelected
-                    ? 'border-[var(--accent-primary)] bg-blue-50 shadow-sm'
+                    ? 'border-[var(--accent-primary)] bg-blue-50'
                     : 'border-[var(--border-default)] bg-white hover:border-[var(--border-hover)]'
             )}
         >
             {/* Selected indicator */}
             {isSelected && (
-                <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-[var(--accent-primary)] flex items-center justify-center">
-                    <Check className="w-3 h-3 text-white" />
+                <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--accent-primary)] flex items-center justify-center">
+                    <Check className="w-2.5 h-2.5 text-white" />
                 </div>
             )}
 
-            {/* Icon */}
-            <div className={cn(
-                'w-12 h-12 rounded-lg flex items-center justify-center text-white bg-gradient-to-br mb-2',
-                provider.color
-            )}>
-                {provider.icon}
-            </div>
+            {/* Logo */}
+            <img
+                src={provider.logo}
+                alt={provider.name}
+                className="w-8 h-8 object-contain"
+            />
 
-            {/* Name & description */}
-            <span className="text-sm font-medium text-[var(--text-primary)]">{provider.name}</span>
-            <span className="text-xs text-[var(--text-muted)]">{provider.description}</span>
+            {/* Name only */}
+            <span className="text-xs font-medium text-[var(--text-primary)]">{provider.name}</span>
         </button>
     );
 }
