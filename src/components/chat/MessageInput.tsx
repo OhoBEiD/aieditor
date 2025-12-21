@@ -103,7 +103,7 @@ export function MessageInput({
                     className="hidden"
                 />
 
-                {/* Text Input - Full rounded pill, no inner rectangle */}
+                {/* Text Input - Compact rounded pill */}
                 <div className="flex-1">
                     <textarea
                         ref={textareaRef}
@@ -114,11 +114,11 @@ export function MessageInput({
                         disabled={isLoading}
                         rows={1}
                         className={cn(
-                            'w-full px-5 py-3 rounded-full text-sm text-center',
+                            'w-full px-4 py-2 rounded-full text-sm text-center',
                             'bg-[var(--bg-tertiary)]',
                             'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
                             'focus:outline-none focus:ring-0 border-none outline-none',
-                            'disabled:opacity-50 max-h-[120px] resize-none',
+                            'disabled:opacity-50 max-h-[80px] resize-none',
                             'caret-[var(--accent-primary)]'
                         )}
                         style={{ caretColor: 'var(--accent-primary)' }}
