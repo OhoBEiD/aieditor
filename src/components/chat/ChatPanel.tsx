@@ -47,9 +47,9 @@ export function ChatPanel({
     }, [displayedMessages]);
 
     return (
-        <div className="flex flex-col h-full bg-[var(--bg-secondary)]">
+        <div className="flex flex-col h-full bg-[var(--bg-secondary)] overflow-hidden">
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
                 {isTransitioning || isLoadingMessages ? (
                     <MessagesSkeleton />
                 ) : displayedMessages.length === 0 ? (
