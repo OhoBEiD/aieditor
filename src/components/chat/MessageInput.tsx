@@ -147,7 +147,7 @@ export function MessageInput({
                     disabled={isLoading}
                     rows={1}
                     className={cn(
-                        'flex-1 px-3 py-1.5 rounded-2xl text-xs resize-none',
+                        'flex-1 px-3 py-1.5 rounded-2xl text-xs resize-none text-center',
                         'bg-[var(--bg-tertiary)]',
                         'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
                         'focus:outline-none focus:ring-0 border-none outline-none',
