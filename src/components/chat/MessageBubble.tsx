@@ -68,15 +68,32 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
         minute: '2-digit',
     });
 
+    // Get image from metadata if present
+    const messageImage = (message.metadata as { image?: string } | undefined)?.image;
+
     // User message - rounded bubble style
     if (isUser) {
         return (
             <div className="group flex justify-end p-3">
                 <div className="max-w-[80%]">
                     <div className="bg-[var(--bg-tertiary)] rounded-2xl rounded-br-sm px-4 py-2.5 shadow-sm">
-                        <p className="text-xs text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed">
-                            {message.content}
-                        </p>
+                        {/* Attached Image */}
+                        {messageImage && (
+                            <div className="mb-2">
+                                <img
+                                    src={messageImage}
+                                    alt="Attached"
+                                    className="max-w-full max-h-48 rounded-lg object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                                    onClick={() => window.open(messageImage, '_blank')}
+                                />
+                            </div>
+                        )}
+                        {/* Message Text */}
+                        {message.content && message.content !== 'Sent an image' && (
+                            <p className="text-xs text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed">
+                                {message.content}
+                            </p>
+                        )}
                     </div>
                     <div className="flex items-center justify-end gap-2 mt-1 px-1">
                         <button

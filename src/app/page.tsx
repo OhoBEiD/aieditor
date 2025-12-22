@@ -230,8 +230,18 @@ export default function Home() {
         }
     }, []);
 
-    const handleSendMessage = useCallback(async (content: string) => {
-        if (!content.trim()) return;
+    const handleSendMessage = useCallback(async (content: string, image?: File) => {
+        if (!content.trim() && !image) return;
+
+        // Convert image to base64 if provided
+        let imageData: string | undefined;
+        if (image) {
+            imageData = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(image);
+            });
+        }
 
         // Create session if none exists
         let sessionId = activeSessionId;
@@ -241,7 +251,7 @@ export default function Home() {
                     .from('chat_sessions')
                     .insert({
                         client_id: DEMO_CLIENT_ID,
-                        title: content.slice(0, 40) + (content.length > 40 ? '...' : ''),
+                        title: (content || 'Image message').slice(0, 40) + (content.length > 40 ? '...' : ''),
                         is_active: true,
                     })
                     .select()
@@ -262,13 +272,14 @@ export default function Home() {
         setIsSending(true);
 
         try {
-            // Save user message
+            // Save user message with image metadata if present
             const { data: userMsg, error: userError } = await supabase
                 .from('messages')
                 .insert({
                     session_id: sessionId,
                     role: 'user',
-                    content: content.trim(),
+                    content: content.trim() || 'Sent an image',
+                    metadata: imageData ? { image: imageData } : undefined,
                 })
                 .select()
                 .single();
