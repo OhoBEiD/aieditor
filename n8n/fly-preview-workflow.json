@@ -1,0 +1,348 @@
+{
+    "name": "AI Editor - Preview (Fly.io Instant)",
+    "nodes": [
+        {
+            "parameters": {
+                "content": "## 🚀 FLY.IO INSTANT PREVIEW\n\nUses Fly.io orchestrator for instant HMR previews.\nNo build time - changes apply in <1 second!",
+                "height": 120,
+                "width": 300,
+                "color": 5
+            },
+            "id": "sticky-1",
+            "name": "Sticky Note",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [
+                -200,
+                -100
+            ]
+        },
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "preview/start",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "webhook-start",
+            "name": "Webhook - Start Preview",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                100,
+                100
+            ],
+            "webhookId": "preview-start"
+        },
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "preview/apply",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "webhook-apply",
+            "name": "Webhook - Apply Diff",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                100,
+                300
+            ],
+            "webhookId": "preview-apply"
+        },
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "preview/deploy",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "webhook-deploy",
+            "name": "Webhook - Deploy",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                100,
+                500
+            ],
+            "webhookId": "preview-deploy"
+        },
+        {
+            "parameters": {
+                "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst required = ['siteId', 'repoUrl'];\nconst missing = required.filter(k => !body[k]);\nif (missing.length) throw new Error('Missing: ' + missing.join(', '));\n\nreturn [{\n  json: {\n    siteId: body.siteId,\n    repoUrl: body.repoUrl,\n    branch: body.branch || 'main',\n    orchestratorUrl: $env.FLY_ORCHESTRATOR_URL || 'https://preview-orchestrator.fly.dev',\n    previewDomain: $env.PREVIEW_DOMAIN || 'preview.automatelb.com'\n  }\n}];"
+            },
+            "id": "validate-start",
+            "name": "Validate Start Input",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                320,
+                100
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const body = $input.first().json.body || $input.first().json;\nif (!body.siteId || !body.unifiedDiff) {\n  throw new Error('Missing siteId or unifiedDiff');\n}\n\nreturn [{\n  json: {\n    siteId: body.siteId,\n    unifiedDiff: body.unifiedDiff,\n    orchestratorUrl: $env.FLY_ORCHESTRATOR_URL || 'https://preview-orchestrator.fly.dev'\n  }\n}];"
+            },
+            "id": "validate-apply",
+            "name": "Validate Apply Input",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                320,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const body = $input.first().json.body || $input.first().json;\nif (!body.siteId) {\n  throw new Error('Missing siteId');\n}\n\nreturn [{\n  json: {\n    siteId: body.siteId,\n    mode: body.mode || 'pr',\n    title: body.title || 'AI Editor Changes',\n    body: body.body || 'Changes made via AI Editor',\n    orchestratorUrl: $env.FLY_ORCHESTRATOR_URL || 'https://preview-orchestrator.fly.dev'\n  }\n}];"
+            },
+            "id": "validate-deploy",
+            "name": "Validate Deploy Input",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                320,
+                500
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $json.orchestratorUrl }}/preview/start",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ siteId: $json.siteId, repoUrl: $json.repoUrl, branch: $json.branch }) }}",
+                "options": {
+                    "timeout": 60000
+                }
+            },
+            "id": "fly-start",
+            "name": "Fly - Start Preview",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                540,
+                100
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $json.orchestratorUrl }}/preview/apply",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ siteId: $json.siteId, unifiedDiff: $json.unifiedDiff }) }}",
+                "options": {
+                    "timeout": 30000
+                }
+            },
+            "id": "fly-apply",
+            "name": "Fly - Apply Diff",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                540,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $json.orchestratorUrl }}/preview/deploy",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ siteId: $json.siteId, mode: $json.mode, title: $json.title, body: $json.body }) }}",
+                "options": {
+                    "timeout": 60000
+                }
+            },
+            "id": "fly-deploy",
+            "name": "Fly - Deploy",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                540,
+                500
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify({ success: true, previewUrl: $json.previewUrl, status: $json.status, port: $json.port }) }}",
+                "options": {}
+            },
+            "id": "response-start",
+            "name": "Response - Start",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                760,
+                100
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify({ success: true, filesChanged: $json.filesChanged, needsRestart: $json.needsRestart }) }}",
+                "options": {}
+            },
+            "id": "response-apply",
+            "name": "Response - Apply",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                760,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify({ success: true, mode: $json.mode, prUrl: $json.prUrl, branch: $json.branch }) }}",
+                "options": {}
+            },
+            "id": "response-deploy",
+            "name": "Response - Deploy",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                760,
+                500
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook - Start Preview": {
+            "main": [
+                [
+                    {
+                        "node": "Validate Start Input",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Webhook - Apply Diff": {
+            "main": [
+                [
+                    {
+                        "node": "Validate Apply Input",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Webhook - Deploy": {
+            "main": [
+                [
+                    {
+                        "node": "Validate Deploy Input",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Validate Start Input": {
+            "main": [
+                [
+                    {
+                        "node": "Fly - Start Preview",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Validate Apply Input": {
+            "main": [
+                [
+                    {
+                        "node": "Fly - Apply Diff",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Validate Deploy Input": {
+            "main": [
+                [
+                    {
+                        "node": "Fly - Deploy",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fly - Start Preview": {
+            "main": [
+                [
+                    {
+                        "node": "Response - Start",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fly - Apply Diff": {
+            "main": [
+                [
+                    {
+                        "node": "Response - Apply",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fly - Deploy": {
+            "main": [
+                [
+                    {
+                        "node": "Response - Deploy",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "pinData": {},
+    "meta": {
+        "templateCredsSetupCompleted": true
+    }
+}
