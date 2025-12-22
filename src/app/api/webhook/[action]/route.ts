@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// n8n webhook URLs
-const WEBHOOKS = {
-    'edit-ui': 'https://daveisgm05.app.n8n.cloud/webhook/agent/edit-ui',
-    'apply': 'https://daveisgm05.app.n8n.cloud/webhook/agent/apply',
-    'rollback': 'https://daveisgm05.app.n8n.cloud/webhook/agent/rollback',
-    'preview': 'https://daveisgm05.app.n8n.cloud/webhook-test/preview/deploy',
+// n8n webhook URLs from environment variables
+const WEBHOOKS: Record<string, string | undefined> = {
+    'edit-ui': process.env.N8N_WEBHOOK_EDIT_UI,
+    'apply': process.env.N8N_WEBHOOK_APPLY,
+    'rollback': process.env.N8N_WEBHOOK_ROLLBACK,
+    'preview': process.env.N8N_WEBHOOK_PREVIEW,
 };
 
 export async function POST(
