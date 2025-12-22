@@ -77,12 +77,12 @@ export function ChatSelector({
     };
 
     return (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full">
             {/* New Chat Button */}
             <button
                 onClick={onNewChat}
                 className={cn(
-                    'flex items-center justify-center w-9 h-9 rounded-lg',
+                    'flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0',
                     'bg-[var(--accent-primary)] text-white',
                     'hover:bg-[var(--accent-primary-hover)]',
                     'transition-all duration-200 shadow-md'
@@ -92,8 +92,8 @@ export function ChatSelector({
                 <Plus className="w-5 h-5" />
             </button>
 
-            {/* Chat Dropdown */}
-            <div className="relative flex-1" ref={dropdownRef}>
+            {/* Chat Dropdown - fixed width */}
+            <div className="relative flex-1 min-w-0" ref={dropdownRef}>
                 <button
                     onClick={() => setIsOpen(!isOpen)}
                     className={cn(
