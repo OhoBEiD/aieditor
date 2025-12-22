@@ -478,7 +478,7 @@ export default function Home() {
 
     if (!isClient) {
         return (
-            <div className="h-screen bg-[var(--bg-primary)] flex items-center justify-center">
+            <div className="bg-green-500 h-screen bg-[var(--bg-primary)] flex items-center justify-center">
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-secondary)] animate-pulse" />
                     <span className="text-[var(--text-muted)] animate-pulse">Loading...</span>
