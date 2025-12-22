@@ -118,10 +118,10 @@ export function MessageInput({
                 <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex-shrink-0 p-2.5 rounded-full text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+                    className="flex-shrink-0 p-2 rounded-full text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
                     title="Upload image"
                 >
-                    <Image className="w-5 h-5" />
+                    <Image className="w-4 h-4" />
                 </button>
                 <input
                     ref={fileInputRef}
@@ -147,7 +147,7 @@ export function MessageInput({
                     disabled={isLoading}
                     rows={1}
                     className={cn(
-                        'flex-1 px-4 py-2 rounded-2xl text-sm resize-none',
+                        'flex-1 px-3 py-1.5 rounded-2xl text-xs resize-none',
                         'bg-[var(--bg-tertiary)]',
                         'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
                         'focus:outline-none focus:ring-0 border-none outline-none',
@@ -156,8 +156,8 @@ export function MessageInput({
                     )}
                     style={{
                         caretColor: 'var(--accent-primary)',
-                        minHeight: '40px',
-                        maxHeight: '200px' // ~10 lines
+                        minHeight: '32px',
+                        maxHeight: '180px' // ~10 lines
                     }}
                 />
 
@@ -166,16 +166,16 @@ export function MessageInput({
                     type="submit"
                     disabled={(!message.trim() && !selectedImage) || isLoading}
                     className={cn(
-                        'flex-shrink-0 p-2.5 rounded-full transition-all',
+                        'flex-shrink-0 p-2 rounded-full transition-all',
                         (message.trim() || selectedImage) && !isLoading
                             ? 'bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary-hover)]'
                             : 'bg-[var(--bg-tertiary)] text-[var(--text-disabled)]'
                     )}
                 >
                     {isLoading ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                        <Send className="w-5 h-5" />
+                        <Send className="w-4 h-4" />
                     )}
                 </button>
             </form>
