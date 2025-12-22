@@ -157,7 +157,8 @@ export function MessageInput({
                     style={{
                         caretColor: 'var(--accent-primary)',
                         minHeight: '32px',
-                        maxHeight: '180px' // ~10 lines
+                        maxHeight: '180px', // ~10 lines
+                        lineHeight: '32px'
                     }}
                 />
 
