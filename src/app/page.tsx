@@ -46,6 +46,17 @@ export default function Home() {
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
+
+    // Helper to add message without duplicates
+    const addMessage = useCallback((newMsg: Message) => {
+        setMessages(prev => {
+            // Check if message already exists
+            if (prev.some(m => m.id === newMsg.id)) {
+                return prev;
+            }
+            return [...prev, newMsg];
+        });
+    }, []);
     const [isSending, setIsSending] = useState(false);
     const [isClient, setIsClient] = useState(false);
     const [isLoadingSessions, setIsLoadingSessions] = useState(true);
@@ -300,7 +311,7 @@ export default function Home() {
                 .single();
 
             if (userError) throw userError;
-            setMessages(prev => [...prev, userMsg as Message]);
+            addMessage(userMsg as Message);
 
             // Update session title if first message
             if (messages.length === 0) {
@@ -342,7 +353,7 @@ export default function Home() {
                     .single();
 
                 if (aiError) throw aiError;
-                setMessages(prev => [...prev, aiMsg as Message]);
+                addMessage(aiMsg as Message);
 
                 // Store context
                 setRequestContexts(prev => new Map(prev).set(aiMsg.id, {
@@ -414,9 +425,7 @@ export default function Home() {
                     .select()
                     .single();
 
-                if (revertMsg) {
-                    setMessages(prev => [...prev, revertMsg as Message]);
-                }
+                if (revertMsg) addMessage(revertMsg as Message);
             }
         } catch (err) {
             console.error('Failed to revert:', err);
@@ -432,12 +441,10 @@ export default function Home() {
                     .select()
                     .single();
 
-                if (errorMsg) {
-                    setMessages(prev => [...prev, errorMsg as Message]);
-                }
+                if (errorMsg) addMessage(errorMsg as Message);
             }
         }
-    }, [requestContexts, activeSessionId]);
+    }, [requestContexts, activeSessionId, addMessage]);
 
     const handleDeploy = useCallback(async () => {
         const pendingContext = Array.from(requestContexts.values())
@@ -476,16 +483,14 @@ export default function Home() {
                     .select()
                     .single();
 
-                if (deployMsg) {
-                    setMessages(prev => [...prev, deployMsg as Message]);
-                }
+                if (deployMsg) addMessage(deployMsg as Message);
             }
         } catch (err) {
             console.error('Failed to deploy:', err);
         } finally {
             setIsDeploying(false);
         }
-    }, [requestContexts, activeSessionId]);
+    }, [requestContexts, activeSessionId, addMessage]);
 
     const hasPendingChanges = Array.from(requestContexts.values()).some(
         ctx => ctx.status === 'preview_ready'

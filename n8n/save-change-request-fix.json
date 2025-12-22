@@ -1,0 +1,31 @@
+{
+  "parameters": {
+    "method": "POST",
+    "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/code_versions",
+    "sendHeaders": true,
+    "headerParameters": {
+      "parameters": [
+        {
+          "name": "apikey",
+          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Prefer",
+          "value": "return=representation"
+        }
+      ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({\n  site_id: $('Final Aggregate').item.json.site?.id || $('Final Aggregate').item.json.siteId,\n  request_id: $('Final Aggregate').item.json.requestId,\n  instruction: $('Final Aggregate').item.json.message || '',\n  plan_json: $('Final Aggregate').item.json.plan || {},\n  diff: $('Final Aggregate').item.json.plan?.unifiedDiff || '',\n  status: 'preview_ready',\n  preview_url: $('Preview Deploy1').item?.json?.previewUrl || $('Create PR1').item?.json?.html_url || '',\n  pr_url: $('Create PR1').item?.json?.html_url || '',\n  created_at: new Date().toISOString()\n}) }}",
+    "options": {}
+  }
+}
