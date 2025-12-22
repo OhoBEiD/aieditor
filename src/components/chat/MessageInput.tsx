@@ -80,11 +80,17 @@ export function MessageInput({
         }
     };
 
-    // Auto-resize textarea
+    // Auto-resize textarea up to max height (~10 lines)
     React.useEffect(() => {
         if (textareaRef.current) {
+            // Reset height to auto to get the correct scrollHeight
             textareaRef.current.style.height = 'auto';
-            textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+            // Calculate new height, capped at 200px (~10 lines)
+            const maxHeight = 200;
+            const newHeight = Math.min(textareaRef.current.scrollHeight, maxHeight);
+            textareaRef.current.style.height = `${newHeight}px`;
+            // Enable scrolling if content exceeds max height
+            textareaRef.current.style.overflowY = textareaRef.current.scrollHeight > maxHeight ? 'auto' : 'hidden';
         }
     }, [message]);
 
@@ -125,13 +131,13 @@ export function MessageInput({
                     className="hidden"
                 />
 
-                {/* Text Input - Single line */}
-                <input
-                    type="text"
+                {/* Text Input - Auto-expanding textarea */}
+                <textarea
+                    ref={textareaRef}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
                             handleSubmit(e);
                         }
@@ -139,15 +145,20 @@ export function MessageInput({
                     onPaste={handlePaste}
                     placeholder={placeholder}
                     disabled={isLoading}
+                    rows={1}
                     className={cn(
-                        'flex-1 px-4 py-2 rounded-full text-xs text-center',
+                        'flex-1 px-4 py-2 rounded-2xl text-sm resize-none',
                         'bg-[var(--bg-tertiary)]',
                         'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
                         'focus:outline-none focus:ring-0 border-none outline-none',
                         'disabled:opacity-50',
                         'caret-[var(--accent-primary)]'
                     )}
-                    style={{ caretColor: 'var(--accent-primary)' }}
+                    style={{
+                        caretColor: 'var(--accent-primary)',
+                        minHeight: '40px',
+                        maxHeight: '200px' // ~10 lines
+                    }}
                 />
 
                 {/* Send Button - Navy background */}
