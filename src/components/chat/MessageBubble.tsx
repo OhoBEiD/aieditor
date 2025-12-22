@@ -70,43 +70,99 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
 
     // Get image from metadata if present
     const messageImage = (message.metadata as { image?: string } | undefined)?.image;
+    const [showImagePopup, setShowImagePopup] = React.useState(false);
+    const [copiedImage, setCopiedImage] = React.useState(false);
+
+    const handleCopyImage = async () => {
+        if (!messageImage) return;
+        try {
+            const response = await fetch(messageImage);
+            const blob = await response.blob();
+            await navigator.clipboard.write([
+                new ClipboardItem({ [blob.type]: blob })
+            ]);
+            setCopiedImage(true);
+            setTimeout(() => setCopiedImage(false), 2000);
+        } catch {
+            // Fallback: copy as data URL
+            await navigator.clipboard.writeText(messageImage);
+            setCopiedImage(true);
+            setTimeout(() => setCopiedImage(false), 2000);
+        }
+    };
 
     // User message - rounded bubble style
     if (isUser) {
         return (
-            <div className="group flex justify-end p-3">
-                <div className="max-w-[80%]">
-                    <div className="bg-[var(--bg-tertiary)] rounded-2xl rounded-br-sm px-4 py-2.5 shadow-sm">
-                        {/* Attached Image */}
-                        {messageImage && (
-                            <div className="mb-2">
-                                <img
-                                    src={messageImage}
-                                    alt="Attached"
-                                    className="max-w-full max-h-48 rounded-lg object-contain cursor-pointer hover:opacity-90 transition-opacity"
-                                    onClick={() => window.open(messageImage, '_blank')}
-                                />
-                            </div>
-                        )}
-                        {/* Message Text */}
-                        {message.content && message.content !== 'Sent an image' && (
-                            <p className="text-xs text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed">
-                                {message.content}
-                            </p>
-                        )}
-                    </div>
-                    <div className="flex items-center justify-end gap-2 mt-1 px-1">
-                        <button
-                            onClick={handleCopyMessage}
-                            className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-all"
-                            title="Copy message"
+            <>
+                {/* Image Popup Modal */}
+                {showImagePopup && messageImage && (
+                    <div
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+                        onClick={() => setShowImagePopup(false)}
+                    >
+                        <div
+                            className="relative max-w-[90vw] max-h-[90vh] bg-white rounded-xl shadow-2xl p-4"
+                            onClick={(e) => e.stopPropagation()}
                         >
-                            {copiedMessage ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                        </button>
-                        <span className="text-[10px] text-[var(--text-muted)]">{timeString}</span>
+                            <img
+                                src={messageImage}
+                                alt="Full size"
+                                className="max-w-full max-h-[80vh] rounded-lg object-contain"
+                            />
+                            <div className="flex items-center justify-center gap-3 mt-3">
+                                <button
+                                    onClick={handleCopyImage}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium hover:bg-[var(--accent-primary-hover)] transition-colors"
+                                >
+                                    {copiedImage ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                    {copiedImage ? 'Copied!' : 'Copy Image'}
+                                </button>
+                                <button
+                                    onClick={() => setShowImagePopup(false)}
+                                    className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-300 transition-colors"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="group flex justify-end p-3">
+                    <div className="max-w-[80%]">
+                        <div className="bg-[var(--bg-tertiary)] rounded-2xl rounded-br-sm px-4 py-2.5 shadow-sm">
+                            {/* Attached Image - Small Thumbnail */}
+                            {messageImage && (
+                                <div className="mb-2">
+                                    <img
+                                        src={messageImage}
+                                        alt="Attached"
+                                        className="h-16 rounded-lg object-contain cursor-pointer hover:opacity-80 transition-opacity border border-[var(--border-default)]"
+                                        onClick={() => setShowImagePopup(true)}
+                                    />
+                                </div>
+                            )}
+                            {/* Message Text */}
+                            {message.content && message.content !== 'Sent an image' && (
+                                <p className="text-xs text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed">
+                                    {message.content}
+                                </p>
+                            )}
+                        </div>
+                        <div className="flex items-center justify-end gap-2 mt-1 px-1">
+                            <button
+                                onClick={handleCopyMessage}
+                                className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-all"
+                                title="Copy message"
+                            >
+                                {copiedMessage ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            </button>
+                            <span className="text-[10px] text-[var(--text-muted)]">{timeString}</span>
+                        </div>
                     </div>
                 </div>
-            </div>
+            </>
         );
     }
 
