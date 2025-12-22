@@ -59,6 +59,9 @@ export default function Home() {
     // Settings view toggle
     const [showSettings, setShowSettings] = useState(false);
 
+    // Abort controller for canceling requests
+    const abortControllerRef = useRef<AbortController | null>(null);
+
     // Fix hydration + restore preferences
     useEffect(() => {
         setIsClient(true);
@@ -230,6 +233,15 @@ export default function Home() {
         }
     }, []);
 
+    // Handle stop button - abort the current request
+    const handleStop = useCallback(() => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
+        setIsSending(false);
+    }, []);
+
     const handleSendMessage = useCallback(async (content: string, image?: File) => {
         if (!content.trim() && !image) return;
 
@@ -270,6 +282,9 @@ export default function Home() {
         }
 
         setIsSending(true);
+
+        // Create new abort controller for this request
+        abortControllerRef.current = new AbortController();
 
         try {
             // Save user message with image metadata if present
@@ -543,6 +558,7 @@ export default function Home() {
                                         messages={messages as any}
                                         onSendMessage={handleSendMessage}
                                         onRevert={handleRevert}
+                                        onStop={handleStop}
                                         isLoading={isSending}
                                         isLoadingMessages={isLoadingMessages}
                                     />
@@ -627,6 +643,7 @@ export default function Home() {
                                         messages={messages as any}
                                         onSendMessage={handleSendMessage}
                                         onRevert={handleRevert}
+                                        onStop={handleStop}
                                         isLoading={isSending}
                                         isLoadingMessages={isLoadingMessages}
                                     />

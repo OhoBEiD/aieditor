@@ -11,6 +11,7 @@ interface ChatPanelProps {
     messages: Message[];
     onSendMessage: (message: string, image?: File) => void;
     onRevert?: (messageId: string) => void;
+    onStop?: () => void;
     isLoading?: boolean;
     isLoadingMessages?: boolean;
     sessionTitle?: string;
@@ -20,6 +21,7 @@ export function ChatPanel({
     messages,
     onSendMessage,
     onRevert,
+    onStop,
     isLoading = false,
     isLoadingMessages = false,
 }: ChatPanelProps) {
@@ -75,7 +77,7 @@ export function ChatPanel({
             </div>
 
             {/* Input */}
-            <MessageInput onSend={onSendMessage} isLoading={isLoading} />
+            <MessageInput onSend={onSendMessage} onStop={onStop} isLoading={isLoading} />
         </div>
     );
 }

@@ -2,16 +2,18 @@
 
 import React, { useState, useRef } from 'react';
 import { cn } from '@/lib/utils';
-import { Send, Image, X, Loader2 } from 'lucide-react';
+import { Send, Image, X, Square } from 'lucide-react';
 
 interface MessageInputProps {
     onSend: (message: string, image?: File) => void;
+    onStop?: () => void;
     isLoading?: boolean;
     placeholder?: string;
 }
 
 export function MessageInput({
     onSend,
+    onStop,
     isLoading = false,
     placeholder = "Describe what to change...",
 }: MessageInputProps) {
@@ -170,23 +172,30 @@ export function MessageInput({
                     }}
                 />
 
-                {/* Send Button - Navy background */}
-                <button
-                    type="submit"
-                    disabled={(!message.trim() && !selectedImage) || isLoading}
-                    className={cn(
-                        'flex-shrink-0 p-2 rounded-full transition-all',
-                        (message.trim() || selectedImage) && !isLoading
-                            ? 'bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary-hover)]'
-                            : 'bg-[var(--bg-tertiary)] text-[var(--text-disabled)]'
-                    )}
-                >
-                    {isLoading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
+                {/* Send/Stop Button */}
+                {isLoading ? (
+                    <button
+                        type="button"
+                        onClick={onStop}
+                        className="flex-shrink-0 p-2 rounded-full transition-all bg-[var(--accent-danger)] text-white hover:bg-red-600"
+                        title="Stop generation"
+                    >
+                        <Square className="w-4 h-4 fill-current" />
+                    </button>
+                ) : (
+                    <button
+                        type="submit"
+                        disabled={!message.trim() && !selectedImage}
+                        className={cn(
+                            'flex-shrink-0 p-2 rounded-full transition-all',
+                            (message.trim() || selectedImage)
+                                ? 'bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary-hover)]'
+                                : 'bg-[var(--bg-tertiary)] text-[var(--text-disabled)]'
+                        )}
+                    >
                         <Send className="w-4 h-4" />
-                    )}
-                </button>
+                    </button>
+                )}
             </form>
 
             <a
