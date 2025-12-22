@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Required for Cloudflare Pages
+export const runtime = 'edge';
+
 // n8n webhook URLs from environment variables
 const WEBHOOKS: Record<string, string | undefined> = {
     'edit-ui': process.env.N8N_WEBHOOK_EDIT_UI,
