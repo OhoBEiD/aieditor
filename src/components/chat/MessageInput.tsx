@@ -83,11 +83,20 @@ export function MessageInput({
     // Auto-resize textarea up to max height (~10 lines)
     React.useEffect(() => {
         if (textareaRef.current) {
+            const minHeight = 32;
+            const maxHeight = 180;
+
+            // If empty, use minimum height
+            if (!message.trim()) {
+                textareaRef.current.style.height = `${minHeight}px`;
+                textareaRef.current.style.overflowY = 'hidden';
+                return;
+            }
+
             // Reset height to auto to get the correct scrollHeight
             textareaRef.current.style.height = 'auto';
-            // Calculate new height, capped at 200px (~10 lines)
-            const maxHeight = 200;
-            const newHeight = Math.min(textareaRef.current.scrollHeight, maxHeight);
+            // Calculate new height, capped at maxHeight
+            const newHeight = Math.max(minHeight, Math.min(textareaRef.current.scrollHeight, maxHeight));
             textareaRef.current.style.height = `${newHeight}px`;
             // Enable scrolling if content exceeds max height
             textareaRef.current.style.overflowY = textareaRef.current.scrollHeight > maxHeight ? 'auto' : 'hidden';
