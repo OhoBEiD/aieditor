@@ -37,16 +37,35 @@ export async function POST(
             body: JSON.stringify(body),
         });
 
+        // Get response as text first
+        const responseText = await response.text();
+
         if (!response.ok) {
-            const error = await response.text();
             return NextResponse.json(
-                { error: `Webhook failed: ${error}` },
+                { error: `Webhook failed: ${responseText || 'Unknown error'}` },
                 { status: response.status }
             );
         }
 
-        const data = await response.json();
-        return NextResponse.json(data);
+        // Handle empty response
+        if (!responseText || responseText.trim() === '') {
+            return NextResponse.json(
+                { error: 'Empty response from webhook' },
+                { status: 502 }
+            );
+        }
+
+        // Try to parse JSON
+        try {
+            const data = JSON.parse(responseText);
+            return NextResponse.json(data);
+        } catch {
+            // If not valid JSON, return the raw text as an error
+            return NextResponse.json(
+                { error: `Invalid JSON response: ${responseText.slice(0, 200)}` },
+                { status: 502 }
+            );
+        }
     } catch (error) {
         console.error('Webhook proxy error:', error);
         return NextResponse.json(
