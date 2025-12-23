@@ -178,7 +178,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// Merge all fetched files into fileContents\nconst items = $input.all();\nconst firstItem = items[0].json;\nconst fileContents = {};\n\nitems.forEach(item => {\n  const path = item.json.currentFetchPath;\n  if (item.json.content) {\n    try {\n      fileContents[path] = Buffer.from(item.json.content, 'base64').toString('utf8');\n    } catch (e) {\n      fileContents[path] = '// Error decoding file';\n    }\n  } else if (item.json.message && item.json.message.includes('Not Found')) {\n    // File doesn't exist, skip\n  }\n});\n\nreturn [{ json: { ...firstItem, fileContents, currentFetchPath: undefined } }];"
+                "jsCode": "// Merge all fetched files into fileContents\n// IMPORTANT: Get original context from Merge Fly Context, not from GitHub response\nconst originalCtx = $('Merge Fly Context').item.json;\nconst items = $input.all();\nconst fileContents = {};\n\nitems.forEach(item => {\n  const path = item.json.currentFetchPath;\n  if (item.json.content) {\n    try {\n      fileContents[path] = Buffer.from(item.json.content, 'base64').toString('utf8');\n    } catch (e) {\n      fileContents[path] = '// Error decoding file';\n    }\n  }\n});\n\nreturn [{ json: { ...originalCtx, fileContents } }];"
             },
             "id": "merge-files",
             "name": "Merge File Contents",
