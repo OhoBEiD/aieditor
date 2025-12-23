@@ -1,0 +1,652 @@
+{
+    "name": "AI Editor - Edit UI (Fly.io Preview v4)",
+    "nodes": [
+        {
+            "parameters": {
+                "content": "## 🟢 EDIT-UI FLOW v4\nSimplified flow - uses HTTP Request for apply diff\n\nInput: siteId, conversationId, userId, message\nOutput: requestId, diff, previewUrl",
+                "width": 320,
+                "color": 5
+            },
+            "id": "sticky-note",
+            "name": "Sticky Note",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [
+                -896,
+                -384
+            ]
+        },
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "agent/edit-ui",
+                "responseMode": "responseNode",
+                "options": {
+                    "allowedOrigins": "*"
+                }
+            },
+            "id": "webhook-edit-ui",
+            "name": "Webhook Edit UI",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                -432,
+                -1200
+            ],
+            "webhookId": "edit-ui"
+        },
+        {
+            "parameters": {
+                "jsCode": "const b=$input.first().json.body||$input.first().json;\nconst req=['siteId','conversationId','userId','message'];\nconst miss=req.filter(k=>!b[k]);\nif(miss.length)throw new Error('Missing: '+miss.join(', '));\nconst rid='req_'+Date.now()+'_'+Math.random().toString(36).slice(2,11);\nreturn[{json:{siteId:b.siteId,conversationId:b.conversationId,userId:b.userId,message:b.message,pageUrl:b.pageUrl||null,uiContext:b.uiContext||{},requestId:rid}}];"
+            },
+            "id": "validate-input",
+            "name": "Validate Input",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -288,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/sites?site_key=eq.{{$json.siteId}}&select=*",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "load-site",
+            "name": "Load Site",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -144,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const inp=$('Validate Input').item.json;\nconst siteArr=$input.first().json;\nconst site=Array.isArray(siteArr)?siteArr[0]:siteArr;\nif(!site)throw new Error('Site not found');\nconst allowedPaths=site.allowed_paths_json||['src/**'];\nconst repoUrl=site.repo_url||'';\nconst match=repoUrl.match(/github\\.com\\/([^/]+)\\/([^/]+)/);\nconst owner=match?match[1]:'';\nconst repo=match?match[2].replace(/\\.git$/,''):'';\nconst defaultFiles=['src/app/page.tsx','src/app/globals.css','src/app/layout.tsx'];\nreturn[{json:{...inp,site:{id:site.id,name:site.name,repo_url:site.repo_url,default_branch:site.default_branch||'main',stack:site.stack||'unknown',allowedPaths,owner,repo},fileContents:{},filesToFetch:defaultFiles}}];"
+            },
+            "id": "build-context",
+            "name": "Build Context",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                16,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://preview-orchestrator.fly.dev/preview/start",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ siteId: $json.site.id, repoUrl: $json.site.repo_url, branch: $json.site.default_branch }) }}",
+                "options": {
+                    "timeout": 120000
+                }
+            },
+            "id": "fly-start",
+            "name": "Fly Start Preview",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                176,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $('Build Context').item.json;\nconst flyResp = $input.first().json;\nreturn [{ json: { ...ctx, previewUrl: flyResp.previewUrl || '', previewStatus: flyResp.status || 'unknown' } }];"
+            },
+            "id": "merge-fly",
+            "name": "Merge Fly Response",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                336,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $input.first().json;\nconst files = ctx.filesToFetch || [];\nif (files.length === 0) {\n  return [{ json: { ...ctx, fileContents: {} } }];\n}\nreturn files.map(f => ({ json: { ...ctx, currentFetchPath: f } }));"
+            },
+            "id": "prepare-fetch",
+            "name": "Prepare Fetch",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                496,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "url": "=https://api.github.com/repos/{{ $json.site.owner }}/{{ $json.site.repo }}/contents/{{ $json.currentFetchPath }}?ref={{ $json.site.default_branch }}",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Authorization",
+                            "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+                        },
+                        {
+                            "name": "Accept",
+                            "value": "application/vnd.github+json"
+                        }
+                    ]
+                },
+                "options": {
+                    "response": {
+                        "response": {
+                            "neverError": true
+                        }
+                    }
+                }
+            },
+            "id": "fetch-github",
+            "name": "Fetch GitHub Files",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                656,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const originalCtx = $('Merge Fly Response').item.json;\nconst items = $input.all();\nconst fileContents = {};\nitems.forEach(item => {\n  const path = item.json.currentFetchPath;\n  if (item.json.content) {\n    try {\n      fileContents[path] = Buffer.from(item.json.content, 'base64').toString('utf8');\n    } catch (e) {\n      fileContents[path] = '// Error decoding file';\n    }\n  }\n});\nreturn [{ json: { ...originalCtx, fileContents } }];"
+            },
+            "id": "merge-files",
+            "name": "Merge Files",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                816,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "promptType": "define",
+                "text": "={{ $json.message }}",
+                "options": {
+                    "systemMessage": "=You are a front-end code AI. Output ONLY valid JSON.\nALLOWED PATHS: {{ JSON.stringify($json.site.allowedPaths) }}\nFILE CONTENTS:\n{{ Object.entries($json.fileContents).map(([k,v]) => '--- ' + k + ' ---\\n' + v.slice(0,3000)).join('\\n\\n') }}\n\nSchema:\n{\"intent\":\"string\",\"fileTargets\":[{\"path\":\"string\",\"action\":\"modify\"}],\"humanSummary\":\"string\",\"unifiedDiff\":\"git-style diff with --- a/ and +++ b/ headers\",\"warnings\":[]}\n\nRULES:\n1. ONLY modify files in allowed paths starting with src/\n2. NEVER touch .env, secrets, auth, payments\n3. You have the file contents - ALWAYS generate a unifiedDiff\n4. Output raw JSON only - no markdown"
+                }
+            },
+            "id": "opus-plan",
+            "name": "AI Plan",
+            "type": "@n8n/n8n-nodes-langchain.agent",
+            "typeVersion": 1.7,
+            "position": [
+                976,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "model": {
+                    "__rl": true,
+                    "value": "claude-sonnet-4-5-20250929",
+                    "mode": "list"
+                },
+                "options": {}
+            },
+            "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+            "typeVersion": 1.3,
+            "position": [
+                976,
+                -1024
+            ],
+            "id": "anthropic-model",
+            "name": "Anthropic",
+            "credentials": {
+                "anthropicApi": {
+                    "id": "rYzY5ntOg2GiDVx8",
+                    "name": "Anthropic account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $('Merge Files').item.json;\nconst raw = $('AI Plan').item.json;\n\nlet plan;\ntry {\n  if (raw?.output && typeof raw.output === 'object') {\n    plan = raw.output;\n  } else {\n    const out = String(raw?.output ?? raw?.text ?? '');\n    const m = out.match(/(\\{[\\s\\S]*\\})/);\n    if (!m) throw new Error('No JSON found');\n    plan = JSON.parse(m[1]);\n  }\n} catch (e) {\n  throw new Error('Invalid JSON from AI: ' + e.message);\n}\n\nplan.warnings = plan.warnings || [];\nplan.unifiedDiff = plan.unifiedDiff || '';\nplan.humanSummary = plan.humanSummary || '';\n\nreturn [{ json: { ...ctx, plan } }];"
+            },
+            "id": "parse-plan",
+            "name": "Parse Plan",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1136,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $input.first().json;\nif (!ctx?.site) throw new Error('Missing site');\nif (!ctx?.plan) throw new Error('Missing plan');\n\nconst allowed = ctx.site.allowedPaths || ['src/**'];\nconst forbidden = [/\\.env/i, /secret/i, /node_modules/i, /\\.git/i];\n\nfunction globMatch(p, pats) {\n  return pats.some(g => {\n    const re = new RegExp('^' + g.replace(/\\*\\*/g, '.*').replace(/\\*/g, '[^/]*'));\n    return re.test(p);\n  });\n}\n\nconst badPath = [];\n(ctx.plan.fileTargets || []).forEach(t => {\n  if (!globMatch(t.path, allowed)) badPath.push(t.path);\n  if (forbidden.some(f => f.test(t.path))) badPath.push(t.path);\n});\n\nif (badPath.length) {\n  ctx.plan.warnings.push('Some paths not allowed: ' + [...new Set(badPath)].join(', '));\n}\n\nreturn [{ json: ctx }];"
+            },
+            "id": "guardrails",
+            "name": "Guardrails",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1296,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://preview-orchestrator.fly.dev/preview/apply",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ siteId: $json.site.id, unifiedDiff: $json.plan.unifiedDiff || '' }) }}",
+                "options": {
+                    "timeout": 30000,
+                    "response": {
+                        "response": {
+                            "neverError": true
+                        }
+                    }
+                }
+            },
+            "id": "fly-apply",
+            "name": "Fly Apply Diff",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1456,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $('Guardrails').item.json;\nconst applyResp = $input.first().json;\n\n// Handle apply response\nconst filesChanged = applyResp.filesChanged || [];\nconst applyOk = applyResp.ok || false;\n\nif (!applyOk && applyResp.error) {\n  ctx.plan.warnings = ctx.plan.warnings || [];\n  ctx.plan.warnings.push('Failed to apply diff: ' + applyResp.error);\n}\n\nreturn [{ json: { ...ctx, filesChanged, applyOk } }];"
+            },
+            "id": "merge-apply",
+            "name": "Merge Apply",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1616,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/code_versions",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        },
+                        {
+                            "name": "Prefer",
+                            "value": "return=representation"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ client_id: $json.site.id, request_id: $json.requestId, instruction: $json.message, plan_json: $json.plan, diff: $json.plan.unifiedDiff || '', status: $json.applyOk ? 'preview_ready' : 'pending', preview_url: $json.previewUrl || '', created_at: new Date().toISOString() }) }}",
+                "options": {}
+            },
+            "id": "save-cr",
+            "name": "Save Request",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1776,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify({ requestId: $('Merge Apply').item.json.requestId, status: $('Merge Apply').item.json.applyOk ? 'preview_ready' : 'pending', summary: $('Merge Apply').item.json.plan.humanSummary || '', diff: $('Merge Apply').item.json.plan.unifiedDiff || '', previewUrl: $('Merge Apply').item.json.previewUrl || '', filesChanged: $('Merge Apply').item.json.filesChanged || [], warnings: $('Merge Apply').item.json.plan.warnings || [] }) }}",
+                "options": {}
+            },
+            "id": "response",
+            "name": "Response",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                1936,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "agent/deploy",
+                "responseMode": "responseNode",
+                "options": {
+                    "allowedOrigins": "*"
+                }
+            },
+            "id": "webhook-deploy",
+            "name": "Webhook Deploy",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                -432,
+                -700
+            ],
+            "webhookId": "deploy"
+        },
+        {
+            "parameters": {
+                "jsCode": "const b=$input.first().json.body||$input.first().json;\nif(!b.siteId)throw new Error('Missing siteId');\nreturn[{json:{siteId:b.siteId,requestId:b.requestId||'',mode:b.mode||'pr',title:b.title||'AI Editor Changes',body:b.body||'Changes made via AI Editor'}}];"
+            },
+            "id": "validate-deploy",
+            "name": "Validate Deploy",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -288,
+                -700
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://preview-orchestrator.fly.dev/preview/deploy",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ siteId: $json.siteId, mode: $json.mode, title: $json.title, body: $json.body }) }}",
+                "options": {
+                    "timeout": 120000
+                }
+            },
+            "id": "fly-deploy",
+            "name": "Fly Deploy",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -128,
+                -700
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify({ status: 'deployed', mode: $json.mode, prUrl: $json.prUrl || '', branch: $json.branch || '' }) }}",
+                "options": {}
+            },
+            "id": "response-deploy",
+            "name": "Response Deploy",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                32,
+                -700
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook Edit UI": {
+            "main": [
+                [
+                    {
+                        "node": "Validate Input",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Validate Input": {
+            "main": [
+                [
+                    {
+                        "node": "Load Site",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Load Site": {
+            "main": [
+                [
+                    {
+                        "node": "Build Context",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Context": {
+            "main": [
+                [
+                    {
+                        "node": "Fly Start Preview",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fly Start Preview": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Fly Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge Fly Response": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Fetch",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Fetch": {
+            "main": [
+                [
+                    {
+                        "node": "Fetch GitHub Files",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fetch GitHub Files": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Files",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge Files": {
+            "main": [
+                [
+                    {
+                        "node": "AI Plan",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Plan": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Plan",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Anthropic": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "AI Plan",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Plan": {
+            "main": [
+                [
+                    {
+                        "node": "Guardrails",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Guardrails": {
+            "main": [
+                [
+                    {
+                        "node": "Fly Apply Diff",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fly Apply Diff": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Apply",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge Apply": {
+            "main": [
+                [
+                    {
+                        "node": "Save Request",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Save Request": {
+            "main": [
+                [
+                    {
+                        "node": "Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Webhook Deploy": {
+            "main": [
+                [
+                    {
+                        "node": "Validate Deploy",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Validate Deploy": {
+            "main": [
+                [
+                    {
+                        "node": "Fly Deploy",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fly Deploy": {
+            "main": [
+                [
+                    {
+                        "node": "Response Deploy",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "pinData": {},
+    "meta": {
+        "templateCredsSetupCompleted": true
+    }
+}
