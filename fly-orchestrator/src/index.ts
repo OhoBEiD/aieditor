@@ -85,16 +85,39 @@ app.use(express.json({ limit: '10mb' }));
 // Ensure workspace directory exists
 async function ensureWorkspace(siteId: string, repoUrl: string, branch: string): Promise<string> {
     const workspacePath = path.join(WORKSPACES_DIR, siteId);
+    const gitPath = path.join(workspacePath, '.git');
 
+    // Check if it's a valid git repo
+    let isValidRepo = false;
     try {
-        await fs.access(workspacePath);
-        // Workspace exists, fetch and reset
-        console.log(`Workspace exists for ${siteId}, fetching updates...`);
-        execSync(`git fetch origin && git reset --hard origin/${branch}`, {
-            cwd: workspacePath,
-            stdio: 'pipe'
-        });
+        await fs.access(gitPath);
+        isValidRepo = true;
     } catch {
+        isValidRepo = false;
+    }
+
+    if (isValidRepo) {
+        // Workspace exists and is a valid git repo, fetch and reset
+        console.log(`Workspace exists for ${siteId}, fetching updates...`);
+        try {
+            execSync(`git fetch origin && git reset --hard origin/${branch}`, {
+                cwd: workspacePath,
+                stdio: 'pipe'
+            });
+        } catch (fetchError) {
+            // If fetch fails, the remote might have changed - re-clone
+            console.log(`Fetch failed for ${siteId}, re-cloning...`);
+            await fs.rm(workspacePath, { recursive: true, force: true });
+            isValidRepo = false;
+        }
+    }
+
+    if (!isValidRepo) {
+        // Clean up any partial workspace
+        try {
+            await fs.rm(workspacePath, { recursive: true, force: true });
+        } catch { /* ignore */ }
+
         // Clone repository
         console.log(`Cloning repository for ${siteId}...`);
         await fs.mkdir(workspacePath, { recursive: true });
@@ -117,7 +140,7 @@ async function ensureWorkspace(siteId: string, repoUrl: string, branch: string):
         await fs.access(nodeModulesPath);
     } catch {
         console.log(`Installing dependencies for ${siteId}...`);
-        execSync('npm install', { cwd: workspacePath, stdio: 'pipe' });
+        execSync('npm install', { cwd: workspacePath, stdio: 'pipe', timeout: 120000 });
     }
 
     return workspacePath;
