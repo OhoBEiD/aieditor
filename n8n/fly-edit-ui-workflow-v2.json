@@ -345,8 +345,7 @@
         },
         {
             "parameters": {
-                "mode": "chooseBranch",
-                "output": "input1"
+                "mode": "append"
             },
             "id": "merge-paths",
             "name": "Merge Paths",
@@ -399,7 +398,7 @@
         {
             "parameters": {
                 "respondWith": "json",
-                "responseBody": "={{ JSON.stringify({ requestId: $('Merge Paths').item.json.requestId, status: $('Merge Paths').item.json.applyOk ? 'preview_ready' : 'pending', summary: $('Merge Paths').item.json.plan.humanSummary || '', diff: $('Merge Paths').item.json.plan.unifiedDiff || '', previewUrl: $('Merge Paths').item.json.previewUrl || '', filesChanged: $('Merge Paths').item.json.filesChanged || [], warnings: $('Merge Paths').item.json.plan.warnings || [] }) }}",
+                "responseBody": "={{ JSON.stringify({ requestId: $input.first().json.requestId, status: $input.first().json.applyOk ? 'preview_ready' : 'pending', summary: ($input.first().json.plan && $input.first().json.plan.humanSummary) || '', diff: ($input.first().json.plan && $input.first().json.plan.unifiedDiff) || '', previewUrl: $input.first().json.previewUrl || '', filesChanged: $input.first().json.filesChanged || [], warnings: ($input.first().json.plan && $input.first().json.plan.warnings) || [] }) }}",
                 "options": {}
             },
             "id": "response-edit",
