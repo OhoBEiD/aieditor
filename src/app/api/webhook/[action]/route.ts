@@ -9,6 +9,7 @@ const WEBHOOKS: Record<string, string | undefined> = {
     'apply': process.env.N8N_WEBHOOK_APPLY,
     'rollback': process.env.N8N_WEBHOOK_ROLLBACK,
     'preview': process.env.N8N_WEBHOOK_PREVIEW,
+    'deploy': process.env.N8N_WEBHOOK_DEPLOY,
 };
 
 export async function POST(
