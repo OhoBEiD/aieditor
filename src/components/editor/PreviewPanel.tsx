@@ -4,8 +4,10 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 import { Monitor, Smartphone, RefreshCw, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui';
+import { PreviewLoader } from '@/components/PreviewLoader';
 
 type DeviceMode = 'desktop' | 'mobile';
+type PreviewStage = 'initializing' | 'applying' | 'building' | 'ready';
 
 interface PreviewPanelProps {
     previewUrl?: string;
@@ -14,6 +16,9 @@ interface PreviewPanelProps {
     onDeploy?: () => void;
     hasChanges?: boolean;
     isDeploying?: boolean;
+    isLoading?: boolean;
+    loadingStage?: PreviewStage;
+    loadingMessage?: string;
 }
 
 export function PreviewPanel({
@@ -22,13 +27,20 @@ export function PreviewPanel({
     onExitPreview,
     onDeploy,
     hasChanges = false,
-    isDeploying = false
+    isDeploying = false,
+    isLoading = false,
+    loadingStage = 'initializing',
+    loadingMessage
 }: PreviewPanelProps) {
     const [deviceMode, setDeviceMode] = React.useState<DeviceMode>('desktop');
     const [key, setKey] = React.useState(0);
+    const [isRefreshing, setIsRefreshing] = React.useState(false);
 
     const handleRefresh = () => {
+        setIsRefreshing(true);
         setKey((prev) => prev + 1);
+        // Reset refreshing state after iframe loads
+        setTimeout(() => setIsRefreshing(false), 1500);
     };
 
     return (
@@ -82,8 +94,9 @@ export function PreviewPanel({
                         onClick={handleRefresh}
                         className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
                         title="Refresh"
+                        disabled={isRefreshing}
                     >
-                        <RefreshCw className="w-4 h-4" />
+                        <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
                     </button>
                 </div>
 
@@ -107,10 +120,18 @@ export function PreviewPanel({
             <div className="flex-1 flex items-start justify-center p-6 bg-[var(--bg-tertiary)] overflow-auto">
                 <div
                     className={cn(
-                        'bg-white rounded-xl shadow-2xl overflow-hidden transition-all duration-300',
+                        'bg-white rounded-xl shadow-2xl overflow-hidden transition-all duration-300 relative',
                         deviceMode === 'desktop' ? 'w-full max-w-5xl h-[80vh]' : 'w-[375px] h-[667px]'
                     )}
                 >
+                    {/* Loading overlay */}
+                    {(isLoading || isRefreshing) && (
+                        <PreviewLoader
+                            message={loadingMessage || (isRefreshing ? 'Refreshing preview...' : 'Loading preview...')}
+                            stage={loadingStage}
+                        />
+                    )}
+
                     {previewUrl ? (
                         <iframe
                             key={key}
