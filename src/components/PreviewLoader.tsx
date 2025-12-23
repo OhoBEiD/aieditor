@@ -9,66 +9,76 @@ export function PreviewLoader({
   message = 'Loading preview...',
   stage = 'initializing'
 }: PreviewLoaderProps) {
-  const stages = {
-    initializing: { label: 'Initializing preview', progress: 25 },
-    applying: { label: 'Applying changes', progress: 50 },
-    building: { label: 'Building preview', progress: 75 },
-    ready: { label: 'Preview ready', progress: 100 },
-  };
-
-  const currentStage = stages[stage];
-
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-50">
-      <div className="flex flex-col items-center gap-6 max-w-md w-full px-8">
-        {/* Animated spinner */}
-        <div className="relative w-20 h-20">
-          {/* Outer ring */}
-          <div className="absolute inset-0 rounded-full border-4 border-border/20"></div>
-
-          {/* Spinning gradient ring */}
-          <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-primary border-r-primary/60 animate-spin"></div>
-
-          {/* Inner pulsing dot */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-3 h-3 bg-primary rounded-full animate-pulse"></div>
-          </div>
-        </div>
-
-        {/* Progress bar */}
-        <div className="w-full space-y-3">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground font-medium">
-              {currentStage.label}
-            </span>
-            <span className="text-primary font-mono text-xs">
-              {currentStage.progress}%
-            </span>
-          </div>
-
-          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-primary via-primary/80 to-primary transition-all duration-500 ease-out relative"
-              style={{ width: `${currentStage.progress}%` }}
-            >
-              {/* Shimmer effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></div>
-            </div>
-          </div>
-        </div>
-
-        {/* Message */}
-        <p className="text-sm text-muted-foreground text-center animate-pulse">
-          {message}
-        </p>
-
-        {/* Dots animation */}
-        <div className="flex gap-1.5">
-          <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-          <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-          <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce"></div>
-        </div>
+      <div className="loader-container">
+        <div className="circle" />
+        <div className="circle" />
+        <div className="circle" />
+        <div className="circle" />
       </div>
+
+      <style jsx>{`
+        .loader-container {
+          --dim: 3rem;
+          width: var(--dim);
+          height: var(--dim);
+          position: relative;
+          animation: spin988 2s linear infinite;
+        }
+
+        .loader-container .circle {
+          --color: hsl(var(--primary));
+          --dim: 1.2rem;
+          width: var(--dim);
+          height: var(--dim);
+          background-color: var(--color);
+          border-radius: 50%;
+          position: absolute;
+        }
+
+        .loader-container .circle:nth-child(1) {
+          top: 0;
+          left: 0;
+        }
+
+        .loader-container .circle:nth-child(2) {
+          top: 0;
+          right: 0;
+        }
+
+        .loader-container .circle:nth-child(3) {
+          bottom: 0;
+          left: 0;
+        }
+
+        .loader-container .circle:nth-child(4) {
+          bottom: 0;
+          right: 0;
+        }
+
+        @keyframes spin988 {
+          0% {
+            transform: scale(1) rotate(0);
+          }
+
+          20%, 25% {
+            transform: scale(1.3) rotate(90deg);
+          }
+
+          45%, 50% {
+            transform: scale(1) rotate(180deg);
+          }
+
+          70%, 75% {
+            transform: scale(1.3) rotate(270deg);
+          }
+
+          95%, 100% {
+            transform: scale(1) rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   );
 }
