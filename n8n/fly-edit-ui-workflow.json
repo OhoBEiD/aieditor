@@ -1,0 +1,762 @@
+{
+    "name": "AI Editor - Edit UI (Fly.io Preview)",
+    "nodes": [
+        {
+            "parameters": {
+                "content": "## 🟢 EDIT-UI FLOW\nGenerates instant preview with Fly.io HMR\n\nInput: siteId, conversationId, userId, message\nOutput: requestId, diff, previewUrl",
+                "width": 300,
+                "color": 5
+            },
+            "id": "d0d1e87d-d938-4eec-ad47-5891761f69dd",
+            "name": "Sticky Note",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [
+                -896,
+                -384
+            ]
+        },
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "agent/edit-ui",
+                "responseMode": "responseNode",
+                "options": {
+                    "allowedOrigins": "*"
+                }
+            },
+            "id": "93624d91-4efc-405d-810a-15e5f4e8c783",
+            "name": "Webhook Edit UI",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                -432,
+                -1200
+            ],
+            "webhookId": "edit-ui"
+        },
+        {
+            "parameters": {
+                "jsCode": "const b=$input.first().json.body||$input.first().json;\nconst req=['siteId','conversationId','userId','message'];\nconst miss=req.filter(k=>!b[k]);\nif(miss.length)throw new Error('Missing: '+miss.join(', '));\nconst rid='req_'+Date.now()+'_'+Math.random().toString(36).slice(2,11);\nreturn[{json:{siteId:b.siteId,conversationId:b.conversationId,userId:b.userId,message:b.message,pageUrl:b.pageUrl||null,uiContext:b.uiContext||{},requestId:rid}}];"
+            },
+            "id": "32ea384e-b896-4f6a-8406-9bebe4912eb2",
+            "name": "Validate Edit Input",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -288,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/sites?site_key=eq.{{$json.siteId}}&select=*",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "9ae8d20e-477a-47c8-ae50-223c058cb903",
+            "name": "Load Site",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -144,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/agent_memory?client_id=eq.{{ $('Load Site').first().json.id }}&select=*",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "f6ff4066-885b-4d58-b520-9c077d0d8de6",
+            "name": "Load Memory",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                16,
+                -1200
+            ],
+            "alwaysOutputData": true
+        },
+        {
+            "parameters": {
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/chat_sessions?id=eq.{{ $('Validate Edit Input').item.json.conversationId }}&select=*",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "fc858fde-792f-4338-bdf3-7616e87b1dde",
+            "name": "Load Conversation",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                160,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/messages?session_id=eq.{{ $('Validate Edit Input').item.json.conversationId }}&select=*&order=created_at.asc",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "738e5cc6-aa4c-462e-aaf8-9306142710a5",
+            "name": "Load Messages",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                336,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const inp=$('Validate Edit Input').item.json;\nconst siteArr=$('Load Site').item.json;\nconst site=Array.isArray(siteArr)?siteArr[0]:siteArr;\nif(!site)throw new Error('Site not found');\nconst memArr=$('Load Memory').item.json||[];\nconst convArr=$('Load Conversation').item.json||[];\nconst allowedPaths=site.allowed_paths_json||['src/**'];\nconst memList=Array.isArray(memArr)?memArr:(memArr.key?[memArr]:[]);\nconst mem=memList.reduce((a,m)=>{a[m.key]=m.value_json;return a;},{});\nconst conv=Array.isArray(convArr)&&convArr.length?convArr[0]:{messages_json:[],summary:''};\nconst msgs=Array.isArray(conv.messages_json)?conv.messages_json:(typeof conv.messages_json==='string'?JSON.parse(conv.messages_json):[]);\nmsgs.push({role:'user',content:inp.message,ts:new Date().toISOString()});\nconst repoUrl=site.repo_url||'';\nconst match=repoUrl.match(/github\\.com\\/([^/]+)\\/([^/]+)/);\nconst owner=match?match[1]:'';\nconst repo=match?match[2].replace(/\\.git$/,''):'';\nreturn[{json:{...inp,site:{id:site.id,name:site.name,repo_url:site.repo_url,default_branch:site.default_branch||'main',stack:site.stack||'unknown',allowedPaths,owner,repo},memory:mem,memoryList:memList,messages:msgs,summary:conv.summary||'',fileContents:{}}}];"
+            },
+            "id": "12f2617e-0ad5-40f8-bda3-fd29aa288eb1",
+            "name": "Build Context",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                464,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.FLY_ORCHESTRATOR_URL || 'https://preview-orchestrator.fly.dev' }}/preview/start",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ siteId: $json.site.id, repoUrl: $json.site.repo_url, branch: $json.site.default_branch }) }}",
+                "options": {
+                    "timeout": 120000
+                }
+            },
+            "id": "fly-start-preview",
+            "name": "Fly - Start Preview",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                624,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $('Build Context').item.json;\nconst flyResp = $input.first().json;\nreturn [{ json: { ...ctx, previewUrl: flyResp.previewUrl, previewPort: flyResp.port, previewStatus: flyResp.status } }];"
+            },
+            "id": "merge-fly-context",
+            "name": "Merge Fly Context",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                784,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "promptType": "define",
+                "text": "={{ $json.message }}",
+                "options": {
+                    "systemMessage": "=You are a front-end code AI. Output ONLY valid JSON matching UiEditPlan schema.\nALLOWED PATHS: {{ JSON.stringify($json.site.allowedPaths) }}\nSTACK: {{ $json.site.stack }}\nMEMORY: {{ JSON.stringify($json.memory) }}\nSUMMARY: {{ $json.summary }}\nUI CONTEXT: {{ JSON.stringify($json.uiContext) }}\nFILE CONTENTS: {{ JSON.stringify($json.fileContents) }}\nSchema (output exactly this structure):\n{\n  \"intent\": \"string describing what the user wants\",\n  \"fileTargets\": [{\"path\": \"string\", \"action\": \"modify|create\", \"description\": \"string\"}],\n  \"changes\": [{\"file\": \"string\", \"action\": \"modify|create\", \"instructions\": \"string\", \"search\": \"string|null\", \"replace\": \"string|null\"}],\n  \"riskFlags\": [],\n  \"warnings\": [],\n  \"needsContext\": [],\n  \"humanSummary\": \"one sentence describing the change\",\n  \"unifiedDiff\": \"git-style diff or empty string\"\n}\nRULES:\n1. ONLY modify files matching allowed paths\n2. NEVER touch: .env, secrets, backend, auth, payments, database, node_modules, .git\n3. If you need to see file content first, put paths in needsContext and leave unifiedDiff empty\n4. Make minimal, targeted changes only\n5. Output raw JSON only - no markdown, no code blocks, no explanation\nCRITICAL PATH RULES:\n- ALL file paths MUST start with \"src/\"\n- Use \"src/app/page.tsx\" NOT \"app/page.tsx\"\n- Use \"src/components/\" NOT \"components/\"\n- NEVER create files outside the src/ directory"
+                }
+            },
+            "id": "b13d703d-5403-4cb9-b034-ee36c2daa0c3",
+            "name": "Opus Plan",
+            "type": "@n8n/n8n-nodes-langchain.agent",
+            "typeVersion": 1.7,
+            "position": [
+                944,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "model": {
+                    "__rl": true,
+                    "value": "claude-sonnet-4-5-20250929",
+                    "mode": "list"
+                },
+                "options": {}
+            },
+            "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+            "typeVersion": 1.3,
+            "position": [
+                944,
+                -1024
+            ],
+            "id": "e04c5a00-c6c8-4e29-a718-af77b7322c8e",
+            "name": "Anthropic Chat Model",
+            "credentials": {
+                "anthropicApi": {
+                    "id": "rYzY5ntOg2GiDVx8",
+                    "name": "Anthropic account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $('Merge Fly Context').item.json;\nconst raw = $('Opus Plan').item.json;\n\nlet plan;\n\ntry {\n  if (raw?.output && typeof raw.output === 'object') {\n    plan = raw.output;\n  } else {\n    const out = String(raw?.output ?? raw?.message?.content ?? raw?.content ?? raw?.text ?? '');\n    const m = out.match(/(\\{[\\s\\S]*\\})/);\n    if (!m) throw new Error('No JSON object found in LLM output');\n    plan = JSON.parse(m[1]);\n  }\n} catch (e) {\n  throw new Error('Invalid JSON from LLM: ' + e.message);\n}\n\nconst required = ['intent', 'fileTargets', 'changes', 'humanSummary'];\nconst missing = required.filter((k) => plan?.[k] === undefined);\nif (missing.length) throw new Error('Schema missing: ' + missing.join(', '));\n\nplan.warnings = Array.isArray(plan.warnings) ? plan.warnings : [];\nplan.riskFlags = Array.isArray(plan.riskFlags) ? plan.riskFlags : [];\nplan.needsContext = Array.isArray(plan.needsContext) ? plan.needsContext : [];\nplan.unifiedDiff = typeof plan.unifiedDiff === 'string' ? plan.unifiedDiff : '';\n\nreturn [{ json: { ...ctx, plan, needsContext: plan.needsContext.length > 0 && (!ctx.fileContents || Object.keys(ctx.fileContents).length === 0) } }];"
+            },
+            "id": "33821d01-9545-4d28-abf6-373b0254d968",
+            "name": "Parse Plan",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1104,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $input.first().json;\nif (!ctx || !ctx.site) throw new Error('Missing site data in context');\nif (!ctx.plan) throw new Error('Missing plan data in context');\n\nconst allowed = ctx.site.allowedPaths || ['src/**'];\nconst forbidden = [/\\.env/i, /secret/i, /api[_-]?key/i, /token/i, /password/i, /credential/i, /node_modules/i, /\\.git/i, /package-lock/i, /yarn\\.lock/i, /server/i, /backend/i, /auth/i, /payment/i, /database/i];\n\nfunction globMatch(p, pats) {\n  return pats.some(g => {\n    const re = new RegExp('^' + g.replace(/\\*\\*/g, '.*').replace(/\\*/g, '[^/]*'));\n    return re.test(p);\n  });\n}\n\nconst badPath = [], badPat = [];\nconst plan = ctx.plan;\n\n(plan.fileTargets || []).forEach(t => {\n  if (!globMatch(t.path, allowed)) badPath.push(t.path);\n  if (forbidden.some(f => f.test(t.path))) badPat.push(t.path);\n});\n\n(plan.changes || []).forEach(c => {\n  if (!globMatch(c.file, allowed)) badPath.push(c.file);\n  if (forbidden.some(f => f.test(c.file))) badPat.push(c.file);\n});\n\nif (badPath.length) throw new Error('Path not allowed: ' + [...new Set(badPath)].join(', '));\nif (badPat.length) throw new Error('Forbidden pattern: ' + [...new Set(badPat)].join(', '));\n\nconst diff = plan.unifiedDiff || '';\nif (diff.split('\\n').length > 4000) throw new Error('Diff exceeds 4000 lines');\nif ((plan.changes || []).length > 10) throw new Error('Max 10 files per request');\n\nforbidden.forEach(f => {\n  if (f.test(diff)) throw new Error('Diff contains forbidden pattern: ' + f);\n});\n\nreturn [{ json: ctx }];"
+            },
+            "id": "f5a4c00d-17dc-4ac8-9777-63f1e1acc0c3",
+            "name": "Guardrails",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1264,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $env.FLY_ORCHESTRATOR_URL || 'https://preview-orchestrator.fly.dev' }}/preview/apply",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ siteId: $json.site.id, unifiedDiff: $json.plan.unifiedDiff }) }}",
+                "options": {
+                    "timeout": 30000
+                }
+            },
+            "id": "fly-apply-diff",
+            "name": "Fly - Apply Diff",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1424,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $('Guardrails').item.json;\nconst applyResp = $input.first().json;\nreturn [{ json: { ...ctx, applyResult: applyResp, filesChanged: applyResp.filesChanged || [], needsRestart: applyResp.needsRestart || false } }];"
+            },
+            "id": "merge-apply-result",
+            "name": "Merge Apply Result",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1584,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/code_versions",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        },
+                        {
+                            "name": "Prefer",
+                            "value": "return=representation"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ client_id: $json.site.id, request_id: $json.requestId, instruction: $json.message, plan_json: $json.plan, diff: $json.plan.unifiedDiff || '', status: 'preview_ready', preview_url: $json.previewUrl || '', created_at: new Date().toISOString() }) }}",
+                "options": {}
+            },
+            "id": "save-change-request",
+            "name": "Save Change Request",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1744,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/event_logs",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ site_id: $('Merge Apply Result').item.json.site.id, event_type: 'preview_created', actor_id: $('Merge Apply Result').item.json.userId, payload_json: { requestId: $('Merge Apply Result').item.json.requestId, previewUrl: $('Merge Apply Result').item.json.previewUrl, filesChanged: $('Merge Apply Result').item.json.filesChanged }, created_at: new Date().toISOString() }) }}",
+                "options": {}
+            },
+            "id": "audit-preview",
+            "name": "Audit Preview",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1904,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify({ requestId: $('Merge Apply Result').item.json.requestId, status: 'preview_ready', summary: $('Merge Apply Result').item.json.plan.humanSummary || '', diff: $('Merge Apply Result').item.json.plan.unifiedDiff || '', previewUrl: $('Merge Apply Result').item.json.previewUrl || '', filesChanged: $('Merge Apply Result').item.json.filesChanged || [], warnings: $('Merge Apply Result').item.json.plan.warnings || [] }) }}",
+                "options": {}
+            },
+            "id": "response-edit",
+            "name": "Response Edit",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                2064,
+                -1200
+            ]
+        },
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "agent/deploy",
+                "responseMode": "responseNode",
+                "options": {
+                    "allowedOrigins": "*"
+                }
+            },
+            "id": "webhook-deploy",
+            "name": "Webhook Deploy",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                -432,
+                -800
+            ],
+            "webhookId": "deploy"
+        },
+        {
+            "parameters": {
+                "jsCode": "const b=$input.first().json.body||$input.first().json;\nconst req=['siteId','requestId'];\nconst miss=req.filter(k=>!b[k]);\nif(miss.length)throw new Error('Missing: '+miss.join(', '));\nreturn[{json:{siteId:b.siteId,requestId:b.requestId,mode:b.mode||'pr',title:b.title||'AI Editor Changes',body:b.body||'Changes made via AI Editor',orchestratorUrl:$env.FLY_ORCHESTRATOR_URL||'https://preview-orchestrator.fly.dev'}}];"
+            },
+            "id": "validate-deploy",
+            "name": "Validate Deploy",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -288,
+                -800
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $json.orchestratorUrl }}/preview/deploy",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ siteId: $json.siteId, mode: $json.mode, title: $json.title, body: $json.body }) }}",
+                "options": {
+                    "timeout": 120000
+                }
+            },
+            "id": "fly-deploy",
+            "name": "Fly - Deploy",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -128,
+                -800
+            ]
+        },
+        {
+            "parameters": {
+                "method": "PATCH",
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/code_versions?request_id=eq.{{ $('Validate Deploy').item.json.requestId }}",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ status: 'applied', pr_url: $('Fly - Deploy').item.json.prUrl || '', updated_at: new Date().toISOString() }) }}",
+                "options": {}
+            },
+            "id": "update-cr-deployed",
+            "name": "Update CR Deployed",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                32,
+                -800
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify({ status: 'deployed', mode: $('Fly - Deploy').item.json.mode, prUrl: $('Fly - Deploy').item.json.prUrl || '', branch: $('Fly - Deploy').item.json.branch || '' }) }}",
+                "options": {}
+            },
+            "id": "response-deploy",
+            "name": "Response Deploy",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                192,
+                -800
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook Edit UI": {
+            "main": [
+                [
+                    {
+                        "node": "Validate Edit Input",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Validate Edit Input": {
+            "main": [
+                [
+                    {
+                        "node": "Load Site",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Load Site": {
+            "main": [
+                [
+                    {
+                        "node": "Load Memory",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Load Memory": {
+            "main": [
+                [
+                    {
+                        "node": "Load Conversation",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Load Conversation": {
+            "main": [
+                [
+                    {
+                        "node": "Load Messages",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Load Messages": {
+            "main": [
+                [
+                    {
+                        "node": "Build Context",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Context": {
+            "main": [
+                [
+                    {
+                        "node": "Fly - Start Preview",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fly - Start Preview": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Fly Context",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge Fly Context": {
+            "main": [
+                [
+                    {
+                        "node": "Opus Plan",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Opus Plan": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Plan",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Anthropic Chat Model": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "Opus Plan",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Plan": {
+            "main": [
+                [
+                    {
+                        "node": "Guardrails",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Guardrails": {
+            "main": [
+                [
+                    {
+                        "node": "Fly - Apply Diff",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fly - Apply Diff": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Apply Result",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge Apply Result": {
+            "main": [
+                [
+                    {
+                        "node": "Save Change Request",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Save Change Request": {
+            "main": [
+                [
+                    {
+                        "node": "Audit Preview",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Audit Preview": {
+            "main": [
+                [
+                    {
+                        "node": "Response Edit",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Webhook Deploy": {
+            "main": [
+                [
+                    {
+                        "node": "Validate Deploy",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Validate Deploy": {
+            "main": [
+                [
+                    {
+                        "node": "Fly - Deploy",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fly - Deploy": {
+            "main": [
+                [
+                    {
+                        "node": "Update CR Deployed",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Update CR Deployed": {
+            "main": [
+                [
+                    {
+                        "node": "Response Deploy",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "pinData": {},
+    "meta": {
+        "templateCredsSetupCompleted": true
+    }
+}
