@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Copy, Check, Bot, Undo2 } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -16,6 +16,7 @@ interface MessageBubbleProps {
 export function MessageBubble({ message, onRevert, isStreaming = false }: MessageBubbleProps) {
     const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
     const [copiedMessage, setCopiedMessage] = React.useState(false);
+    const [isNew, setIsNew] = useState(true);
     const isUser = message.role === 'user';
 
     // Parse code blocks from content
@@ -67,6 +68,14 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
         hour: '2-digit',
         minute: '2-digit',
     });
+
+    // Text reveal animation - remove after animation completes
+    useEffect(() => {
+        if (!isUser && isNew) {
+            const timer = setTimeout(() => setIsNew(false), 500);
+            return () => clearTimeout(timer);
+        }
+    }, [isUser, isNew]);
 
     // Get image from metadata if present
     const messageImage = (message.metadata as { image?: string } | undefined)?.image;
@@ -185,7 +194,8 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                                 {part.type === 'text' ? (
                                     <p
                                         className={cn(
-                                            'text-xs text-[var(--text-secondary)] whitespace-pre-wrap leading-relaxed',
+                                            'text-xs text-[var(--text-primary)] font-medium whitespace-pre-wrap leading-relaxed',
+                                            isNew && 'animate-text-reveal',
                                             isStreaming && index === parts.length - 1 && 'typing-cursor'
                                         )}
                                     >

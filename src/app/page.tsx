@@ -678,29 +678,21 @@ export default function Home() {
 function formatAIResponse(response: { summary: string; diff: string; prUrl: string; warnings: string[] }): string {
     const parts: string[] = [];
 
-    // Clean summary without markdown
+    // Show summary (bold effect handled by CSS)
     if (response.summary) {
         parts.push(response.summary);
     } else {
         parts.push('Changes ready');
     }
 
-    // Show diff in code block
-    if (response.diff) {
-        const truncatedDiff = response.diff.length > 800
-            ? response.diff.substring(0, 800) + '\n... (truncated)'
-            : response.diff;
-        parts.push(`\`\`\`diff\n${truncatedDiff}\n\`\`\``);
-    }
-
-    // Show warnings without bold formatting
+    // Show warnings
     if (response.warnings && response.warnings.length > 0) {
-        parts.push(`⚠️ Warnings:\n${response.warnings.map(w => `• ${w}`).join('\n')}`);
+        parts.push(`⚠️ ${response.warnings.join(' • ')}`);
     }
 
     // Show PR link if available
     if (response.prUrl) {
-        parts.push(`📝 PR: ${response.prUrl}`);
+        parts.push(`📝 View PR: ${response.prUrl}`);
     }
 
     return parts.join('\n\n');
