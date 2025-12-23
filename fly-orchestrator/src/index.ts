@@ -353,7 +353,7 @@ app.post('/preview/deploy', async (req: Request, res: Response) => {
                     })
                 });
 
-                const prData = await prResponse.json();
+                const prData = await prResponse.json() as { html_url?: string };
 
                 // Switch back to main
                 execSync('git checkout main', { cwd: workspacePath, stdio: 'pipe' });
@@ -361,7 +361,7 @@ app.post('/preview/deploy', async (req: Request, res: Response) => {
                 return res.json({
                     ok: true,
                     mode: 'pr',
-                    prUrl: prData.html_url,
+                    prUrl: prData.html_url || '',
                     branch: branchName
                 });
             }
