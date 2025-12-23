@@ -676,22 +676,32 @@ export default function Home() {
 }
 
 function formatAIResponse(response: { summary: string; diff: string; prUrl: string; warnings: string[] }): string {
-    let content = `### ${response.summary || 'Changes Ready'}\n\n`;
+    const parts: string[] = [];
 
-    if (response.prUrl) {
-        content += `📝 **PR:** [View Changes](${response.prUrl})\n\n`;
+    // Clean summary without markdown
+    if (response.summary) {
+        parts.push(response.summary);
+    } else {
+        parts.push('Changes ready');
     }
 
+    // Show diff in code block
     if (response.diff) {
-        const truncatedDiff = response.diff.length > 500
-            ? response.diff.substring(0, 500) + '\n... (truncated)'
+        const truncatedDiff = response.diff.length > 800
+            ? response.diff.substring(0, 800) + '\n... (truncated)'
             : response.diff;
-        content += `\`\`\`diff\n${truncatedDiff}\n\`\`\`\n\n`;
+        parts.push(`\`\`\`diff\n${truncatedDiff}\n\`\`\``);
     }
 
+    // Show warnings without bold formatting
     if (response.warnings && response.warnings.length > 0) {
-        content += `⚠️ **Warnings:**\n${response.warnings.map(w => `- ${w}`).join('\n')}`;
+        parts.push(`⚠️ Warnings:\n${response.warnings.map(w => `• ${w}`).join('\n')}`);
     }
 
-    return content;
+    // Show PR link if available
+    if (response.prUrl) {
+        parts.push(`📝 PR: ${response.prUrl}`);
+    }
+
+    return parts.join('\n\n');
 }
