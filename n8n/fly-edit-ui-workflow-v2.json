@@ -91,7 +91,7 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "={{ $env.FLY_ORCHESTRATOR_URL || 'https://preview-orchestrator.fly.dev' }}/preview/start",
+                "url": "https://preview-orchestrator.fly.dev/preview/start",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -291,7 +291,7 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "={{ $env.FLY_ORCHESTRATOR_URL || 'https://preview-orchestrator.fly.dev' }}/preview/apply",
+                "url": "https://preview-orchestrator.fly.dev/preview/apply",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -432,7 +432,7 @@
         },
         {
             "parameters": {
-                "jsCode": "const b=$input.first().json.body||$input.first().json;\nif(!b.siteId)throw new Error('Missing siteId');\nreturn[{json:{siteId:b.siteId,requestId:b.requestId||'',mode:b.mode||'pr',title:b.title||'AI Editor Changes',body:b.body||'Changes made via AI Editor',orchestratorUrl:$env.FLY_ORCHESTRATOR_URL||'https://preview-orchestrator.fly.dev'}}];"
+                "jsCode": "const b=$input.first().json.body||$input.first().json;\nif(!b.siteId)throw new Error('Missing siteId');\nreturn[{json:{siteId:b.siteId,requestId:b.requestId||'',mode:b.mode||'pr',title:b.title||'AI Editor Changes',body:b.body||'Changes made via AI Editor',orchestratorUrl:'https://preview-orchestrator.fly.dev'}}];"
             },
             "id": "validate-deploy",
             "name": "Validate Deploy",
