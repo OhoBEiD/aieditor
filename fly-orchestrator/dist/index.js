@@ -1,55 +1,46 @@
-import express, { Request, Response, NextFunction } from 'express';
-import { execSync, exec } from 'child_process';
-import { promises as fs } from 'fs';
-import path from 'path';
-import { createProxyMiddleware } from 'http-proxy-middleware';
-
-const app = express();
-
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const child_process_1 = require("child_process");
+const fs_1 = require("fs");
+const path_1 = __importDefault(require("path"));
+const http_proxy_middleware_1 = require("http-proxy-middleware");
+const app = (0, express_1.default)();
 // Configuration
 const PORT = process.env.PORT || 3001;
 const WORKSPACES_DIR = process.env.WORKSPACES_DIR || '/workspaces';
 const PREVIEW_DOMAIN = process.env.PREVIEW_DOMAIN || 'preview.automatelb.com';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
-
 // In-memory state for active previews
-const activePreviews: Map<string, {
-    pid: number | null;
-    port: number;
-    status: 'starting' | 'running' | 'stopped';
-    lastActivity: Date;
-}> = new Map();
-
+const activePreviews = new Map();
 // Get next available port
 let nextPort = 3100;
-function getNextPort(): number {
+function getNextPort() {
     return nextPort++;
 }
-
 // Subdomain-based proxy middleware
 // This must come BEFORE express.json() to handle non-JSON requests
-app.use((req: Request, res: Response, next: NextFunction) => {
+app.use((req, res, next) => {
     const host = req.headers.host || '';
-
     // Check if this is a preview subdomain request
     if (host.includes(PREVIEW_DOMAIN) && !host.startsWith('preview-orchestrator')) {
         // Extract siteId from subdomain (e.g., siteId.preview.automatelb.com)
         const subdomain = host.split('.')[0];
-
         if (subdomain && subdomain !== 'preview-orchestrator' && subdomain !== 'www') {
             const preview = activePreviews.get(subdomain);
-
             if (preview && preview.status === 'running') {
                 // Update activity
                 preview.lastActivity = new Date();
-
                 // Proxy to the dev server
-                const proxyMiddleware = createProxyMiddleware({
+                const proxyMiddleware = (0, http_proxy_middleware_1.createProxyMiddleware)({
                     target: `http://localhost:${preview.port}`,
                     changeOrigin: true,
                     ws: true, // WebSocket support for HMR
                     on: {
-                        error: (err: Error, _req: any, res: any) => {
+                        error: (err, _req, res) => {
                             console.error(`Proxy error for ${subdomain}:`, err.message);
                             if (res.writeHead) {
                                 res.writeHead(502, { 'Content-Type': 'text/html' });
@@ -58,9 +49,9 @@ app.use((req: Request, res: Response, next: NextFunction) => {
                         }
                     }
                 });
-
                 return proxyMiddleware(req, res, next);
-            } else {
+            }
+            else {
                 // Preview not running
                 return res.status(503).send(`
                     <html>
@@ -75,75 +66,63 @@ app.use((req: Request, res: Response, next: NextFunction) => {
             }
         }
     }
-
     next();
 });
-
 // JSON parsing for API endpoints
-app.use(express.json({ limit: '10mb' }));
-
+app.use(express_1.default.json({ limit: '10mb' }));
 // Ensure workspace directory exists
-async function ensureWorkspace(siteId: string, repoUrl: string, branch: string): Promise<string> {
-    const workspacePath = path.join(WORKSPACES_DIR, siteId);
-
+async function ensureWorkspace(siteId, repoUrl, branch) {
+    const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
     try {
-        await fs.access(workspacePath);
+        await fs_1.promises.access(workspacePath);
         // Workspace exists, fetch and reset
         console.log(`Workspace exists for ${siteId}, fetching updates...`);
-        execSync(`git fetch origin && git reset --hard origin/${branch}`, {
+        (0, child_process_1.execSync)(`git fetch origin && git reset --hard origin/${branch}`, {
             cwd: workspacePath,
             stdio: 'pipe'
         });
-    } catch {
+    }
+    catch {
         // Clone repository
         console.log(`Cloning repository for ${siteId}...`);
-        await fs.mkdir(workspacePath, { recursive: true });
-
+        await fs_1.promises.mkdir(workspacePath, { recursive: true });
         // Add token to URL if available
         let cloneUrl = repoUrl;
         if (GITHUB_TOKEN && repoUrl.includes('github.com')) {
             cloneUrl = repoUrl.replace('https://', `https://${GITHUB_TOKEN}@`);
         }
-
-        execSync(`git clone --depth 1 --branch ${branch} ${cloneUrl} .`, {
+        (0, child_process_1.execSync)(`git clone --depth 1 --branch ${branch} ${cloneUrl} .`, {
             cwd: workspacePath,
             stdio: 'pipe'
         });
     }
-
     // Check if node_modules exists, install if not
-    const nodeModulesPath = path.join(workspacePath, 'node_modules');
+    const nodeModulesPath = path_1.default.join(workspacePath, 'node_modules');
     try {
-        await fs.access(nodeModulesPath);
-    } catch {
-        console.log(`Installing dependencies for ${siteId}...`);
-        execSync('npm install', { cwd: workspacePath, stdio: 'pipe' });
+        await fs_1.promises.access(nodeModulesPath);
     }
-
+    catch {
+        console.log(`Installing dependencies for ${siteId}...`);
+        (0, child_process_1.execSync)('npm install', { cwd: workspacePath, stdio: 'pipe' });
+    }
     return workspacePath;
 }
-
 // Start dev server for a site
-async function startDevServer(siteId: string, workspacePath: string): Promise<number> {
+async function startDevServer(siteId, workspacePath) {
     const port = getNextPort();
-
     console.log(`Starting dev server for ${siteId} on port ${port}...`);
-
-    const child = exec(`npm run dev -- --port ${port}`, {
+    const child = (0, child_process_1.exec)(`npm run dev -- --port ${port}`, {
         cwd: workspacePath,
         env: { ...process.env, PORT: String(port) }
     });
-
     activePreviews.set(siteId, {
         pid: child.pid || null,
         port,
         status: 'running',
         lastActivity: new Date()
     });
-
     child.stdout?.on('data', (data) => console.log(`[${siteId}] ${data}`));
     child.stderr?.on('data', (data) => console.error(`[${siteId}] ${data}`));
-
     child.on('exit', () => {
         const preview = activePreviews.get(siteId);
         if (preview) {
@@ -151,84 +130,72 @@ async function startDevServer(siteId: string, workspacePath: string): Promise<nu
             preview.pid = null;
         }
     });
-
     // Wait for server to be ready
     await new Promise(resolve => setTimeout(resolve, 3000));
-
     return port;
 }
-
 // Apply diff to workspace
-async function applyDiff(workspacePath: string, unifiedDiff: string): Promise<{
-    filesChanged: string[];
-    needsRestart: boolean;
-}> {
-    const filesChanged: string[] = [];
+async function applyDiff(workspacePath, unifiedDiff) {
+    const filesChanged = [];
     let needsRestart = false;
-
     console.log('Applying diff to workspace:', workspacePath);
     console.log('Diff content (first 500 chars):', unifiedDiff.slice(0, 500));
-
     // Parse unified diff to extract file names
     const diffLines = unifiedDiff.split('\n');
-
     for (const line of diffLines) {
         if (line.startsWith('+++ b/') || line.startsWith('+++ ')) {
             const currentFile = line.replace('+++ b/', '').replace('+++ ', '').trim();
             if (currentFile && currentFile !== '/dev/null') {
                 filesChanged.push(currentFile);
-
                 // Check if this file requires restart
-                if (
-                    currentFile.includes('tailwind.config') ||
+                if (currentFile.includes('tailwind.config') ||
                     currentFile.includes('postcss.config') ||
                     currentFile.includes('next.config') ||
                     currentFile === 'package.json' ||
-                    currentFile === '.env.local'
-                ) {
+                    currentFile === '.env.local') {
                     needsRestart = true;
                 }
             }
         }
     }
-
     if (filesChanged.length === 0) {
         console.log('No files detected in diff, skipping apply');
         return { filesChanged: [], needsRestart: false };
     }
-
     // Try multiple approaches to apply the diff
     try {
         // Approach 1: Try git apply with --3way for better merge handling
-        const diffPath = path.join(workspacePath, '.temp.patch');
-        await fs.writeFile(diffPath, unifiedDiff);
-
+        const diffPath = path_1.default.join(workspacePath, '.temp.patch');
+        await fs_1.promises.writeFile(diffPath, unifiedDiff);
         try {
-            execSync(`git apply --whitespace=fix --3way .temp.patch`, {
+            (0, child_process_1.execSync)(`git apply --whitespace=fix --3way .temp.patch`, {
                 cwd: workspacePath,
                 stdio: 'pipe'
             });
             console.log('Diff applied successfully with git apply --3way');
-        } catch (e1) {
+        }
+        catch (e1) {
             console.log('git apply --3way failed, trying without --3way...');
             try {
-                execSync(`git apply --whitespace=fix .temp.patch`, {
+                (0, child_process_1.execSync)(`git apply --whitespace=fix .temp.patch`, {
                     cwd: workspacePath,
                     stdio: 'pipe'
                 });
                 console.log('Diff applied successfully with git apply');
-            } catch (e2) {
+            }
+            catch (e2) {
                 console.log('git apply failed, trying patch command...');
                 try {
-                    execSync(`patch -p1 < .temp.patch`, {
+                    (0, child_process_1.execSync)(`patch -p1 < .temp.patch`, {
                         cwd: workspacePath,
                         stdio: 'pipe'
                     });
                     console.log('Diff applied successfully with patch command');
-                } catch (e3) {
+                }
+                catch (e3) {
                     console.error('All patch methods failed. Last error:', e3);
                     // Don't throw - return partial success so workflow can continue
-                    await fs.unlink(diffPath).catch(() => { });
+                    await fs_1.promises.unlink(diffPath).catch(() => { });
                     return {
                         filesChanged,
                         needsRestart,
@@ -237,27 +204,22 @@ async function applyDiff(workspacePath: string, unifiedDiff: string): Promise<{
                 }
             }
         }
-
-        await fs.unlink(diffPath).catch(() => { });
-    } catch (error) {
+        await fs_1.promises.unlink(diffPath).catch(() => { });
+    }
+    catch (error) {
         console.error('Error in applyDiff:', error);
         // Return what we have, don't fail completely
     }
-
     return { filesChanged, needsRestart };
 }
-
 // ==================== ENDPOINTS ====================
-
 // POST /preview/start - Start or ensure preview is running
-app.post('/preview/start', async (req: Request, res: Response) => {
+app.post('/preview/start', async (req, res) => {
     try {
         const { siteId, repoUrl, branch = 'main' } = req.body;
-
         if (!siteId || !repoUrl) {
             return res.status(400).json({ error: 'Missing siteId or repoUrl' });
         }
-
         // Check if already running
         const existing = activePreviews.get(siteId);
         if (existing && existing.status === 'running') {
@@ -269,76 +231,65 @@ app.post('/preview/start', async (req: Request, res: Response) => {
                 port: existing.port
             });
         }
-
         // Setup workspace
         const workspacePath = await ensureWorkspace(siteId, repoUrl, branch);
-
         // Start dev server
         const port = await startDevServer(siteId, workspacePath);
-
         res.json({
             ok: true,
             previewUrl: `https://${siteId}.${PREVIEW_DOMAIN}`,
             status: 'running',
             port
         });
-    } catch (error) {
+    }
+    catch (error) {
         console.error('Start error:', error);
         res.status(500).json({ error: String(error) });
     }
 });
-
 // POST /preview/apply - Apply diff to running preview
-app.post('/preview/apply', async (req: Request, res: Response) => {
+app.post('/preview/apply', async (req, res) => {
     try {
         const { siteId, unifiedDiff } = req.body;
-
         if (!siteId || !unifiedDiff) {
             return res.status(400).json({ error: 'Missing siteId or unifiedDiff' });
         }
-
         const preview = activePreviews.get(siteId);
         if (!preview || preview.status !== 'running') {
             return res.status(400).json({ error: 'Preview not running. Call /preview/start first.' });
         }
-
-        const workspacePath = path.join(WORKSPACES_DIR, siteId);
+        const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
         const result = await applyDiff(workspacePath, unifiedDiff);
-
         // Update activity time
         preview.lastActivity = new Date();
-
         // If restart needed, restart the dev server
         if (result.needsRestart && preview.pid) {
             console.log(`Restarting dev server for ${siteId} due to config changes...`);
             try {
                 process.kill(preview.pid);
-            } catch { /* ignore */ }
+            }
+            catch { /* ignore */ }
             await startDevServer(siteId, workspacePath);
         }
-
         res.json({
             ok: true,
             filesChanged: result.filesChanged,
             needsRestart: result.needsRestart
         });
-    } catch (error) {
+    }
+    catch (error) {
         console.error('Apply error:', error);
         res.status(500).json({ error: String(error) });
     }
 });
-
 // POST /preview/status - Get preview status
-app.post('/preview/status', async (req: Request, res: Response) => {
+app.post('/preview/status', async (req, res) => {
     try {
         const { siteId } = req.body;
-
         if (!siteId) {
             return res.status(400).json({ error: 'Missing siteId' });
         }
-
         const preview = activePreviews.get(siteId);
-
         if (!preview) {
             return res.json({
                 ok: true,
@@ -346,7 +297,6 @@ app.post('/preview/status', async (req: Request, res: Response) => {
                 previewUrl: null
             });
         }
-
         res.json({
             ok: true,
             status: preview.status,
@@ -356,73 +306,64 @@ app.post('/preview/status', async (req: Request, res: Response) => {
             port: preview.port,
             lastActivity: preview.lastActivity
         });
-    } catch (error) {
+    }
+    catch (error) {
         console.error('Status error:', error);
         res.status(500).json({ error: String(error) });
     }
 });
-
 // POST /preview/stop - Stop a preview
-app.post('/preview/stop', async (req: Request, res: Response) => {
+app.post('/preview/stop', async (req, res) => {
     try {
         const { siteId } = req.body;
-
         if (!siteId) {
             return res.status(400).json({ error: 'Missing siteId' });
         }
-
         const preview = activePreviews.get(siteId);
-
         if (preview && preview.pid) {
             try {
                 process.kill(preview.pid);
-            } catch { /* ignore */ }
+            }
+            catch { /* ignore */ }
             preview.status = 'stopped';
             preview.pid = null;
         }
-
         res.json({ ok: true, status: 'stopped' });
-    } catch (error) {
+    }
+    catch (error) {
         console.error('Stop error:', error);
         res.status(500).json({ error: String(error) });
     }
 });
-
 // POST /preview/deploy - Commit changes and create PR
-app.post('/preview/deploy', async (req: Request, res: Response) => {
+app.post('/preview/deploy', async (req, res) => {
     try {
         const { siteId, mode = 'pr', title, body } = req.body;
-
         if (!siteId) {
             return res.status(400).json({ error: 'Missing siteId' });
         }
-
-        const workspacePath = path.join(WORKSPACES_DIR, siteId);
-
+        const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
         // Stage and commit changes
-        execSync('git add -A', { cwd: workspacePath, stdio: 'pipe' });
-
+        (0, child_process_1.execSync)('git add -A', { cwd: workspacePath, stdio: 'pipe' });
         const commitMessage = title || 'AI Editor: Apply changes';
-        execSync(`git commit -m "${commitMessage}"`, { cwd: workspacePath, stdio: 'pipe' });
-
+        (0, child_process_1.execSync)(`git commit -m "${commitMessage}"`, { cwd: workspacePath, stdio: 'pipe' });
         if (mode === 'merge') {
             // Push directly to main
-            execSync('git push origin main', { cwd: workspacePath, stdio: 'pipe' });
+            (0, child_process_1.execSync)('git push origin main', { cwd: workspacePath, stdio: 'pipe' });
             return res.json({
                 ok: true,
                 mode: 'merge',
                 message: 'Changes pushed to main'
             });
-        } else {
+        }
+        else {
             // Create branch and push
             const branchName = `ai-changes-${Date.now()}`;
-            execSync(`git checkout -b ${branchName}`, { cwd: workspacePath, stdio: 'pipe' });
-            execSync(`git push origin ${branchName}`, { cwd: workspacePath, stdio: 'pipe' });
-
+            (0, child_process_1.execSync)(`git checkout -b ${branchName}`, { cwd: workspacePath, stdio: 'pipe' });
+            (0, child_process_1.execSync)(`git push origin ${branchName}`, { cwd: workspacePath, stdio: 'pipe' });
             // Create PR via GitHub API
-            const repoInfo = execSync('git remote get-url origin', { cwd: workspacePath, encoding: 'utf-8' });
+            const repoInfo = (0, child_process_1.execSync)('git remote get-url origin', { cwd: workspacePath, encoding: 'utf-8' });
             const match = repoInfo.match(/github\.com[:/]([^/]+)\/([^/.]+)/);
-
             if (match && GITHUB_TOKEN) {
                 const [, owner, repo] = match;
                 const prResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls`, {
@@ -438,12 +379,9 @@ app.post('/preview/deploy', async (req: Request, res: Response) => {
                         body: body || 'Changes made via AI Editor'
                     })
                 });
-
-                const prData = await prResponse.json() as { html_url?: string };
-
+                const prData = await prResponse.json();
                 // Switch back to main
-                execSync('git checkout main', { cwd: workspacePath, stdio: 'pipe' });
-
+                (0, child_process_1.execSync)('git checkout main', { cwd: workspacePath, stdio: 'pipe' });
                 return res.json({
                     ok: true,
                     mode: 'pr',
@@ -451,10 +389,8 @@ app.post('/preview/deploy', async (req: Request, res: Response) => {
                     branch: branchName
                 });
             }
-
             // Switch back to main
-            execSync('git checkout main', { cwd: workspacePath, stdio: 'pipe' });
-
+            (0, child_process_1.execSync)('git checkout main', { cwd: workspacePath, stdio: 'pipe' });
             return res.json({
                 ok: true,
                 mode: 'pr',
@@ -462,23 +398,21 @@ app.post('/preview/deploy', async (req: Request, res: Response) => {
                 message: 'Branch pushed, create PR manually'
             });
         }
-    } catch (error) {
+    }
+    catch (error) {
         console.error('Deploy error:', error);
         res.status(500).json({ error: String(error) });
     }
 });
-
 // Health check
-app.get('/health', (req: Request, res: Response) => {
+app.get('/health', (req, res) => {
     res.json({ ok: true, activePreviews: activePreviews.size });
 });
-
 // Error handler
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+app.use((err, req, res, next) => {
     console.error('Unhandled error:', err);
     res.status(500).json({ error: err.message });
 });
-
 // Start server
 app.listen(PORT, () => {
     console.log(`🚀 Fly Orchestrator running on port ${PORT}`);
