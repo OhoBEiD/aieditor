@@ -259,13 +259,25 @@
         {
             "parameters": {
                 "conditions": {
-                    "boolean": [
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict"
+                    },
+                    "conditions": [
                         {
-                            "value1": "={{ $json.hasDiff }}",
-                            "value2": true
+                            "id": "cond1",
+                            "leftValue": "={{ $json.hasDiff }}",
+                            "rightValue": true,
+                            "operator": {
+                                "type": "boolean",
+                                "operation": "equals"
+                            }
                         }
-                    ]
-                }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
             },
             "id": "check-has-diff",
             "name": "Has Diff?",
@@ -333,11 +345,8 @@
         },
         {
             "parameters": {
-                "mode": "combine",
-                "mergeByFields": {
-                    "values": []
-                },
-                "options": {}
+                "mode": "chooseBranch",
+                "output": "input1"
             },
             "id": "merge-paths",
             "name": "Merge Paths",
