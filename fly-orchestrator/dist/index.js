@@ -312,6 +312,178 @@ app.post('/preview/status', async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
+// POST /preview/install - Install packages in preview workspace
+app.post('/preview/install', async (req, res) => {
+    try {
+        const { siteId, packages = [], preset } = req.body;
+        if (!siteId) {
+            return res.status(400).json({ error: 'Missing siteId' });
+        }
+        const preview = activePreviews.get(siteId);
+        if (!preview || preview.status !== 'running') {
+            return res.status(400).json({ error: 'Preview not running. Call /preview/start first.' });
+        }
+        const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
+        // Preset library bundles
+        const PRESETS = {
+            'tailwind': {
+                packages: [],
+                devPackages: ['tailwindcss', 'postcss', 'autoprefixer'],
+                configs: {
+                    'tailwind.config.js': `/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
+  theme: {
+    extend: {
+      animation: {
+        'gradient': 'gradient 8s linear infinite',
+        'float': 'float 6s ease-in-out infinite',
+      },
+    },
+  },
+  plugins: [],
+}`,
+                    'postcss.config.js': `module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}`
+                }
+            },
+            'animation': {
+                packages: ['framer-motion', '@react-spring/web'],
+                devPackages: []
+            },
+            'icons': {
+                packages: ['lucide-react', 'react-icons', '@heroicons/react'],
+                devPackages: []
+            },
+            'ui': {
+                packages: ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-tooltip', '@radix-ui/react-popover', 'class-variance-authority', 'clsx', 'tailwind-merge'],
+                devPackages: []
+            },
+            'forms': {
+                packages: ['react-hook-form', '@hookform/resolvers', 'zod'],
+                devPackages: []
+            },
+            'charts': {
+                packages: ['recharts', '@tremor/react'],
+                devPackages: []
+            },
+            'carousel': {
+                packages: ['embla-carousel-react', 'swiper'],
+                devPackages: []
+            },
+            'dates': {
+                packages: ['date-fns', 'dayjs', 'react-day-picker'],
+                devPackages: []
+            },
+            'full-stack': {
+                packages: ['framer-motion', 'lucide-react', '@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', 'class-variance-authority', 'clsx', 'tailwind-merge', 'react-hook-form', 'zod'],
+                devPackages: ['tailwindcss', 'postcss', 'autoprefixer'],
+                configs: {
+                    'tailwind.config.js': `/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
+  theme: {
+    extend: {
+      animation: {
+        'gradient': 'gradient 8s linear infinite',
+        'float': 'float 6s ease-in-out infinite',
+        'slide-in': 'slideIn 0.3s ease-out',
+        'fade-in': 'fadeIn 0.3s ease-out',
+      },
+      keyframes: {
+        gradient: {
+          '0%, 100%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' },
+        },
+        float: {
+          '0%, 100%': { transform: 'translateY(0px)' },
+          '50%': { transform: 'translateY(-10px)' },
+        },
+        slideIn: {
+          '0%': { transform: 'translateX(-10px)', opacity: '0' },
+          '100%': { transform: 'translateX(0)', opacity: '1' },
+        },
+        fadeIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+      },
+    },
+  },
+  plugins: [],
+}`,
+                    'postcss.config.js': `module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}`
+                }
+            }
+        };
+        let packagesToInstall = [...packages];
+        let devPackagesToInstall = [];
+        let configFiles = {};
+        // Apply preset if specified
+        if (preset && PRESETS[preset]) {
+            const p = PRESETS[preset];
+            packagesToInstall = [...packagesToInstall, ...p.packages];
+            devPackagesToInstall = [...devPackagesToInstall, ...p.devPackages];
+            if (p.configs) {
+                configFiles = { ...configFiles, ...p.configs };
+            }
+        }
+        // Install production packages
+        if (packagesToInstall.length > 0) {
+            console.log(`Installing packages for ${siteId}:`, packagesToInstall.join(', '));
+            (0, child_process_1.execSync)(`npm install ${packagesToInstall.join(' ')}`, {
+                cwd: workspacePath,
+                stdio: 'pipe',
+                timeout: 120000
+            });
+        }
+        // Install dev packages
+        if (devPackagesToInstall.length > 0) {
+            console.log(`Installing dev packages for ${siteId}:`, devPackagesToInstall.join(', '));
+            (0, child_process_1.execSync)(`npm install -D ${devPackagesToInstall.join(' ')}`, {
+                cwd: workspacePath,
+                stdio: 'pipe',
+                timeout: 120000
+            });
+        }
+        // Create config files
+        for (const [filename, content] of Object.entries(configFiles)) {
+            const filePath = path_1.default.join(workspacePath, filename);
+            await fs_1.promises.writeFile(filePath, content, 'utf-8');
+            console.log(`Created config file: ${filename}`);
+        }
+        // Restart dev server to pick up new packages
+        if (packagesToInstall.length > 0 || devPackagesToInstall.length > 0) {
+            console.log(`Restarting dev server for ${siteId} after package installation...`);
+            if (preview.pid) {
+                try {
+                    process.kill(preview.pid);
+                }
+                catch { /* ignore */ }
+            }
+            await startDevServer(siteId, workspacePath);
+        }
+        res.json({
+            ok: true,
+            installed: [...packagesToInstall, ...devPackagesToInstall],
+            configsCreated: Object.keys(configFiles),
+            preset: preset || null
+        });
+    }
+    catch (error) {
+        console.error('Install error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
 // POST /preview/stop - Stop a preview
 app.post('/preview/stop', async (req, res) => {
     try {
