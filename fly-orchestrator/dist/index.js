@@ -8,14 +8,22 @@ const child_process_1 = require("child_process");
 const fs_1 = require("fs");
 const path_1 = __importDefault(require("path"));
 const http_proxy_middleware_1 = require("http-proxy-middleware");
+const cors_1 = __importDefault(require("cors"));
 const app = (0, express_1.default)();
+app.use((0, cors_1.default)());
 // Configuration
 const PORT = process.env.PORT || 3001;
 const WORKSPACES_DIR = process.env.WORKSPACES_DIR || '/workspaces';
 const PREVIEW_DOMAIN = process.env.PREVIEW_DOMAIN || 'preview.automatelb.com';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+const N8N_API_KEY = process.env.N8N_API_KEY || '';
+const N8N_API_URL = process.env.N8N_API_URL || 'https://n8n-ai-editor.fly.dev';
 // In-memory state for active previews
 const activePreviews = new Map();
+// In-memory state for active n8n executions (requestId -> executionId)
+const activeExecutions = new Map();
+// Cache proxy middleware instances to prevent memory leaks from creating new middleware on every request
+const proxyCache = new Map();
 // Get next available port
 let nextPort = 3100;
 function getNextPort() {
@@ -23,32 +31,90 @@ function getNextPort() {
 }
 // Subdomain-based proxy middleware
 // This must come BEFORE express.json() to handle non-JSON requests
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
     const host = req.headers.host || '';
     // Check if this is a preview subdomain request
     if (host.includes(PREVIEW_DOMAIN) && !host.startsWith('preview-orchestrator')) {
         // Extract siteId from subdomain (e.g., siteId.preview.automatelb.com)
         const subdomain = host.split('.')[0];
         if (subdomain && subdomain !== 'preview-orchestrator' && subdomain !== 'www') {
-            const preview = activePreviews.get(subdomain);
+            let preview = activePreviews.get(subdomain);
+            // Lazy Start: If preview is not in memory but workspace exists, start it
+            if (!preview) {
+                const workspacePath = path_1.default.join(WORKSPACES_DIR, subdomain);
+                try {
+                    await fs_1.promises.access(workspacePath);
+                    // Check if package.json exists to be sure it's a valid workspace
+                    await fs_1.promises.access(path_1.default.join(workspacePath, 'package.json'));
+                    console.log(`Lazy starting preview for ${subdomain} (found on disk)...`);
+                    // Mark as starting to prevent concurrent starts
+                    activePreviews.set(subdomain, {
+                        pid: null,
+                        port: 0,
+                        status: 'starting',
+                        lastActivity: new Date()
+                    });
+                    try {
+                        const port = await startDevServer(subdomain, workspacePath);
+                        preview = activePreviews.get(subdomain);
+                    }
+                    catch (startError) {
+                        console.error(`Failed to lazy start ${subdomain}:`, startError);
+                        activePreviews.delete(subdomain);
+                    }
+                }
+                catch (e) {
+                    // Workspace does not exist or invalid
+                }
+            }
+            // Wait for starting status? 
+            // If we just called startDevServer, it awaits 3s so it should be ready or running.
+            // But if another request started it, it might be 'starting'.
+            if (preview && preview.status === 'starting') {
+                // Return a loading page that refreshes
+                return res.send(`
+                    <html>
+                    <head>
+                        <title>Starting Preview...</title>
+                        <meta http-equiv="refresh" content="2">
+                        <style>
+                            body { font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f9fafb; }
+                            .loader { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; }
+                            @keyframes spin { to { transform: rotate(360deg); } }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="loader"></div>
+                        <p style="margin-top: 1rem; color: #4b5563;">Starting preview server...</p>
+                    </body>
+                    </html>
+                `);
+            }
             if (preview && preview.status === 'running') {
                 // Update activity
                 preview.lastActivity = new Date();
-                // Proxy to the dev server
-                const proxyMiddleware = (0, http_proxy_middleware_1.createProxyMiddleware)({
-                    target: `http://localhost:${preview.port}`,
-                    changeOrigin: true,
-                    ws: true, // WebSocket support for HMR
-                    on: {
-                        error: (err, _req, res) => {
-                            console.error(`Proxy error for ${subdomain}:`, err.message);
-                            if (res.writeHead) {
-                                res.writeHead(502, { 'Content-Type': 'text/html' });
-                                res.end('<h1>502 Bad Gateway</h1><p>Preview server is not responding</p>');
+                // Get or create cached proxy middleware for this site
+                const cacheKey = `${subdomain}:${preview.port}`;
+                let proxyMiddleware = proxyCache.get(cacheKey);
+                if (!proxyMiddleware) {
+                    // Create new proxy middleware and cache it
+                    proxyMiddleware = (0, http_proxy_middleware_1.createProxyMiddleware)({
+                        target: `http://localhost:${preview.port}`,
+                        changeOrigin: true,
+                        ws: true, // WebSocket support for HMR
+                        on: {
+                            error: (err, _req, res) => {
+                                console.error(`Proxy error for ${subdomain}:`, err.message);
+                                if (res.writeHead) {
+                                    res.writeHead(502, { 'Content-Type': 'text/html' });
+                                    res.end('<h1>502 Bad Gateway</h1><p>Preview server is not responding. It might be restarting.</p>');
+                                }
                             }
                         }
-                    }
-                });
+                    });
+                    proxyCache.set(cacheKey, proxyMiddleware);
+                    console.log(`Created and cached proxy middleware for ${cacheKey}`);
+                }
                 return proxyMiddleware(req, res, next);
             }
             else {
@@ -59,7 +125,8 @@ app.use((req, res, next) => {
                     <body style="font-family: sans-serif; padding: 40px; text-align: center;">
                         <h1>Preview Not Ready</h1>
                         <p>The preview server for site <code>${subdomain}</code> is not running.</p>
-                        <p>Try sending a message to start the preview.</p>
+                        <p>If you just created it, it might be starting.</p>
+                        <p>Try sending a message to the AI to restart it.</p>
                     </body>
                     </html>
                 `);
@@ -84,13 +151,33 @@ async function ensureWorkspace(siteId, repoUrl, branch) {
         isValidRepo = false;
     }
     if (isValidRepo) {
-        // Workspace exists and is a valid git repo, fetch and reset
-        console.log(`Workspace exists for ${siteId}, fetching updates...`);
+        // Workspace exists and is a valid git repo
+        console.log(`Workspace exists for ${siteId}, checking for local changes...`);
         try {
-            (0, child_process_1.execSync)(`git fetch origin && git reset --hard origin/${branch}`, {
+            // Check if there are uncommitted changes
+            const statusResult = (0, child_process_1.execSync)('git status --porcelain', {
                 cwd: workspacePath,
-                stdio: 'pipe'
+                stdio: 'pipe',
+                encoding: 'utf-8'
             });
+            const hasChanges = statusResult.trim().length > 0;
+            if (hasChanges) {
+                console.log(`Workspace has uncommitted changes for ${siteId}, preserving them...`);
+                // Don't reset - preserve local changes from previous edits
+                // Just fetch to update refs
+                (0, child_process_1.execSync)('git fetch origin', {
+                    cwd: workspacePath,
+                    stdio: 'pipe'
+                });
+            }
+            else {
+                console.log(`No local changes for ${siteId}, fetching and resetting...`);
+                // No local changes, safe to reset
+                (0, child_process_1.execSync)(`git fetch origin && git reset --hard origin/${branch}`, {
+                    cwd: workspacePath,
+                    stdio: 'pipe'
+                });
+            }
         }
         catch (fetchError) {
             // If fetch fails, the remote might have changed - re-clone
@@ -125,7 +212,7 @@ async function ensureWorkspace(siteId, repoUrl, branch) {
     }
     catch {
         console.log(`Installing dependencies for ${siteId}...`);
-        (0, child_process_1.execSync)('npm install', { cwd: workspacePath, stdio: 'pipe', timeout: 120000 });
+        (0, child_process_1.execSync)('npm install', { cwd: workspacePath, stdio: 'pipe', timeout: 300000 });
     }
     return workspacePath;
 }
@@ -150,6 +237,12 @@ async function startDevServer(siteId, workspacePath) {
         if (preview) {
             preview.status = 'stopped';
             preview.pid = null;
+            // Clean up cached proxy middleware when process exits
+            const cacheKey = `${siteId}:${preview.port}`;
+            if (proxyCache.has(cacheKey)) {
+                proxyCache.delete(cacheKey);
+                console.log(`Cleaned up proxy middleware cache for ${cacheKey} after process exit`);
+            }
         }
     });
     // Wait for server to be ready
@@ -238,25 +331,59 @@ async function applyDiff(workspacePath, unifiedDiff) {
 // POST /preview/start - Start or ensure preview is running
 app.post('/preview/start', async (req, res) => {
     try {
-        const { siteId, repoUrl, branch = 'main' } = req.body;
+        const { siteId, repoUrl, branch = 'main', forceClone = false } = req.body;
         if (!siteId || !repoUrl) {
             return res.status(400).json({ error: 'Missing siteId or repoUrl' });
         }
-        // Check if already running
-        const existing = activePreviews.get(siteId);
-        if (existing && existing.status === 'running') {
-            existing.lastActivity = new Date();
-            return res.json({
-                ok: true,
-                previewUrl: `https://${siteId}.${PREVIEW_DOMAIN}`,
-                status: 'running',
-                port: existing.port
-            });
+        const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
+        // Handle forceClone - delete existing workspace and stop preview
+        if (forceClone) {
+            console.log(`Force clone requested for ${siteId}, deleting workspace...`);
+            // Stop existing preview if running
+            const existing = activePreviews.get(siteId);
+            if (existing) {
+                if (existing.pid) {
+                    try {
+                        process.kill(existing.pid, 'SIGTERM');
+                    }
+                    catch (e) {
+                        // Process might already be dead
+                    }
+                }
+                // Clean up cached proxy middleware
+                const cacheKey = `${siteId}:${existing.port}`;
+                if (proxyCache.has(cacheKey)) {
+                    proxyCache.delete(cacheKey);
+                    console.log(`Cleaned up proxy middleware cache for ${cacheKey}`);
+                }
+                activePreviews.delete(siteId);
+            }
+            // Delete the workspace directory
+            try {
+                await fs_1.promises.rm(workspacePath, { recursive: true, force: true });
+                console.log(`Deleted workspace for ${siteId}`);
+            }
+            catch (e) {
+                console.log(`No existing workspace to delete for ${siteId}`);
+            }
         }
-        // Setup workspace
-        const workspacePath = await ensureWorkspace(siteId, repoUrl, branch);
+        // Check if already running (and not force cloning)
+        if (!forceClone) {
+            const existing = activePreviews.get(siteId);
+            if (existing && existing.status === 'running') {
+                existing.lastActivity = new Date();
+                return res.json({
+                    ok: true,
+                    previewUrl: `https://${siteId}.${PREVIEW_DOMAIN}`,
+                    status: 'running',
+                    port: existing.port
+                });
+            }
+        }
+        // Setup workspace (will clone fresh since we deleted it)
+        const finalWorkspacePath = await ensureWorkspace(siteId, repoUrl, branch);
         // Start dev server
-        const port = await startDevServer(siteId, workspacePath);
+        const port = await startDevServer(siteId, finalWorkspacePath);
         res.json({
             ok: true,
             previewUrl: `https://${siteId}.${PREVIEW_DOMAIN}`,
@@ -273,8 +400,18 @@ app.post('/preview/start', async (req, res) => {
 app.post('/preview/apply', async (req, res) => {
     try {
         const { siteId, unifiedDiff } = req.body;
-        if (!siteId || !unifiedDiff) {
-            return res.status(400).json({ error: 'Missing siteId or unifiedDiff' });
+        if (!siteId) {
+            return res.status(400).json({ error: 'Missing siteId' });
+        }
+        // Handle empty or missing unifiedDiff gracefully
+        if (!unifiedDiff || unifiedDiff.trim() === '') {
+            console.log(`No diff to apply for ${siteId} - returning early`);
+            return res.json({
+                ok: true,
+                filesChanged: [],
+                needsRestart: false,
+                message: 'No changes to apply'
+            });
         }
         const preview = activePreviews.get(siteId);
         if (!preview || preview.status !== 'running') {
@@ -301,6 +438,191 @@ app.post('/preview/apply', async (req, res) => {
     }
     catch (error) {
         console.error('Apply error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+// POST /preview/write - Write a file to workspace (for tool-based agents)
+app.post('/preview/write', async (req, res) => {
+    try {
+        const { siteId, filePath, content } = req.body;
+        if (!siteId || !filePath || content === undefined) {
+            return res.status(400).json({ error: 'Missing required fields: siteId, filePath, content' });
+        }
+        const preview = activePreviews.get(siteId);
+        if (!preview || preview.status !== 'running') {
+            return res.status(400).json({ error: 'Preview not running. Call /preview/start first.' });
+        }
+        const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
+        const fullPath = path_1.default.join(workspacePath, filePath);
+        // Create directory if it doesn't exist
+        await fs_1.promises.mkdir(path_1.default.dirname(fullPath), { recursive: true });
+        // Write file
+        await fs_1.promises.writeFile(fullPath, content, 'utf-8');
+        console.log(`Wrote file ${filePath} to workspace ${siteId}`);
+        // Update activity time
+        preview.lastActivity = new Date();
+        // Check if restart needed (config files)
+        const needsRestart = filePath.includes('next.config') ||
+            filePath.includes('tailwind.config') ||
+            filePath.includes('postcss.config') ||
+            filePath === 'package.json';
+        if (needsRestart && preview.pid) {
+            console.log(`Restarting dev server for ${siteId} due to ${filePath} change...`);
+            try {
+                process.kill(preview.pid);
+            }
+            catch { /* ignore */ }
+            await startDevServer(siteId, workspacePath);
+        }
+        res.json({
+            ok: true,
+            file: filePath,
+            needsRestart
+        });
+    }
+    catch (error) {
+        console.error('Write error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+// POST /preview/read - Read a file from workspace
+app.post('/preview/read', async (req, res) => {
+    try {
+        const { siteId, filePath } = req.body;
+        if (!siteId || !filePath) {
+            return res.status(400).json({ error: 'Missing required fields: siteId, filePath' });
+        }
+        const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
+        const fullPath = path_1.default.join(workspacePath, filePath);
+        // Security check - ensure path is within workspace
+        const resolvedPath = path_1.default.resolve(fullPath);
+        const resolvedWorkspace = path_1.default.resolve(workspacePath);
+        if (!resolvedPath.startsWith(resolvedWorkspace)) {
+            return res.status(403).json({ error: 'Invalid file path' });
+        }
+        try {
+            const content = await fs_1.promises.readFile(fullPath, 'utf-8');
+            res.json({
+                ok: true,
+                content,
+                file: filePath
+            });
+        }
+        catch (err) {
+            if (err.code === 'ENOENT') {
+                return res.status(404).json({ error: 'File not found' });
+            }
+            throw err;
+        }
+    }
+    catch (error) {
+        console.error('Read error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+// POST /preview/pull - Git pull latest changes from remote
+app.post('/preview/pull', async (req, res) => {
+    try {
+        const { siteId } = req.body;
+        if (!siteId) {
+            return res.status(400).json({ error: 'Missing siteId' });
+        }
+        const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
+        // Check if workspace exists
+        try {
+            await fs_1.promises.access(workspacePath);
+        }
+        catch {
+            return res.status(404).json({ error: 'Workspace not found' });
+        }
+        // Git pull
+        (0, child_process_1.execSync)('git pull origin main', {
+            cwd: workspacePath,
+            stdio: 'pipe'
+        });
+        console.log(`Pulled latest changes for ${siteId}`);
+        res.json({
+            ok: true,
+            message: 'Pulled latest changes from remote'
+        });
+    }
+    catch (error) {
+        console.error('Pull error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+// POST /execution/register - Register an n8n execution ID for a request (called by n8n workflow)
+app.post('/execution/register', async (req, res) => {
+    try {
+        const { requestId, executionId } = req.body;
+        if (!requestId || !executionId) {
+            return res.status(400).json({ error: 'Missing requestId or executionId' });
+        }
+        activeExecutions.set(requestId, executionId);
+        console.log(`Registered execution ${executionId} for request ${requestId}`);
+        res.json({ ok: true, registered: true });
+    }
+    catch (error) {
+        console.error('Execution register error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+// POST /execution/stop - Stop a running n8n execution
+app.post('/execution/stop', async (req, res) => {
+    try {
+        const { requestId } = req.body;
+        if (!requestId) {
+            return res.status(400).json({ error: 'Missing requestId' });
+        }
+        const executionId = activeExecutions.get(requestId);
+        if (!executionId) {
+            console.log(`No execution found for request ${requestId}`);
+            return res.json({ ok: true, message: 'No active execution found' });
+        }
+        if (!N8N_API_KEY) {
+            console.error('N8N_API_KEY not configured');
+            return res.status(500).json({ error: 'N8N_API_KEY not configured' });
+        }
+        // Call n8n API to stop the execution
+        console.log(`Stopping n8n execution ${executionId} for request ${requestId}...`);
+        const n8nResponse = await fetch(`${N8N_API_URL}/api/v1/executions/${executionId}`, {
+            method: 'DELETE',
+            headers: {
+                'X-N8N-API-KEY': N8N_API_KEY,
+                'Accept': 'application/json'
+            }
+        });
+        if (n8nResponse.ok) {
+            console.log(`Successfully stopped execution ${executionId}`);
+            activeExecutions.delete(requestId);
+            res.json({ ok: true, stopped: executionId });
+        }
+        else {
+            const errorText = await n8nResponse.text();
+            console.error(`Failed to stop execution: ${n8nResponse.status} - ${errorText}`);
+            // Still remove from our tracking even if n8n fails (execution might have completed)
+            activeExecutions.delete(requestId);
+            res.json({ ok: true, message: 'Execution may have already completed', status: n8nResponse.status });
+        }
+    }
+    catch (error) {
+        console.error('Execution stop error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+// POST /execution/cleanup - Remove completed execution from tracking (called by n8n at end of workflow)
+app.post('/execution/cleanup', async (req, res) => {
+    try {
+        const { requestId } = req.body;
+        if (!requestId) {
+            return res.status(400).json({ error: 'Missing requestId' });
+        }
+        activeExecutions.delete(requestId);
+        console.log(`Cleaned up execution tracking for request ${requestId}`);
+        res.json({ ok: true });
+    }
+    catch (error) {
+        console.error('Execution cleanup error:', error);
         res.status(500).json({ error: String(error) });
     }
 });
@@ -521,6 +843,12 @@ app.post('/preview/stop', async (req, res) => {
             catch { /* ignore */ }
             preview.status = 'stopped';
             preview.pid = null;
+            // Clean up cached proxy middleware to prevent memory leaks
+            const cacheKey = `${siteId}:${preview.port}`;
+            if (proxyCache.has(cacheKey)) {
+                proxyCache.delete(cacheKey);
+                console.log(`Cleaned up proxy middleware cache for ${cacheKey}`);
+            }
         }
         res.json({ ok: true, status: 'stopped' });
     }
@@ -537,7 +865,23 @@ app.post('/preview/deploy', async (req, res) => {
             return res.status(400).json({ error: 'Missing siteId' });
         }
         const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
-        // Stage and commit changes
+        // Configure git user identity for commit
+        (0, child_process_1.execSync)('git config user.email "ai-editor@automate.dev"', { cwd: workspacePath, stdio: 'pipe' });
+        (0, child_process_1.execSync)('git config user.name "AI Editor"', { cwd: workspacePath, stdio: 'pipe' });
+        // Ensure .gitignore excludes node_modules to prevent large file errors
+        const gitignorePath = path_1.default.join(workspacePath, '.gitignore');
+        try {
+            let gitignoreContent = await fs_1.promises.readFile(gitignorePath, 'utf-8');
+            if (!gitignoreContent.includes('node_modules')) {
+                gitignoreContent += '\nnode_modules/\n';
+                await fs_1.promises.writeFile(gitignorePath, gitignoreContent, 'utf-8');
+            }
+        }
+        catch {
+            // .gitignore doesn't exist, create it
+            await fs_1.promises.writeFile(gitignorePath, 'node_modules/\n.next/\n.turbo/\ndist/\nbuild/\n', 'utf-8');
+        }
+        // Stage and commit changes (excluding node_modules)
         (0, child_process_1.execSync)('git add -A', { cwd: workspacePath, stdio: 'pipe' });
         const commitMessage = title || 'AI Editor: Apply changes';
         (0, child_process_1.execSync)(`git commit -m "${commitMessage}"`, { cwd: workspacePath, stdio: 'pipe' });
@@ -595,6 +939,108 @@ app.post('/preview/deploy', async (req, res) => {
     }
     catch (error) {
         console.error('Deploy error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+// POST /preview/write - Write file directly to workspace (instant HMR, no GitHub roundtrip)
+app.post('/preview/write', async (req, res) => {
+    try {
+        const { siteId, filePath, content } = req.body;
+        if (!siteId || !filePath || content === undefined) {
+            return res.status(400).json({ error: 'Missing siteId, filePath, or content' });
+        }
+        const preview = activePreviews.get(siteId);
+        if (!preview || preview.status !== 'running') {
+            return res.status(400).json({ error: 'Preview not running. Call /preview/start first.' });
+        }
+        const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
+        const fullPath = path_1.default.join(workspacePath, filePath);
+        // Security: Prevent path traversal
+        if (!fullPath.startsWith(workspacePath)) {
+            return res.status(400).json({ error: 'Invalid file path' });
+        }
+        // Ensure directory exists
+        const dir = path_1.default.dirname(fullPath);
+        await fs_1.promises.mkdir(dir, { recursive: true });
+        // Write file directly - Next.js HMR will pick this up instantly
+        await fs_1.promises.writeFile(fullPath, content, 'utf-8');
+        // Update activity
+        preview.lastActivity = new Date();
+        console.log(`[${siteId}] Direct write: ${filePath} (${content.length} bytes)`);
+        res.json({
+            ok: true,
+            file: filePath,
+            size: content.length
+        });
+    }
+    catch (error) {
+        console.error('Write error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+// POST /preview/pull - Pull latest changes from GitHub (for when files are committed via API)
+app.post('/preview/pull', async (req, res) => {
+    try {
+        const { siteId } = req.body;
+        if (!siteId) {
+            return res.status(400).json({ error: 'Missing siteId' });
+        }
+        const preview = activePreviews.get(siteId);
+        if (!preview || preview.status !== 'running') {
+            return res.status(400).json({ error: 'Preview not running. Call /preview/start first.' });
+        }
+        const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
+        try {
+            // Stash any local changes, pull, then re-apply
+            console.log(`Pulling latest changes for ${siteId}...`);
+            // Check for local changes
+            const status = (0, child_process_1.execSync)('git status --porcelain', {
+                cwd: workspacePath,
+                encoding: 'utf-8'
+            });
+            if (status.trim()) {
+                // Stash local changes
+                (0, child_process_1.execSync)('git stash', { cwd: workspacePath, stdio: 'pipe' });
+            }
+            // Pull latest
+            (0, child_process_1.execSync)('git pull origin main --rebase', { cwd: workspacePath, stdio: 'pipe' });
+            if (status.trim()) {
+                // Try to reapply stashed changes
+                try {
+                    (0, child_process_1.execSync)('git stash pop', { cwd: workspacePath, stdio: 'pipe' });
+                }
+                catch (e) {
+                    console.log('Could not reapply stashed changes, dropping them');
+                    (0, child_process_1.execSync)('git stash drop', { cwd: workspacePath, stdio: 'pipe' });
+                }
+            }
+            // Update activity
+            preview.lastActivity = new Date();
+            res.json({
+                ok: true,
+                message: 'Pulled latest changes from GitHub'
+            });
+        }
+        catch (pullError) {
+            console.error(`Git pull failed for ${siteId}:`, pullError);
+            // Try a hard reset if pull fails
+            try {
+                (0, child_process_1.execSync)('git fetch origin && git reset --hard origin/main', {
+                    cwd: workspacePath,
+                    stdio: 'pipe'
+                });
+                res.json({
+                    ok: true,
+                    message: 'Reset to latest from GitHub'
+                });
+            }
+            catch (resetError) {
+                res.status(500).json({ error: 'Failed to sync with GitHub' });
+            }
+        }
+    }
+    catch (error) {
+        console.error('Pull error:', error);
         res.status(500).json({ error: String(error) });
     }
 });

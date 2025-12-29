@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Oxanium } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -18,9 +19,9 @@ const oxanium = Oxanium({
 });
 
 export const metadata: Metadata = {
-  title: "AI Editor Agent | Frontend Editing Assistant",
-  description: "AI-powered frontend code editor that transforms your website with natural language prompts",
-  keywords: ["AI", "code editor", "frontend", "website builder", "n8n"],
+  title: "AutoMate | AI-Powered Code Editor",
+  description: "Build extraordinary apps by chatting with AI",
+  keywords: ["AI", "code editor", "frontend", "website builder", "AutoMate"],
 };
 
 export default function RootLayout({
@@ -33,8 +34,11 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} ${oxanium.variable} antialiased bg-[var(--bg-primary)] text-[var(--text-primary)]`}
       >
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
 }
+

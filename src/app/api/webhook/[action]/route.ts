@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 // Required for Cloudflare Pages
 export const runtime = 'edge';
 
+// Fly Orchestrator URL for direct calls
+const FLY_ORCHESTRATOR_URL = process.env.FLY_ORCHESTRATOR_URL || 'https://preview-orchestrator.fly.dev';
+
 // n8n webhook URLs from environment variables
 const WEBHOOKS: Record<string, string | undefined> = {
     'edit-ui': process.env.N8N_WEBHOOK_EDIT_UI,
@@ -17,6 +20,45 @@ export async function POST(
     { params }: { params: Promise<{ action: string }> }
 ) {
     const { action } = await params;
+
+    // Special handling for 'apply' - call Fly orchestrator directly
+    if (action === 'apply') {
+        try {
+            const body = await request.json();
+
+            const response = await fetch(`${FLY_ORCHESTRATOR_URL}/preview/deploy`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    siteId: body.siteId,
+                    mode: 'merge',  // Push directly to main branch
+                    title: 'AI Editor: Apply changes'
+                }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                return NextResponse.json(
+                    { error: data.error || 'Deploy failed' },
+                    { status: response.status }
+                );
+            }
+
+            // Return in the format expected by the client
+            return NextResponse.json({
+                status: 'applied',
+                commitSha: data.commitSha || 'N/A',
+                mergedPrUrl: data.prUrl || ''
+            });
+        } catch (error) {
+            console.error('Apply error:', error);
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Apply failed' },
+                { status: 500 }
+            );
+        }
+    }
 
     const webhookUrl = WEBHOOKS[action as keyof typeof WEBHOOKS];
 
@@ -75,3 +117,4 @@ export async function POST(
         );
     }
 }
+

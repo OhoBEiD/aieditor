@@ -83,8 +83,8 @@ export function ChatSelector({
                 onClick={onNewChat}
                 className={cn(
                     'flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0',
-                    'bg-[var(--accent-primary)] text-white',
-                    'hover:bg-[var(--accent-primary-hover)]',
+                    'bg-gradient-to-br from-purple-500 to-pink-500 text-white',
+                    'hover:from-purple-600 hover:to-pink-600',
                     'transition-all duration-200 shadow-md'
                 )}
                 title="New Chat"
@@ -98,21 +98,21 @@ export function ChatSelector({
                     onClick={() => setIsOpen(!isOpen)}
                     className={cn(
                         'w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg',
-                        'bg-[var(--bg-tertiary)] border border-[var(--border-default)]',
-                        'text-sm text-[var(--text-primary)]',
-                        'hover:border-[var(--border-hover)]',
+                        'bg-white/50 backdrop-blur-sm border border-purple-200',
+                        'text-sm text-gray-900',
+                        'hover:border-purple-300 hover:bg-white/70',
                         'transition-all duration-200'
                     )}
                 >
                     <div className="flex items-center gap-2 min-w-0">
-                        <MessageSquare className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
+                        <MessageSquare className="w-4 h-4 text-purple-500 flex-shrink-0" />
                         <span className="truncate">
                             {activeSession ? truncate(activeSession.title, 30) : 'Select a chat'}
                         </span>
                     </div>
                     <ChevronDown
                         className={cn(
-                            'w-4 h-4 text-[var(--text-muted)] flex-shrink-0 transition-transform',
+                            'w-4 h-4 text-purple-500 flex-shrink-0 transition-transform',
                             isOpen && 'rotate-180'
                         )}
                     />
@@ -120,11 +120,11 @@ export function ChatSelector({
 
                 {/* Dropdown Menu */}
                 {isOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-1 py-1 bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto animate-fade-in">
+                    <div className="absolute top-full left-0 right-0 mt-1 py-1 bg-white/90 backdrop-blur-xl border border-purple-200 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto animate-fade-in">
                         {sessions.length === 0 ? (
                             <div className="px-3 py-4 text-center">
-                                <MessageSquare className="w-8 h-8 mx-auto text-[var(--text-muted)] mb-2" />
-                                <p className="text-sm text-[var(--text-muted)]">No chats yet</p>
+                                <MessageSquare className="w-8 h-8 mx-auto text-purple-400 mb-2" />
+                                <p className="text-sm text-gray-500">No chats yet</p>
                             </div>
                         ) : (
                             sessions.map((session) => (
@@ -132,8 +132,8 @@ export function ChatSelector({
                                     key={session.id}
                                     className={cn(
                                         'group flex items-center gap-2 px-3 py-2',
-                                        'hover:bg-[var(--bg-hover)] transition-colors',
-                                        session.id === activeSessionId && 'bg-[var(--bg-tertiary)]'
+                                        'hover:bg-purple-50 transition-colors',
+                                        session.id === activeSessionId && 'bg-purple-100'
                                     )}
                                 >
                                     {editingId === session.id ? (
@@ -148,7 +148,7 @@ export function ChatSelector({
                                                     if (e.key === 'Enter') handleRename(session.id);
                                                     if (e.key === 'Escape') cancelEdit();
                                                 }}
-                                                className="flex-1 px-2 py-1 text-sm bg-white border border-[var(--border-default)] rounded focus:outline-none focus:border-[var(--accent-primary)]"
+                                                className="flex-1 px-2 py-1 text-sm bg-white border border-purple-200 rounded focus:outline-none focus:border-purple-500"
                                             />
                                             <button
                                                 onClick={() => handleRename(session.id)}
@@ -158,7 +158,7 @@ export function ChatSelector({
                                             </button>
                                             <button
                                                 onClick={cancelEdit}
-                                                className="p-1 rounded text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+                                                className="p-1 rounded text-gray-500 hover:bg-gray-100"
                                             >
                                                 <X className="w-4 h-4" />
                                             </button>
@@ -173,12 +173,12 @@ export function ChatSelector({
                                                 }}
                                                 className="flex-1 flex items-center gap-3 text-left min-w-0"
                                             >
-                                                <MessageSquare className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
+                                                <MessageSquare className="w-4 h-4 text-purple-500 flex-shrink-0" />
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="text-sm text-[var(--text-primary)] truncate">
+                                                    <p className="text-sm text-gray-900 truncate">
                                                         {truncate(session.title, 35)}
                                                     </p>
-                                                    <p className="text-xs text-[var(--text-muted)]">
+                                                    <p className="text-xs text-gray-500">
                                                         {formatRelativeTime(session.updated_at)}
                                                     </p>
                                                 </div>
@@ -187,7 +187,7 @@ export function ChatSelector({
                                             {onRenameChat && (
                                                 <button
                                                     onClick={(e) => startEditing(e, session)}
-                                                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-blue-50 transition-all"
+                                                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-gray-500 hover:text-purple-600 hover:bg-purple-50 transition-all"
                                                     title="Rename chat"
                                                 >
                                                     <Pencil className="w-3.5 h-3.5" />
@@ -197,7 +197,7 @@ export function ChatSelector({
                                             {onDeleteChat && (
                                                 <button
                                                     onClick={(e) => handleDelete(e, session.id)}
-                                                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-danger)] hover:bg-red-50 transition-all"
+                                                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all"
                                                     title="Delete chat"
                                                 >
                                                     <Trash2 className="w-3.5 h-3.5" />

@@ -1,0 +1,406 @@
+{
+  "name": "AI Agent with Complete Tools",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "pattern",
+              "name": "pattern",
+              "value": "={{ $json.pattern }}",
+              "type": "string"
+            },
+            {
+              "id": "fileTypes",
+              "name": "fileTypes",
+              "value": "={{ $json.fileTypes || [] }}",
+              "type": "array"
+            },
+            {
+              "id": "owner",
+              "name": "owner",
+              "value": "={{ $('Merge Files').item.json.site.owner }}",
+              "type": "string"
+            },
+            {
+              "id": "repo",
+              "name": "repo",
+              "value": "={{ $('Merge Files').item.json.site.repo }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "search-code-prepare",
+      "name": "Search Code - Prepare",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [1500, -800]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build GitHub search query\nconst pattern = $input.item.json.pattern;\nconst fileTypes = $input.item.json.fileTypes || [];\nconst owner = $input.item.json.owner;\nconst repo = $input.item.json.repo;\n\n// Add file type filters if provided\nlet fileExtension = '';\nif (fileTypes.length > 0) {\n  fileExtension = fileTypes.map(t => `+extension:${t}`).join('');\n}\n\n// Build query: pattern + repo + file extensions\nconst query = `${pattern}+repo:${owner}/${repo}${fileExtension}`;\n\nreturn {\n  json: {\n    query: query,\n    url: 'https://api.github.com/search/code',\n    method: 'GET'\n  }\n};"
+      },
+      "id": "search-code-build-query",
+      "name": "Search Code - Build Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1700, -800]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "search-code-api-call",
+      "name": "Search Code - API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1900, -800]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format search results for AI\nconst response = $input.item.json;\n\nif (!response || !response.items) {\n  return {\n    json: {\n      success: true,\n      matches: [],\n      message: 'No matches found'\n    }\n  };\n}\n\nconst matches = response.items.map(item => ({\n  path: item.path,\n  repository: item.repository?.full_name || 'unknown',\n  score: item.score,\n  url: item.html_url\n}));\n\nreturn {\n  json: {\n    success: true,\n    matches: matches,\n    total: response.total_count || 0,\n    message: `Found ${matches.length} matches across ${matches.length} files`\n  }\n};"
+      },
+      "id": "search-code-format",
+      "name": "Search Code - Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2100, -800]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "filePath",
+              "name": "filePath",
+              "value": "={{ $json.filePath }}",
+              "type": "string"
+            },
+            {
+              "id": "owner",
+              "name": "owner",
+              "value": "={{ $('Merge Files').item.json.site.owner }}",
+              "type": "string"
+            },
+            {
+              "id": "repo",
+              "name": "repo",
+              "value": "={{ $('Merge Files').item.json.site.repo }}",
+              "type": "string"
+            },
+            {
+              "id": "branch",
+              "name": "branch",
+              "value": "={{ $('Merge Files').item.json.site.default_branch || 'main' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "read-file-prepare",
+      "name": "Read File - Prepare",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [1500, -600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build GitHub file content URL\nconst filePath = $input.item.json.filePath;\nconst owner = $input.item.json.owner;\nconst repo = $input.item.json.repo;\nconst branch = $input.item.json.branch;\n\nconst url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`;\n\nreturn {\n  json: {\n    url: url,\n    filePath: filePath\n  }\n};"
+      },
+      "id": "read-file-build-url",
+      "name": "Read File - Build URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1700, -600]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.raw"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "read-file-api-call",
+      "name": "Read File - API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1900, -600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format file contents for AI\nconst content = $input.item.json;\nconst filePath = $('Read File - Build URL').item.json.filePath;\n\n// Add line numbers to content\nlet numberedContent = '';\nif (typeof content === 'string') {\n  const lines = content.split('\\n');\n  numberedContent = lines.map((line, i) => `${i + 1}\\t${line}`).join('\\n');\n} else {\n  numberedContent = 'Error: Could not read file';\n}\n\nreturn {\n  json: {\n    success: true,\n    filePath: filePath,\n    content: numberedContent,\n    lines: typeof content === 'string' ? content.split('\\n').length : 0,\n    message: `Successfully read ${filePath} (${typeof content === 'string' ? content.split('\\n').length : 0} lines)`\n  }\n};"
+      },
+      "id": "read-file-format",
+      "name": "Read File - Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2100, -600]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "pattern",
+              "name": "pattern",
+              "value": "={{ $json.pattern }}",
+              "type": "string"
+            },
+            {
+              "id": "owner",
+              "name": "owner",
+              "value": "={{ $('Merge Files').item.json.site.owner }}",
+              "type": "string"
+            },
+            {
+              "id": "repo",
+              "name": "repo",
+              "value": "={{ $('Merge Files').item.json.site.repo }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "list-files-prepare",
+      "name": "List Files - Prepare",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [1500, -400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Convert glob pattern to GitHub search query\nconst pattern = $input.item.json.pattern;\nconst owner = $input.item.json.owner;\nconst repo = $input.item.json.repo;\n\nlet searchQuery = '';\n\n// Extract directory path from glob pattern\n// e.g., \"src/**/*.css\" -> \"path:src\"\nconst pathMatch = pattern.match(/^([^*]+)/);\nif (pathMatch && pathMatch[1]) {\n  const cleanPath = pathMatch[1].replace(/\\/$/, '');\n  if (cleanPath) {\n    searchQuery += `path:${cleanPath}`;\n  }\n}\n\n// Extract file extension from glob pattern\n// e.g., \"**/*.css\" -> \"extension:css\"\nconst extMatch = pattern.match(/\\*\\.(\\w+)$/);\nif (extMatch) {\n  if (searchQuery) searchQuery += '+';\n  searchQuery += `extension:${extMatch[1]}`;\n}\n\n// If no specific pattern, just search repo\nif (!searchQuery) {\n  searchQuery = 'path:/';\n}\n\n// Build full query\nconst query = `repo:${owner}/${repo}+${searchQuery}`;\n\nreturn {\n  json: {\n    query: query,\n    url: 'https://api.github.com/search/code',\n    method: 'GET',\n    originalPattern: pattern\n  }\n};"
+      },
+      "id": "list-files-build-query",
+      "name": "List Files - Build Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1700, -400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "list-files-api-call",
+      "name": "List Files - API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1900, -400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format file list for AI\nconst response = $input.item.json;\nconst originalPattern = $('List Files - Build Query').item.json.originalPattern;\n\nif (!response || !response.items) {\n  return {\n    json: {\n      success: true,\n      files: [],\n      message: `No files matching pattern '${originalPattern}'`\n    }\n  };\n}\n\nconst files = response.items.map(item => ({\n  path: item.path,\n  name: item.name,\n  size: item.size || 0,\n  url: item.html_url\n}));\n\nreturn {\n  json: {\n    success: true,\n    files: files,\n    total: files.length,\n    pattern: originalPattern,\n    message: `Found ${files.length} files matching '${originalPattern}'`\n  }\n};"
+      },
+      "id": "list-files-format",
+      "name": "List Files - Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2100, -400]
+    }
+  ],
+  "connections": {
+    "Search Code - Prepare": {
+      "main": [
+        [
+          {
+            "node": "Search Code - Build Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Code - Build Query": {
+      "main": [
+        [
+          {
+            "node": "Search Code - API Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Code - API Call": {
+      "main": [
+        [
+          {
+            "node": "Search Code - Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read File - Prepare": {
+      "main": [
+        [
+          {
+            "node": "Read File - Build URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read File - Build URL": {
+      "main": [
+        [
+          {
+            "node": "Read File - API Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read File - API Call": {
+      "main": [
+        [
+          {
+            "node": "Read File - Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Files - Prepare": {
+      "main": [
+        [
+          {
+            "node": "List Files - Build Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Files - Build Query": {
+      "main": [
+        [
+          {
+            "node": "List Files - API Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Files - API Call": {
+      "main": [
+        [
+          {
+            "node": "List Files - Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

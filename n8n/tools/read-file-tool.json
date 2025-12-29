@@ -1,0 +1,14 @@
+{
+  "name": "read_file",
+  "description": "Read the complete contents of a specific file from the repository. Use this after searching to understand the full context of a file before making changes.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "filePath": {
+        "type": "string",
+        "description": "Relative path to the file from repository root (e.g., 'src/app/globals.css', 'tailwind.config.js')"
+      }
+    },
+    "required": ["filePath"]
+  }
+}

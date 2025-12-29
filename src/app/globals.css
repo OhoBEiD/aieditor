@@ -1,49 +1,90 @@
-/* Google Fonts - must be first */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
+/* Imports must come first */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
+
+/* Helvetica Now Fonts */
+@font-face {
+  font-family: 'Helvetica Now Display';
+  src: url('/fonts/HelveticaNowDisplayCondensedBlack.woff2') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Helvetica Now Text';
+  src: url('/fonts/HelveticaNowTextRegular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Helvetica Now Text';
+  src: url('/fonts/HelveticaNowTextBold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* =====================================================
    AI Editor Agent - Design System
+   AutoMate Color Palette
    ===================================================== */
 
-/* CSS Variables - Light Theme with Orange Accents */
+/* CSS Variables - AutoMate Theme */
 :root {
-  /* Background Colors - Off-White Theme */
-  --bg-primary: #fafafa;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #f5f5f5;
-  --bg-elevated: #ffffff;
-  --bg-hover: #f0f0f0;
+  /* Background Colors */
+  --bg-primary: #0a0a12;
+  --bg-secondary: #12121a;
+  --bg-tertiary: #1a1a24;
+  --bg-elevated: #1e1e28;
+  --bg-hover: #252530;
 
-  /* Accent Colors - Navy Blue Theme */
-  --accent-primary: #1e3a5f;
-  --accent-primary-hover: #2d4a6f;
-  --accent-secondary: #0f2847;
-  --accent-success: #10b981;
-  --accent-warning: #fbbf24;
-  --accent-danger: #ef4444;
+  /* Core Accent Colors - Logo Gradient */
+  --accent-deep-blue: #1C54AF;
+  --accent-teal-blue: #1E85B3;
+  --accent-cyan-teal: #30AFC3;
+  --accent-bright-aqua: #3FDDDB;
+  --accent-mint: #58D0AC;
+  --accent-lime: #C4F187;
+  --accent-magenta: #B72CC2;
+  --accent-purple: #7D1CB4;
+  --accent-indigo: #5311A1;
 
-  /* Text Colors - For Light Theme */
-  --text-primary: #1a1a1a;
-  --text-secondary: #4a4a4a;
-  --text-muted: #737373;
-  --text-disabled: #a1a1a1;
+  /* Primary Accent (use teal-blue as main) */
+  --accent-primary: #1E85B3;
+  --accent-primary-hover: #30AFC3;
+  --accent-secondary: #1C54AF;
+  --accent-success: #58D0AC;
+  --accent-warning: #C4F187;
+  --accent-danger: #B72CC2;
 
-  /* Border Colors - Light Theme */
-  --border-default: #e5e5e5;
-  --border-hover: #d4d4d4;
-  --border-focus: #1e3a5f;
+  /* Text Colors - For Dark Theme */
+  --text-primary: #ffffff;
+  --text-secondary: #e0e0e0;
+  --text-muted: #a0a0a0;
+  --text-disabled: #606060;
 
-  /* Gradient - Navy Blue */
-  --gradient-primary: linear-gradient(135deg, #1e3a5f 0%, #0f2847 50%, #0a1929 100%);
-  --gradient-glass: linear-gradient(135deg, rgba(30, 58, 95, 0.1) 0%, rgba(15, 40, 71, 0.05) 100%);
+  /* Border Colors */
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-hover: rgba(255, 255, 255, 0.2);
+  --border-focus: #3FDDDB;
+
+  /* Shadows / Depth */
+  --shadow-deep-indigo: #170A46;
+  --shadow-darker: #1E1962;
+
+  /* Gradient - Logo colors */
+  --gradient-primary: linear-gradient(135deg, #1C54AF 0%, #1E85B3 20%, #30AFC3 40%, #3FDDDB 60%, #58D0AC 80%, #C4F187 100%);
+  --gradient-accent: linear-gradient(135deg, #B72CC2 0%, #7D1CB4 50%, #5311A1 100%);
+  --gradient-glass: linear-gradient(135deg, rgba(30, 133, 179, 0.1) 0%, rgba(63, 221, 219, 0.05) 100%);
 
   /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 20px rgba(30, 58, 95, 0.3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.7);
+  --shadow-glow: 0 0 20px rgba(63, 221, 219, 0.3);
 
   /* Spacing */
   --radius-sm: 6px;
@@ -52,7 +93,8 @@
   --radius-xl: 24px;
 
   /* Typography */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Helvetica Now Display', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-sans: 'Helvetica Now Text', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
 }
 
@@ -80,24 +122,25 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar Styling */
+/* Scrollbar Styling - Light glassmorphic style */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
+  background: transparent;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border-default);
+  background: rgba(255, 255, 255, 0.3);
   border-radius: 4px;
+  backdrop-filter: blur(8px);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--border-hover);
+  background: rgba(255, 255, 255, 0.5);
 }
 
 /* Selection */

@@ -106,18 +106,18 @@ export function MessageInput({
     }, [message]);
 
     return (
-        <div className="flex-shrink-0 p-4 border-t border-[var(--border-default)] bg-[var(--bg-secondary)]">
+        <div className="flex-shrink-0 p-4">
             {/* Image Preview */}
             {imagePreview && (
                 <div className="mb-3 relative inline-block">
                     <img
                         src={imagePreview}
                         alt="Preview"
-                        className="h-16 rounded-lg border border-[var(--border-default)]"
+                        className="h-16 rounded-lg border border-gray-200"
                     />
                     <button
                         onClick={removeImage}
-                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[var(--accent-danger)] text-white flex items-center justify-center hover:bg-red-600 transition-colors"
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
                     >
                         <X className="w-3 h-3" />
                     </button>
@@ -129,7 +129,7 @@ export function MessageInput({
                 <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex-shrink-0 p-2 rounded-full text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+                    className="flex-shrink-0 p-2 rounded-full text-gray-500 hover:text-blue-600 hover:bg-gray-100 transition-colors"
                     title="Upload image"
                 >
                     <Image className="w-4 h-4" />
@@ -159,14 +159,14 @@ export function MessageInput({
                     rows={1}
                     className={cn(
                         'flex-1 px-3 py-1.5 rounded-2xl text-xs resize-none',
-                        'bg-[var(--bg-tertiary)]',
-                        'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
-                        'focus:outline-none focus:ring-0 border-none outline-none',
+                        'bg-white/50 backdrop-blur-sm border border-white/20',
+                        'text-gray-900 placeholder:text-gray-500',
+                        'focus:outline-none focus:ring-0 focus:bg-white/70 transition-all duration-200',
                         'disabled:opacity-50',
-                        'caret-[var(--accent-primary)]'
+                        'caret-blue-500'
                     )}
                     style={{
-                        caretColor: 'var(--accent-primary)',
+                        caretColor: '#3b82f6',
                         minHeight: '32px',
                         maxHeight: '180px' // ~10 lines
                     }}
@@ -177,7 +177,7 @@ export function MessageInput({
                     <button
                         type="button"
                         onClick={onStop}
-                        className="flex-shrink-0 p-2 rounded-full transition-all bg-[var(--accent-danger)] text-white hover:bg-red-600"
+                        className="flex-shrink-0 p-2 rounded-full transition-all bg-red-500 text-white hover:bg-red-600"
                         title="Stop generation"
                     >
                         <Square className="w-4 h-4 fill-current" />
@@ -189,8 +189,8 @@ export function MessageInput({
                         className={cn(
                             'flex-shrink-0 p-2 rounded-full transition-all',
                             (message.trim() || selectedImage)
-                                ? 'bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary-hover)]'
-                                : 'bg-[var(--bg-tertiary)] text-[var(--text-disabled)]'
+                                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                                : 'bg-gray-200 text-gray-400'
                         )}
                     >
                         <Send className="w-4 h-4" />
@@ -202,9 +202,9 @@ export function MessageInput({
                 href="https://automatelb.com"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-2 block text-[10px] text-[var(--text-muted)] text-center hover:text-[var(--accent-primary)] transition-colors"
+                className="mt-2 block text-[10px] text-gray-500 text-center hover:text-blue-600 transition-colors"
             >
-                Developed by <span className="font-medium text-[var(--accent-primary)]" style={{ fontFamily: 'var(--font-oxanium)' }}>AutoMate</span>
+                Developed by <span className="font-medium text-blue-600" style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}>AutoMate</span>
             </a>
         </div>
     );

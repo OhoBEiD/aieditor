@@ -22,12 +22,13 @@ export interface EditUIRequest {
 
 export interface EditUIResponse {
     requestId: string;
-    status: 'preview_ready';
+    status: 'preview_ready' | 'pending';
     summary: string;
     diff: string;
     previewUrl: string;
     prUrl: string;
     warnings: string[];
+    filesChanged?: string[];
 }
 
 /**

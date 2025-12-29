@@ -1,0 +1,39 @@
+{
+  "name": "Tool: list_files",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// AI Agent Tool: list_files\nconst pattern = $input.item.json.pattern;\n\n// Get repo context from input\nconst owner = $input.item.json.owner;\nconst repo = $input.item.json.repo;\nconst branch = $input.item.json.branch || 'main';\n\nif (!owner || !repo) {\n  return {\n    json: {\n      success: false,\n      error: 'Missing repository information. Owner: ' + owner + ', Repo: ' + repo,\n      files: []\n    }\n  };\n}\n\nif (!pattern) {\n  return {\n    json: {\n      success: false,\n      error: 'Missing file pattern',\n      files: []\n    }\n  };\n}\n\n// Convert glob pattern to GitHub search query\nlet searchQuery = '';\n\n// Extract directory path: \"src/**/*.css\" -> \"path:src\"\nconst pathMatch = pattern.match(/^([^*]+)/);\nif (pathMatch && pathMatch[1]) {\n  const cleanPath = pathMatch[1].replace(/\\/$/, '');\n  if (cleanPath && cleanPath !== '**') {\n    searchQuery += `path:${cleanPath}`;\n  }\n}\n\n// Extract file extension: \"**/*.css\" -> \"extension:css\"\nconst extMatch = pattern.match(/\\*\\.(\\w+)$/);\nif (extMatch) {\n  if (searchQuery) searchQuery += '+';\n  searchQuery += `extension:${extMatch[1]}`;\n}\n\n// Extract exact filename: \"**/layout.*\" -> \"filename:layout\"\nconst filenameMatch = pattern.match(/\\/([^/*]+)\\.(\\*|\\w+)$/);\nif (filenameMatch && !extMatch) {\n  if (searchQuery) searchQuery += '+';\n  searchQuery += `filename:${filenameMatch[1]}`;\n}\n\n// If no specific pattern, search all\nif (!searchQuery) {\n  searchQuery = 'path:/';\n}\n\n// Build full query\nconst query = `repo:${owner}/${repo}+${searchQuery}`;\n\ntry {\n  // Call GitHub API\n  const response = await fetch(`https://api.github.com/search/code?q=${encodeURIComponent(query)}&per_page=100`, {\n    headers: {\n      'Authorization': `Bearer ${$env.GITHUB_TOKEN}`,\n      'Accept': 'application/vnd.github+json',\n      'X-GitHub-Api-Version': '2022-11-28'\n    }\n  });\n\n  if (!response.ok) {\n    throw new Error(`GitHub API returned ${response.status}: ${response.statusText}`);\n  }\n\n  const data = await response.json();\n\n  // Format results\n  if (!data || !data.items || data.items.length === 0) {\n    return {\n      json: {\n        success: true,\n        files: [],\n        total: 0,\n        pattern: pattern,\n        message: `No files matching pattern '${pattern}'`,\n        paths: []\n      }\n    };\n  }\n\n  const files = data.items.map(item => ({\n    path: item.path,\n    name: item.name,\n    size: item.size || 0,\n    url: item.html_url\n  }));\n\n  return {\n    json: {\n      success: true,\n      files: files,\n      total: data.total_count || files.length,\n      pattern: pattern,\n      message: `Found ${files.length} files matching '${pattern}'`,\n      paths: files.map(f => f.path)\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      success: false,\n      error: 'GitHub API error: ' + error.message,\n      files: [],\n      pattern: pattern,\n      query: query\n    }\n  };\n}"
+      },
+      "id": "code",
+      "name": "List Files Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "List Files Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

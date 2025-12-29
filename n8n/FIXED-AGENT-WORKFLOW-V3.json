@@ -1,0 +1,623 @@
+{
+    "name": "AI Editor - V3 with Instant HMR",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "agent/edit-ui",
+                "responseMode": "responseNode",
+                "options": {
+                    "allowedOrigins": "*"
+                }
+            },
+            "id": "5932f266-ef03-459a-aa4f-9cc48b42b278",
+            "name": "Webhook Edit UI",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                6144,
+                -448
+            ],
+            "webhookId": "edit-ui"
+        },
+        {
+            "parameters": {
+                "jsCode": "const b=$input.first().json.body||$input.first().json;\nconst req=['siteId','conversationId','userId','message'];\nconst miss=req.filter(k=>!b[k]);\nif(miss.length)throw new Error('Missing: '+miss.join(', '));\nconst rid=b.requestId||('req_'+Date.now()+'_'+Math.random().toString(36).slice(2,11));\nreturn[{json:{siteId:b.siteId,conversationId:b.conversationId,userId:b.userId,message:b.message,pageUrl:b.pageUrl||null,uiContext:b.uiContext||{},requestId:rid}}];"
+            },
+            "id": "45366b41-0518-43f6-a645-7689719bb47b",
+            "name": "Validate Input",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                6336,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/sites?site_key=eq.{{$json.siteId}}&select=*",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "fb37158d-c0c9-4120-92e5-9831cf164060",
+            "name": "Load Site",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                6512,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const inp=$('Validate Input').item.json;\nconst siteArr=$input.first().json;\nconst site=Array.isArray(siteArr)?siteArr[0]:siteArr;\nif(!site)throw new Error('Site not found');\n\nconst repoUrl=site.repo_url||'';\nconst match=repoUrl.match(/github\\.com\\/([^/]+)\\/([^/]+)/);\nconst owner=match?match[1]:'';\nconst repo=match?match[2].replace(/\\.git$/,''):'';\n\nreturn [{\n  json: {\n    ...inp,\n    site: {\n      id: site.id,\n      name: site.name,\n      repo_url: site.repo_url,\n      default_branch: site.default_branch || 'main',\n      stack: site.stack || 'unknown',\n      allowedPaths: ['**/*'],\n      owner,\n      repo\n    },\n    fileContents: {},\n    filesToFetch: ['src/app/page.tsx','src/app/layout.tsx','src/app/globals.css'],\n    owner,\n    repo,\n    branch: site.default_branch || 'main'\n  }\n}];"
+            },
+            "id": "8dd57c31-7202-46af-b27e-c60a9b802340",
+            "name": "Build Context",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                6688,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://preview-orchestrator.fly.dev/preview/start",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ siteId: $json.site.id, repoUrl: $json.site.repo_url, branch: $json.site.default_branch }) }}",
+                "options": {
+                    "timeout": 120000,
+                    "response": {
+                        "response": {
+                            "neverError": true
+                        }
+                    }
+                }
+            },
+            "id": "e87796ca-1e00-43b5-be55-bd38dad8a179",
+            "name": "Fly Start Preview",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                6864,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $('Build Context').item.json;\nconst flyResp = $input.first().json;\nreturn [{ json: { ...ctx, previewUrl: flyResp.previewUrl || '', previewStatus: flyResp.status || 'unknown' } }];"
+            },
+            "id": "067ec7e7-e4be-4831-95a9-44d320b53bc0",
+            "name": "Merge Fly Response",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                7056,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $input.first().json;\nconst files = ctx.filesToFetch || [];\nif (files.length === 0) {\n  return [{ json: { ...ctx, fileContents: {}, skipFetch: true } }];\n}\nreturn files.map((f, idx) => ({ \n  json: { \n    ...ctx, \n    currentFetchPath: f,\n    fetchIndex: idx,\n    totalFiles: files.length\n  } \n}));"
+            },
+            "id": "3aefb4cf-82ba-4831-ba58-c93c733c76fe",
+            "name": "Prepare Fetch",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                7232,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "url": "=https://api.github.com/repos/{{ $json.site.owner }}/{{ $json.site.repo }}/contents/{{ $json.currentFetchPath }}?ref={{ $json.site.default_branch }}",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer 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"
+                        },
+                        {
+                            "name": "Accept",
+                            "value": "application/vnd.github+json"
+                        }
+                    ]
+                },
+                "options": {
+                    "response": {
+                        "response": {
+                            "neverError": true
+                        }
+                    }
+                }
+            },
+            "id": "2d23d747-7bef-4c7c-ad2d-686e37ff1210",
+            "name": "Fetch GitHub Files",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                7408,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const prepareItems = $('Prepare Fetch').all();\nconst fetchItems = $input.all();\nconst originalCtx = $('Merge Fly Response').item.json;\n\nconst fileContents = {};\n\nfor (let i = 0; i < prepareItems.length; i++) {\n  const path = prepareItems[i].json.currentFetchPath;\n  const fetchResp = fetchItems[i]?.json;\n  \n  if (!path) continue;\n  \n  let content = fetchResp?.content;\n  \n  if (content) {\n    try {\n      fileContents[path] = Buffer.from(content, 'base64').toString('utf8');\n    } catch (e) {\n      fileContents[path] = '// Error decoding file';\n    }\n  }\n}\n\nreturn [{ json: { ...originalCtx, fileContents } }];"
+            },
+            "id": "61bdd619-8e37-4a13-891f-798ffc590751",
+            "name": "Merge Files",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                7584,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "name": "create_file",
+                "description": "Create or update a file in the repository. Input must be JSON with filePath and content fields.",
+                "jsCode": "// create_file tool - writes to preview instantly, then commits to GitHub\nlet input;\ntry { \n  input = typeof query === 'string' ? JSON.parse(query) : query; \n} catch (e) {\n  return JSON.stringify({ error: 'Invalid JSON. Required format: {\"filePath\": \"path/file.tsx\", \"content\": \"file content\"}' });\n}\n\nconst { filePath, content } = input;\nif (!filePath || typeof content !== 'string') {\n  return JSON.stringify({ error: 'Both filePath and content are required' });\n}\n\nlet ctx = {};\ntry {\n  ctx = $('Merge Files')?.item?.json || {};\n} catch (e) {}\n\nconst siteId = ctx.siteId || ctx.site?.id;\nconst owner = ctx.owner || ctx.site?.owner;\nconst repo = ctx.repo || ctx.site?.repo;\nconst branch = ctx.branch || ctx.site?.default_branch || 'main';\n\nif (!owner || !repo) {\n  return JSON.stringify({ error: 'Missing repository info', owner, repo });\n}\n\ntry {\n  // STEP 1: Write directly to preview workspace for instant HMR\n  let hmrOk = false;\n  if (siteId) {\n    try {\n      await this.helpers.httpRequest({\n        method: 'POST',\n        url: 'https://preview-orchestrator.fly.dev/preview/write',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ siteId, filePath, content }),\n        timeout: 5000\n      });\n      hmrOk = true;\n    } catch (e) {\n      console.log('Direct write failed, continuing with GitHub:', e.message);\n    }\n  }\n\n  // STEP 2: Also commit to GitHub for persistence\n  let sha = null;\n  try {\n    const existing = await this.helpers.httpRequest({\n      method: 'GET',\n      url: `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`,\n      headers: {\n        'Authorization': 'Bearer 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',\n        'Accept': 'application/vnd.github+json'\n      }\n    });\n    sha = existing.sha;\n  } catch (e) {}\n\n  const body = {\n    message: sha ? `Update ${filePath}` : `Create ${filePath}`,\n    content: Buffer.from(content).toString('base64'),\n    branch: branch\n  };\n  if (sha) body.sha = sha;\n\n  const result = await this.helpers.httpRequest({\n    method: 'PUT',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`,\n    headers: {\n      'Authorization': 'Bearer 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',\n      'Accept': 'application/vnd.github+json',\n      'Content-Type': 'application/json'\n    },\n    body: JSON.stringify(body)\n  });\n  \n  return JSON.stringify({ success: true, file: filePath, sha: result.content?.sha, hmrOk });\n} catch (e) {\n  return JSON.stringify({ error: e.message, file: filePath });\n}"
+            },
+            "id": "bbe9460e-2d0f-4696-9a6c-9494b3a09c2f",
+            "name": "Create File",
+            "type": "@n8n/n8n-nodes-langchain.toolCode",
+            "typeVersion": 1,
+            "position": [
+                7648,
+                -224
+            ]
+        },
+        {
+            "parameters": {
+                "name": "read_file",
+                "description": "Read a file from the repository. Input: just the file path as a string.",
+                "jsCode": "let filePath = String(query).trim().replace(/[\"'{}]/g, '');\nif (filePath.includes('filePath')) {\n  try {\n    const parsed = JSON.parse(query);\n    filePath = parsed.filePath || parsed.path;\n  } catch (e) {}\n}\n\nif (!filePath) return JSON.stringify({ error: 'filePath is required' });\n\nlet ctx = {};\ntry {\n  ctx = $('Merge Files')?.item?.json || {};\n} catch (e) {}\n\nconst owner = ctx.owner || ctx.site?.owner;\nconst repo = ctx.repo || ctx.site?.repo;\nconst branch = ctx.branch || ctx.site?.default_branch || 'main';\n\nif (!owner || !repo) {\n  return JSON.stringify({ error: 'Missing repository info' });\n}\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`,\n    headers: {\n      'Authorization': 'Bearer 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',\n      'Accept': 'application/vnd.github+json'\n    }\n  });\n  \n  if (response.content && response.encoding === 'base64') {\n    return Buffer.from(response.content, 'base64').toString('utf8');\n  }\n  return JSON.stringify({ error: 'File not found or empty' });\n} catch (e) {\n  return JSON.stringify({ error: e.message, file: filePath });\n}"
+            },
+            "id": "7d148e42-b63c-4915-876b-75884062b2c9",
+            "name": "Read File",
+            "type": "@n8n/n8n-nodes-langchain.toolCode",
+            "typeVersion": 1,
+            "position": [
+                7808,
+                -224
+            ]
+        },
+        {
+            "parameters": {
+                "name": "list_files",
+                "description": "List all files in the repository. No input needed.",
+                "jsCode": "let ctx = {};\ntry {\n  ctx = $('Merge Files')?.item?.json || {};\n} catch (e) {}\n\nconst owner = ctx.owner || ctx.site?.owner;\nconst repo = ctx.repo || ctx.site?.repo;\nconst branch = ctx.branch || ctx.site?.default_branch || 'main';\n\nif (!owner || !repo) {\n  return JSON.stringify({ error: 'Missing repository info' });\n}\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,\n    headers: {\n      'Authorization': 'Bearer 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',\n      'Accept': 'application/vnd.github+json'\n    }\n  });\n  \n  if (!response.tree) return JSON.stringify({ error: 'Could not fetch tree' });\n  \n  const files = response.tree\n    .filter(f => f.type === 'blob')\n    .map(f => f.path)\n    .slice(0, 100);\n  \n  return JSON.stringify(files);\n} catch (e) {\n  return JSON.stringify({ error: e.message });\n}"
+            },
+            "id": "cdfd58ae-ff62-467f-95f1-bc6aed5edfd9",
+            "name": "List Files",
+            "type": "@n8n/n8n-nodes-langchain.toolCode",
+            "typeVersion": 1,
+            "position": [
+                7968,
+                -224
+            ]
+        },
+        {
+            "parameters": {
+                "promptType": "define",
+                "text": "={{ $json.message }}",
+                "options": {
+                    "systemMessage": "You are AutoMate, an AI code editor. You MUST use tools to make changes - never just describe them.\n\n## REPOSITORY\nOwner: {{ $json.site.owner }} | Repo: {{ $json.site.repo }} | Branch: {{ $json.site.default_branch }}\n\n## LOADED FILES\n{{ Object.entries($json.fileContents || {}).map(([p, c]) => '### ' + p + '\\n```\\n' + c.substring(0, 600) + (c.length > 600 ? '\\n...' : '') + '\\n```').join('\\n\\n') || 'None' }}\n\n## TOOLS (YOU MUST USE THESE)\n- list_files: List repo files. Input: \"list\" or empty\n- read_file: Read a file. Input: just the path like \"src/app/page.tsx\"\n- create_file: Create/update file. Input: {\"filePath\": \"path\", \"content\": \"full content\"}\n\n## MANDATORY WORKFLOW\n1. Analyze the request\n2. Use list_files if you need to see what exists\n3. Use read_file for any files not shown above\n4. **CRITICAL: Call create_file for EVERY file you need to create or modify**\n5. After tools complete, summarize what you did\n\n## ABSOLUTE RULES\n⚠️ You MUST call create_file for each change - NEVER just describe changes\n⚠️ If you say \"I created X\" you MUST have called create_file first\n⚠️ Include complete file content with all imports\n⚠️ Use 'use client' for React components with hooks\n⚠️ Verify your tool calls succeeded before claiming success\n\n## RESPONSE\nAfter your tool calls succeed, briefly explain what you created.\nIf a tool fails, explain the error and try to fix it.\n\nREMEMBER: Your changes only happen if you call create_file. Describing code does NOTHING.",
+                    "maxIterations": 15,
+                    "returnIntermediateSteps": true
+                }
+            },
+            "id": "399f5ba2-207f-4cf7-9228-258636a9ed53",
+            "name": "AI Plan",
+            "type": "@n8n/n8n-nodes-langchain.agent",
+            "typeVersion": 1.7,
+            "position": [
+                7776,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "model": {
+                    "__rl": true,
+                    "value": "claude-sonnet-4-5-20250514",
+                    "mode": "list",
+                    "cachedResultName": "Claude Sonnet 4.5"
+                },
+                "options": {
+                    "maxTokens": 8192
+                }
+            },
+            "id": "77b63427-2e50-42b4-bd8c-2911d2f89beb",
+            "name": "Anthropic",
+            "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+            "typeVersion": 1.3,
+            "position": [
+                7520,
+                -256
+            ],
+            "credentials": {
+                "anthropicApi": {
+                    "id": "cR1eoa32avbXUEse",
+                    "name": "Anthropic account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "// Parse Plan with full debugging\nconst ctx = $('Merge Files').item.json;\nconst raw = $('AI Plan').item.json;\nlet plan;\nlet out = '';\nlet debug = { hasOutput: false, hasSteps: false, toolCalls: [], errors: [] };\n\n// Get the AI output text\nif (raw?.output) {\n  debug.hasOutput = true;\n  if (typeof raw.output === 'string') out = raw.output;\n  else if (typeof raw.output === 'object') out = JSON.stringify(raw.output);\n}\nif (!out && raw?.text) out = String(raw.text);\n\n// Collect files created via tool calls\nconst filesCreated = [];\nconst steps = raw?.intermediateSteps || [];\ndebug.hasSteps = steps.length > 0;\ndebug.stepCount = steps.length;\n\nfor (const step of steps) {\n  const action = step?.action;\n  const observation = step?.observation || step?.result || '';\n  \n  if (action) {\n    const toolInfo = {\n      tool: action.tool,\n      input: typeof action.toolInput === 'string' ? action.toolInput.substring(0, 100) : JSON.stringify(action.toolInput).substring(0, 100),\n      observation: typeof observation === 'string' ? observation.substring(0, 100) : JSON.stringify(observation).substring(0, 100)\n    };\n    debug.toolCalls.push(toolInfo);\n    \n    // Check for successful file creation\n    if (action.tool === 'create_file') {\n      try {\n        const obsObj = typeof observation === 'string' ? JSON.parse(observation) : observation;\n        if (obsObj.success && obsObj.file) {\n          filesCreated.push(obsObj.file);\n        }\n      } catch (e) {\n        // Check string observation\n        if (typeof observation === 'string' && observation.includes('success')) {\n          try {\n            const input = typeof action.toolInput === 'string' ? JSON.parse(action.toolInput) : action.toolInput;\n            if (input.filePath) filesCreated.push(input.filePath);\n          } catch (e2) {}\n        }\n      }\n    }\n  }\n}\n\n// Build the plan\nif (filesCreated.length > 0) {\n  plan = {\n    humanSummary: out || `Created/updated ${filesCreated.length} file(s): ${filesCreated.join(', ')}`,\n    unifiedDiff: '',\n    fileTargets: filesCreated.map(f => ({ path: f, action: 'create' })),\n    warnings: []\n  };\n} else if (out) {\n  plan = {\n    humanSummary: out,\n    unifiedDiff: '',\n    fileTargets: [],\n    warnings: debug.stepCount === 0 ? ['AI did not use any tools'] : [`AI made ${debug.stepCount} tool calls but no files were created`]\n  };\n} else {\n  plan = {\n    humanSummary: 'Could not process request. Please try again.',\n    unifiedDiff: '',\n    fileTargets: [],\n    warnings: ['No output from AI']\n  };\n}\n\n// Add debug info to warnings for troubleshooting\nif (filesCreated.length === 0 && debug.toolCalls.length > 0) {\n  plan.warnings.push('Tool calls made: ' + debug.toolCalls.map(t => t.tool).join(', '));\n}\n\nplan.warnings = Array.isArray(plan.warnings) ? plan.warnings : [];\nplan.unifiedDiff = typeof plan.unifiedDiff === 'string' ? plan.unifiedDiff : '';\nplan.fileTargets = Array.isArray(plan.fileTargets) ? plan.fileTargets : [];\nplan.humanSummary = plan.humanSummary || 'Changes processed.';\n\nreturn [{ json: { ...ctx, plan, filesCreated, debug } }];"
+            },
+            "id": "7b150981-7217-4793-b0c1-458184f7aea6",
+            "name": "Parse Plan",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                7952,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $input.first().json;\nif (!ctx?.site) throw new Error('Missing site');\nif (!ctx?.plan) throw new Error('Missing plan');\nreturn [{ json: ctx }];"
+            },
+            "id": "464b0e15-5e34-4242-a567-b133f1579559",
+            "name": "Guardrails",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                8128,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://preview-orchestrator.fly.dev/preview/pull",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ siteId: $json.site.id }) }}",
+                "options": {
+                    "response": {
+                        "response": {
+                            "neverError": true
+                        }
+                    },
+                    "timeout": 60000
+                }
+            },
+            "id": "c5703d44-2bb3-4271-9169-45108801fca8",
+            "name": "Git Pull",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                8304,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $('Guardrails').item.json;\nconst pullResp = $input.first().json;\nconst filesChanged = ctx.filesCreated || [];\nconst pullOk = pullResp.ok !== false;\n\nif (!pullOk && pullResp.error) {\n  ctx.plan.warnings = ctx.plan.warnings || [];\n  ctx.plan.warnings.push('Git pull: ' + pullResp.error);\n}\n\nreturn [{ json: { ...ctx, filesChanged, applyOk: true, pullResult: pullResp } }];"
+            },
+            "id": "5f4bc610-0ef8-44fb-89a2-a709db6a0d0b",
+            "name": "Merge Pull",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                8496,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/code_versions",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        },
+                        {
+                            "name": "Prefer",
+                            "value": "return=representation"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ site_id: $json.site.id, request_id: $json.requestId, instruction: $json.message, plan_json: $json.plan, diff: '', status: 'preview_ready', preview_url: $json.previewUrl || '' }) }}",
+                "options": {
+                    "response": {
+                        "response": {
+                            "neverError": true
+                        }
+                    }
+                }
+            },
+            "id": "3a90c490-23ee-475b-a504-8ff885469ca4",
+            "name": "Save Request",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                8672,
+                -448
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify({ requestId: $('Merge Pull').item.json.requestId, status: 'preview_ready', summary: $('Merge Pull').item.json.plan.humanSummary || '', diff: '', previewUrl: $('Merge Pull').item.json.previewUrl || '', filesChanged: $('Merge Pull').item.json.filesChanged || [], warnings: $('Merge Pull').item.json.plan.warnings || [], debug: $('Merge Pull').item.json.debug || {} }) }}",
+                "options": {}
+            },
+            "id": "1c84c6cf-b470-4f0f-bf50-e79dc9f63a83",
+            "name": "Response",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                8864,
+                -448
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook Edit UI": {
+            "main": [
+                [
+                    {
+                        "node": "Validate Input",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Validate Input": {
+            "main": [
+                [
+                    {
+                        "node": "Load Site",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Load Site": {
+            "main": [
+                [
+                    {
+                        "node": "Build Context",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Context": {
+            "main": [
+                [
+                    {
+                        "node": "Fly Start Preview",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fly Start Preview": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Fly Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge Fly Response": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Fetch",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Fetch": {
+            "main": [
+                [
+                    {
+                        "node": "Fetch GitHub Files",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fetch GitHub Files": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Files",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge Files": {
+            "main": [
+                [
+                    {
+                        "node": "AI Plan",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Create File": {
+            "ai_tool": [
+                [
+                    {
+                        "node": "AI Plan",
+                        "type": "ai_tool",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Read File": {
+            "ai_tool": [
+                [
+                    {
+                        "node": "AI Plan",
+                        "type": "ai_tool",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "List Files": {
+            "ai_tool": [
+                [
+                    {
+                        "node": "AI Plan",
+                        "type": "ai_tool",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Plan": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Plan",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Anthropic": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "AI Plan",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Plan": {
+            "main": [
+                [
+                    {
+                        "node": "Guardrails",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Guardrails": {
+            "main": [
+                [
+                    {
+                        "node": "Git Pull",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Git Pull": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Pull",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge Pull": {
+            "main": [
+                [
+                    {
+                        "node": "Save Request",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Save Request": {
+            "main": [
+                [
+                    {
+                        "node": "Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "pinData": {},
+    "meta": {
+        "templateCredsSetupCompleted": true,
+        "instanceId": "8278f0fbb558df00ecd79690c89f9c1e0fbf89bbd188221ebac4a3ae271261b8"
+    }
+}

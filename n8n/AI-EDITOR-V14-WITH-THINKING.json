@@ -1,0 +1,620 @@
+{
+  "name": "AI Editor - V14 with Live Thinking",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agent/edit-ui",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "c05fd765-cf42-4b18-836b-753131784af4",
+      "name": "Webhook Edit UI",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        30336,
+        1024
+      ],
+      "webhookId": "edit-ui"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $input.first().json.body || $input.first().json;\n\nif (!b.siteId) throw new Error('Missing required field: siteId');\nif (!b.message) throw new Error('Missing required field: message');\n\nconst msg = b.message.toLowerCase().trim();\nconst actionWords = /\\b(implement|create|add|build|make|fix|update|change|edit|delete|remove|install|modify|replace|refactor|style|redesign|adjust|set|configure|enable|disable|write|code)\\b/;\nconst questionWords = /^(what|why|how|can you|could you|should|is it|explain|describe|tell me)/;\nconst isQuestion = questionWords.test(msg);\nconst isActionIntent = actionWords.test(msg) && !isQuestion;\n\n// Use requestId from client if provided, otherwise generate new one\nconst requestId = b.requestId || ('req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9));\n\nreturn [{\n  json: {\n    siteId: b.siteId,\n    conversationId: b.conversationId || null,\n    userId: b.userId || 'anon',\n    message: b.message.trim(),\n    requestId: requestId,\n    image: b.image || null,\n    isActionIntent,\n    isQuestion\n  }\n}];"
+      },
+      "id": "0ecdb5aa-c081-4342-afbc-7b2d31d3dc88",
+      "name": "Validate & Detect Intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        30496,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/sites?site_key=eq.{{$json.siteId}}&select=*",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "f3180654-bfeb-4e7a-8d5e-4ea63016cf43",
+      "name": "Load Site",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        30656,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inp = $('Validate & Detect Intent').item.json;\nconst rawSite = $input.first().json;\n\nlet site = Array.isArray(rawSite) ? rawSite[0] : (rawSite?.id ? rawSite : rawSite?.data?.[0]);\nif (!site?.id) throw new Error('Site not found for siteId: ' + inp.siteId);\n\nconst repoMatch = (site.repo_url || '').match(/github\\.com\\/([^/]+)\\/([^/]+)/);\nif (!repoMatch) throw new Error('Invalid GitHub repo URL');\n\nconst owner = repoMatch[1];\nconst repo = repoMatch[2].replace(/\\.git$/, '');\nconst msg = inp.message.toLowerCase();\n\nconst fileScores = new Map();\nconst addFile = (file, score) => fileScores.set(file, (fileScores.get(file) || 0) + score);\n\nif (/shop|brand|name|title|logo/.test(msg)) {\n  addFile('src/components/Header.tsx', 15);\n  addFile('src/app/layout.tsx', 10);\n  addFile('src/components/Footer.tsx', 8);\n}\nif (/color|theme|style|css|dark|light/.test(msg)) {\n  addFile('src/app/globals.css', 10);\n  addFile('tailwind.config.ts', 7);\n}\nif (/header|nav|menu/.test(msg)) addFile('src/components/Header.tsx', 12);\nif (/footer/.test(msg)) addFile('src/components/Footer.tsx', 10);\nif (/hero/.test(msg)) addFile('src/components/Hero.tsx', 10);\nif (/page|home|landing/.test(msg) || fileScores.size === 0) addFile('src/app/page.tsx', 10);\n\nconst sortedFiles = [...fileScores.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([f]) => f);\nif (sortedFiles.length === 0) sortedFiles.push('src/app/page.tsx');\n\nreturn [{\n  json: {\n    ...inp,\n    site: { id: site.id, name: site.name || 'Unknown', repo_url: site.repo_url, branch: site.default_branch || 'main' },\n    owner, repo,\n    branch: site.default_branch || 'main',\n    previewUrl: 'https://' + site.id + '.preview.automatelb.com',\n    filesToFetch: sortedFiles,\n    fileContents: {},\n    contextFiles: []\n  }\n}];"
+      },
+      "id": "1d5fd5a7-b367-457e-a78b-fc8cba183c40",
+      "name": "Build Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        30816,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Build Context').item.json;\nconst files = ctx.filesToFetch || [];\nif (files.length === 0) return [{ json: { ...ctx, currentFile: null } }];\n\nreturn files.map(f => ({\n  json: {\n    _ctx: { ...ctx },\n    currentFile: f,\n    owner: ctx.owner,\n    repo: ctx.repo,\n    branch: ctx.branch\n  }\n}));"
+      },
+      "id": "92bb6755-d039-4248-a19e-ddc295c72132",
+      "name": "Prepare Fetch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        30976,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/contents/{{ $json.currentFile }}?ref={{ $json.branch }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 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"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "b21bbb88-d79f-450a-a0b6-58447c111e13",
+      "name": "Fetch Files",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        31136,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst prepItems = $('Prepare Fetch').all();\nconst ctx = prepItems[0]?.json?._ctx;\nif (!ctx) throw new Error('Lost context');\n\nconst fileContents = {};\nconst contextFiles = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i].json;\n  const path = prepItems[i]?.json?.currentFile || item.path;\n  if (!path) continue;\n  \n  if (item.content) {\n    try {\n      const decoded = Buffer.from(item.content, 'base64').toString('utf8');\n      fileContents[path] = decoded.length > 4000 ? decoded.substring(0, 4000) + '\\n// ... truncated' : decoded;\n      contextFiles.push(path);\n    } catch (e) {}\n  }\n}\n\nreturn [{ json: { ...ctx, fileContents, contextFiles } }];"
+      },
+      "id": "095910dc-a35c-4f67-b364-9409d5f27743",
+      "name": "Merge Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        31296,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "options": {
+          "systemMessage": "You are AutoMate, an expert AI code editor. You help users modify their web applications.\n\n## PROJECT\nRepo: {{ $json.owner }}/{{ $json.repo }} | Branch: {{ $json.branch }}\nPreview: {{ $json.previewUrl || 'N/A' }}\n\n## FILES IN CONTEXT\n{{ Object.keys($json.fileContents || {}).length > 0 ? Object.entries($json.fileContents).map(([path, content]) => '### ' + path + '\\n```\\n' + content + '\\n```').join('\\n\\n') : 'No files loaded. Use list_files to explore.' }}\n\n## RULES\n1. Files shown above are ALREADY LOADED - do NOT use read_file on them\n2. Be concise - max 2 lines explanation after changes\n3. Search text must match EXACTLY (case-sensitive)\n\n## TOOL INPUT FORMAT\nAll tools receive input as a SINGLE STRING. Format your input correctly:\n\n### str_replace_file\nInput format: `filePath|||searchText|||replaceText`\nExample: `src/components/Header.tsx|||Carrouna Shop|||Omar Shop`\n\n### write_file  \nInput format: `filePath|||fileContent`\nExample: `src/components/New.tsx|||export default function New() { return <div>Hello</div> }`\n\n### read_file\nInput format: just the file path\nExample: `src/components/Other.tsx`\n\n### list_files\nInput format: directory path (or . for root)\nExample: `src/components`\n\n### search_files\nInput format: search query\nExample: `className`\n\n### delete_file\nInput format: file path\nExample: `src/components/Old.tsx`\n\n## EXAMPLE\nUser: \"change shop name to Omar Shop\"\n\nLooking at Header.tsx, I see \"Carrouna Shop\". Updating now.\n\n[Use str_replace_file with input: src/components/Header.tsx|||Carrouna Shop|||Omar Shop]\n\nDone. Shop name updated.",
+          "maxIterations": 10,
+          "returnIntermediateSteps": true
+        }
+      },
+      "id": "211d0c65-ef94-44bd-958e-c364aed5a091",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        31456,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-5-20250929",
+          "mode": "list"
+        },
+        "options": {
+          "maxTokensToSample": 4096,
+          "temperature": 0.1
+        }
+      },
+      "id": "567961b0-35ed-4016-a0e3-093e98bacd43",
+      "name": "Claude",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        31344,
+        1216
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "cR1eoa32avbXUEse",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "list_files",
+        "description": "List files in a directory. Input: directory path (e.g., src/components or . for root)",
+        "jsCode": "// SUPABASE CONFIG\nconst SUPABASE_URL = 'https://jjrbnjubjiswvxeradzw.supabase.co';\nconst SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4';\n\n// Helper function to write thinking step\nasync function writeThinkingStep(stepData) {\n  try {\n    await this.helpers.httpRequest({\n      method: 'POST',\n      url: `${SUPABASE_URL}/rest/v1/thinking_steps`,\n      headers: {\n        'apikey': SUPABASE_ANON_KEY,\n        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,\n        'Content-Type': 'application/json',\n        'Prefer': 'return=minimal'\n      },\n      body: JSON.stringify(stepData),\n      timeout: 3000\n    });\n  } catch (e) {\n    console.error('Failed to write thinking step:', e.message);\n  }\n}\n\n// Get raw input string\nconst rawInput = $fromAI('query', 'Directory path', 'string') || '.';\nlet path = rawInput.trim();\n\n// Clean up any wrapped formats\nif (path.startsWith('{')) {\n  try { path = JSON.parse(path).path || JSON.parse(path).input || '.'; } catch { path = '.'; }\n}\n\nconst ctx = $('Merge Files')?.item?.json || {};\nconst { owner, repo, branch, requestId, conversationId, site } = ctx;\nif (!owner) return 'Error: No repository context';\n\n// Write thinking step - RUNNING\nawait writeThinkingStep.call(this, {\n  request_id: requestId,\n  conversation_id: conversationId,\n  site_id: site?.id,\n  step_number: Date.now(),\n  tool_name: 'list_files',\n  status: 'running',\n  message: `Listing files in ${path}`,\n  details: { path }\n});\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,\n    headers: { 'Authorization': 'Bearer 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', 'Accept': 'application/vnd.github+json' },\n    timeout: 15000\n  });\n  \n  const normalizedPath = path.replace(/^\\/+/, '').replace(/\\/+$/, '');\n  let files = (response.tree || []).filter(f => f.type === 'blob').map(f => f.path);\n  if (normalizedPath && normalizedPath !== '.') files = files.filter(f => f.startsWith(normalizedPath + '/'));\n  \n  const result = files.slice(0, 50).join('\\n') || 'No files found in ' + path;\n  \n  // Write thinking step - COMPLETE\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: site?.id,\n    step_number: Date.now(),\n    tool_name: 'list_files',\n    status: 'complete',\n    message: `✓ Found ${files.slice(0, 50).length} files in ${path}`,\n    details: { path, fileCount: files.slice(0, 50).length }\n  });\n  \n  return result;\n} catch (e) {\n  // Write thinking step - ERROR\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: site?.id,\n    step_number: Date.now(),\n    tool_name: 'list_files',\n    status: 'error',\n    message: `Error listing files: ${e.message}`,\n    details: { path, error: e.message }\n  });\n  \n  return 'Error: ' + e.message;\n}"
+      },
+      "id": "a9d0748b-8e99-4036-b96f-8e43e73d2668",
+      "name": "list_files",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [
+        31344,
+        1376
+      ]
+    },
+    {
+      "parameters": {
+        "name": "read_file",
+        "description": "Read file contents. Input: just the file path (e.g., src/components/Header.tsx). Do NOT use for files already in context.",
+        "jsCode": "// SUPABASE CONFIG\nconst SUPABASE_URL = 'https://jjrbnjubjiswvxeradzw.supabase.co';\nconst SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4';\n\n// Helper function to write thinking step\nasync function writeThinkingStep(stepData) {\n  try {\n    await this.helpers.httpRequest({\n      method: 'POST',\n      url: `${SUPABASE_URL}/rest/v1/thinking_steps`,\n      headers: {\n        'apikey': SUPABASE_ANON_KEY,\n        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,\n        'Content-Type': 'application/json',\n        'Prefer': 'return=minimal'\n      },\n      body: JSON.stringify(stepData),\n      timeout: 3000\n    });\n  } catch (e) {\n    console.error('Failed to write thinking step:', e.message);\n  }\n}\n\n// Get raw input string - it's just the file path\nconst rawInput = $fromAI('query', 'File path', 'string') || '';\nlet filePath = rawInput.trim();\n\n// Clean up any wrapped formats\nif (filePath.startsWith('{')) {\n  try { const p = JSON.parse(filePath); filePath = p.path || p.input || p.filePath || ''; } catch {}\n}\nfilePath = filePath.replace(/^\\/+/, '');\n\nif (!filePath) return 'Error: File path required. Just pass the path like: src/components/Header.tsx';\n\nconst ctx = $('Merge Files')?.item?.json || {};\nif (ctx.fileContents?.[filePath]) return 'This file is ALREADY in context above. Look at FILES IN CONTEXT section.';\n\nconst { owner, repo, branch, requestId, conversationId, site } = ctx;\nif (!owner) return 'Error: No repository context';\n\n// Write thinking step - RUNNING\nawait writeThinkingStep.call(this, {\n  request_id: requestId,\n  conversation_id: conversationId,\n  site_id: site?.id,\n  step_number: Date.now(),\n  tool_name: 'read_file',\n  status: 'running',\n  message: `Reading ${filePath}`,\n  details: { filePath }\n});\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}?ref=${branch}`,\n    headers: { 'Authorization': 'Bearer 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', 'Accept': 'application/vnd.github+json' },\n    timeout: 15000\n  });\n  \n  if (response.content) {\n    const content = Buffer.from(response.content, 'base64').toString('utf8');\n    const truncated = content.length > 6000;\n    const result = truncated ? content.substring(0, 6000) + '\\n// ... truncated' : content;\n    \n    // Write thinking step - COMPLETE\n    await writeThinkingStep.call(this, {\n      request_id: requestId,\n      conversation_id: conversationId,\n      site_id: site?.id,\n      step_number: Date.now(),\n      tool_name: 'read_file',\n      status: 'complete',\n      message: `✓ Read ${filePath}`,\n      details: { filePath, size: content.length, truncated }\n    });\n    \n    return result;\n  }\n  return 'Error: No content in response';\n} catch (e) {\n  // Write thinking step - ERROR\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: site?.id,\n    step_number: Date.now(),\n    tool_name: 'read_file',\n    status: 'error',\n    message: `Error reading ${filePath}: ${e.message}`,\n    details: { filePath, error: e.message }\n  });\n  \n  return e.message.includes('404') ? 'Error: File not found: ' + filePath : 'Error: ' + e.message;\n}"
+      },
+      "id": "fc87a02f-81e7-4085-9864-b44ef8c46abf",
+      "name": "read_file",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [
+        31456,
+        1376
+      ]
+    },
+    {
+      "parameters": {
+        "name": "write_file",
+        "description": "Create or overwrite a file. Input format: filePath|||fileContent",
+        "jsCode": "// SUPABASE CONFIG\nconst SUPABASE_URL = 'https://jjrbnjubjiswvxeradzw.supabase.co';\nconst SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4';\n\n// Helper function to write thinking step\nasync function writeThinkingStep(stepData) {\n  try {\n    await this.helpers.httpRequest({\n      method: 'POST',\n      url: `${SUPABASE_URL}/rest/v1/thinking_steps`,\n      headers: {\n        'apikey': SUPABASE_ANON_KEY,\n        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,\n        'Content-Type': 'application/json',\n        'Prefer': 'return=minimal'\n      },\n      body: JSON.stringify(stepData),\n      timeout: 3000\n    });\n  } catch (e) {\n    console.error('Failed to write thinking step:', e.message);\n  }\n}\n\n// Get raw input - format: filePath|||content\nconst rawInput = $fromAI('query', 'filePath|||content', 'string') || '';\nconst parts = rawInput.split('|||');\n\nif (parts.length < 2) return 'Error: Use format filePath|||content';\n\nconst filePath = parts[0].trim().replace(/^\\/+/, '');\nconst content = parts.slice(1).join('|||'); // In case content has |||\n\nif (!filePath) return 'Error: filePath required';\n\nconst ctx = $('Merge Files')?.item?.json || {};\nconst { owner, repo, branch, requestId, conversationId, site } = ctx;\nconst siteId = site?.id;\nif (!owner) return 'Error: No repository context';\n\n// Write thinking step - RUNNING\nawait writeThinkingStep.call(this, {\n  request_id: requestId,\n  conversation_id: conversationId,\n  site_id: siteId,\n  step_number: Date.now(),\n  tool_name: 'write_file',\n  status: 'running',\n  message: `Creating ${filePath}`,\n  details: { filePath, contentLength: content.length }\n});\n\ntry {\n  // Update preview\n  if (siteId) {\n    this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://preview-orchestrator.fly.dev/preview/write',\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({ siteId, filePath, content }),\n      timeout: 5000\n    }).catch(() => {});\n  }\n  \n  // Check if file exists\n  let sha = null;\n  try {\n    const existing = await this.helpers.httpRequest({\n      method: 'GET',\n      url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}?ref=${branch}`,\n      headers: { 'Authorization': 'Bearer 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', 'Accept': 'application/vnd.github+json' },\n      timeout: 10000\n    });\n    sha = existing.sha;\n  } catch {}\n  \n  const body = { message: (sha ? 'Update ' : 'Create ') + filePath, content: Buffer.from(content).toString('base64'), branch };\n  if (sha) body.sha = sha;\n  \n  await this.helpers.httpRequest({\n    method: 'PUT',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}`,\n    headers: { 'Authorization': 'Bearer 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', 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },\n    body: JSON.stringify(body),\n    timeout: 30000\n  });\n  \n  const action = sha ? 'updated' : 'created';\n  \n  // Write thinking step - COMPLETE\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: siteId,\n    step_number: Date.now(),\n    tool_name: 'write_file',\n    status: 'complete',\n    message: `✓ ${action === 'created' ? 'Created' : 'Updated'} ${filePath}`,\n    details: { filePath, action, contentLength: content.length }\n  });\n  \n  return JSON.stringify({ success: true, file: filePath, action });\n} catch (e) {\n  // Write thinking step - ERROR\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: siteId,\n    step_number: Date.now(),\n    tool_name: 'write_file',\n    status: 'error',\n    message: `Error creating ${filePath}: ${e.message}`,\n    details: { filePath, error: e.message }\n  });\n  \n  return 'Error: ' + e.message;\n}"
+      },
+      "id": "94546982-79a0-4e2f-8c0c-f9f84b00e11a",
+      "name": "write_file",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [
+        31584,
+        1376
+      ]
+    },
+    {
+      "parameters": {
+        "name": "str_replace_file",
+        "description": "Search and replace text in a file. Input format: filePath|||searchText|||replaceText. Search must match EXACTLY.",
+        "jsCode": "// SUPABASE CONFIG\nconst SUPABASE_URL = 'https://jjrbnjubjiswvxeradzw.supabase.co';\nconst SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4';\n\n// Helper function to write thinking step\nasync function writeThinkingStep(stepData) {\n  try {\n    await this.helpers.httpRequest({\n      method: 'POST',\n      url: `${SUPABASE_URL}/rest/v1/thinking_steps`,\n      headers: {\n        'apikey': SUPABASE_ANON_KEY,\n        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,\n        'Content-Type': 'application/json',\n        'Prefer': 'return=minimal'\n      },\n      body: JSON.stringify(stepData),\n      timeout: 3000\n    });\n  } catch (e) {\n    console.error('Failed to write thinking step:', e.message);\n  }\n}\n\n// Get raw input - format: filePath|||search|||replace\nconst rawInput = $fromAI('query', 'filePath|||search|||replace', 'string') || '';\nconst parts = rawInput.split('|||');\nif (parts.length < 3) return 'Error: Use format filePath|||searchText|||replaceText';\nconst filePath = parts[0].trim().replace(/^\\/+/, '');\nconst search = parts[1];\nconst replace = parts.slice(2).join('|||');\nif (!filePath) return 'Error: filePath required';\nif (!search) return 'Error: searchText required';\n\nconst ctx = $('Merge Files')?.item?.json || {};\nconst { owner, repo, branch, requestId, conversationId, site } = ctx;\nconst siteId = site?.id;\nif (!owner) return 'Error: No repository context';\n\n// Write thinking step - RUNNING\nawait writeThinkingStep.call(this, {\n  request_id: requestId,\n  conversation_id: conversationId,\n  site_id: siteId,\n  step_number: Date.now(),\n  tool_name: 'str_replace_file',\n  status: 'running',\n  message: `Modifying ${filePath}`,\n  details: { filePath, searchLength: search.length }\n});\n\ntry {\n  // Get current file\n  const response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}?ref=${branch}`,\n    headers: { 'Authorization': 'Bearer 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', 'Accept': 'application/vnd.github+json' },\n    timeout: 15000\n  });\n  \n  let content = Buffer.from(response.content, 'base64').toString('utf8');\n  let matchedString = null;\n  // Strategy 1: Exact Match\n  if (content.includes(search)) {\n    matchedString = search;\n  } \n  // Strategy 2: Flexible Whitespace Match\n  else {\n    // Escape regex characters\n    const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\n    \n    // Split into lines and create a regex that ignores leading/trailing whitespace difference\n    const searchLines = search.split(/\\r?\\n/).map(l => l.trim()).filter(l => l);\n    \n    if (searchLines.length > 0) {\n       // Construct regex: match lines with any amount of whitespace in between\n       const regexPattern = searchLines.map(line => {\n         return '[\\\\t ]*' + escapeRegExp(line) + '[\\\\t ]*';\n       }).join('\\\\r?\\\\n');\n       \n       const regex = new RegExp(regexPattern, 'g'); // Global to check match count\n       const matches = content.match(regex);\n       \n       if (matches && matches.length === 1) {\n         matchedString = matches[0];\n       } else if (matches && matches.length > 1) {\n         await writeThinkingStep.call(this, {\n           request_id: requestId,\n           conversation_id: conversationId,\n           site_id: siteId,\n           step_number: Date.now(),\n           tool_name: 'str_replace_file',\n           status: 'error',\n           message: `Ambiguous search in ${filePath}: found ${matches.length} matches`,\n           details: { filePath, matchCount: matches.length }\n         });\n         return 'Error: Ambiguous search. Found ' + matches.length + ' matches. Include more context.';\n       }\n    }\n  }\n  if (!matchedString) {\n    const lines = content.split('\\n');\n    let hint = '';\n    const searchLower = search.toLowerCase().substring(0, 20);\n    // Simple similarity hint\n    for (let i = 0; i < lines.length; i++) {\n        if (lines[i].toLowerCase().includes(searchLower)) {\n            hint = ` Similar line found at ${i+1}. Check whitespace/indentation.`;\n            break;\n        }\n    }\n    await writeThinkingStep.call(this, {\n      request_id: requestId,\n      conversation_id: conversationId,\n      site_id: siteId,\n      step_number: Date.now(),\n      tool_name: 'str_replace_file',\n      status: 'error',\n      message: `Search text not found in ${filePath}`,\n      details: { filePath, hint }\n    });\n    return 'Error: Search text not found. Try including more unique context lines.' + hint;\n  }\n  \n  // Perform Replacement\n  content = content.replace(matchedString, replace);\n  \n  // Update preview\n  if (siteId) {\n    this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://preview-orchestrator.fly.dev/preview/write',\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({ siteId, filePath, content }),\n      timeout: 5000\n    }).catch(() => {});\n  }\n  \n  // Commit to GitHub\n  await this.helpers.httpRequest({\n    method: 'PUT',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}`,\n    headers: { 'Authorization': 'Bearer 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', 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },\n    body: JSON.stringify({ message: 'Update ' + filePath, content: Buffer.from(content).toString('base64'), sha: response.sha, branch }),\n    timeout: 30000\n  });\n  \n  // Write thinking step - COMPLETE\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: siteId,\n    step_number: Date.now(),\n    tool_name: 'str_replace_file',\n    status: 'complete',\n    message: `✓ Modified ${filePath}`,\n    details: { filePath, changes: 1 }\n  });\n  \n  return JSON.stringify({ success: true, file: filePath, action: 'updated' });\n} catch (e) {\n  // Write thinking step - ERROR\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: siteId,\n    step_number: Date.now(),\n    tool_name: 'str_replace_file',\n    status: 'error',\n    message: `Error modifying ${filePath}: ${e.message}`,\n    details: { filePath, error: e.message }\n  });\n  \n  return e.message.includes('404') ? 'Error: File not found: ' + filePath : 'Error: ' + e.message;\n}"
+      },
+      "id": "f3de6bb3-d1b6-497d-b11d-966b449ea6b3",
+      "name": "str_replace_file",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [
+        31696,
+        1376
+      ]
+    },
+    {
+      "parameters": {
+        "name": "delete_file",
+        "description": "Delete a file. Input: just the file path",
+        "jsCode": "// SUPABASE CONFIG\nconst SUPABASE_URL = 'https://jjrbnjubjiswvxeradzw.supabase.co';\nconst SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4';\n\n// Helper function to write thinking step\nasync function writeThinkingStep(stepData) {\n  try {\n    await this.helpers.httpRequest({\n      method: 'POST',\n      url: `${SUPABASE_URL}/rest/v1/thinking_steps`,\n      headers: {\n        'apikey': SUPABASE_ANON_KEY,\n        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,\n        'Content-Type': 'application/json',\n        'Prefer': 'return=minimal'\n      },\n      body: JSON.stringify(stepData),\n      timeout: 3000\n    });\n  } catch (e) {\n    console.error('Failed to write thinking step:', e.message);\n  }\n}\n\nconst rawInput = $fromAI('query', 'File path', 'string') || '';\nlet filePath = rawInput.trim().replace(/^\\/+/, '');\n\nif (filePath.startsWith('{')) {\n  try { const p = JSON.parse(filePath); filePath = p.path || p.input || ''; } catch {}\n}\n\nif (!filePath) return 'Error: File path required';\n\nconst ctx = $('Merge Files')?.item?.json || {};\nconst { owner, repo, branch, requestId, conversationId, site } = ctx;\nif (!owner) return 'Error: No repository context';\n\n// Write thinking step - RUNNING\nawait writeThinkingStep.call(this, {\n  request_id: requestId,\n  conversation_id: conversationId,\n  site_id: site?.id,\n  step_number: Date.now(),\n  tool_name: 'delete_file',\n  status: 'running',\n  message: `Deleting ${filePath}`,\n  details: { filePath }\n});\n\ntry {\n  const existing = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}?ref=${branch}`,\n    headers: { 'Authorization': 'Bearer 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', 'Accept': 'application/vnd.github+json' },\n    timeout: 10000\n  });\n  \n  await this.helpers.httpRequest({\n    method: 'DELETE',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}`,\n    headers: { 'Authorization': 'Bearer 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', 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },\n    body: JSON.stringify({ message: 'Delete ' + filePath, sha: existing.sha, branch }),\n    timeout: 15000\n  });\n  \n  // Write thinking step - COMPLETE\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: site?.id,\n    step_number: Date.now(),\n    tool_name: 'delete_file',\n    status: 'complete',\n    message: `✓ Deleted ${filePath}`,\n    details: { filePath }\n  });\n  \n  return JSON.stringify({ success: true, deleted: filePath });\n} catch (e) {\n  // Write thinking step - ERROR\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: site?.id,\n    step_number: Date.now(),\n    tool_name: 'delete_file',\n    status: 'error',\n    message: `Error deleting ${filePath}: ${e.message}`,\n    details: { filePath, error: e.message }\n  });\n  \n  return e.message.includes('404') ? 'Error: File not found: ' + filePath : 'Error: ' + e.message;\n}"
+      },
+      "id": "756189b6-3f95-4b18-8c42-4d3ef4a5c4e9",
+      "name": "delete_file",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [
+        31824,
+        1376
+      ]
+    },
+    {
+      "parameters": {
+        "name": "search_files",
+        "description": "Search for text in the codebase. Input: just the search query. Searches file contents directly.",
+        "jsCode": "// SUPABASE CONFIG\nconst SUPABASE_URL = 'https://jjrbnjubjiswvxeradzw.supabase.co';\nconst SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4';\n\n// Helper function to write thinking step\nasync function writeThinkingStep(stepData) {\n  try {\n    await this.helpers.httpRequest({\n      method: 'POST',\n      url: `${SUPABASE_URL}/rest/v1/thinking_steps`,\n      headers: {\n        'apikey': SUPABASE_ANON_KEY,\n        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,\n        'Content-Type': 'application/json',\n        'Prefer': 'return=minimal'\n      },\n      body: JSON.stringify(stepData),\n      timeout: 3000\n    });\n  } catch (e) {\n    console.error('Failed to write thinking step:', e.message);\n  }\n}\n\nconst rawInput = $fromAI('query', 'Search query', 'string') || '';\nlet query = rawInput.trim();\n\nif (query.startsWith('{')) {\n  try { const p = JSON.parse(query); query = p.query || p.input || ''; } catch {}\n}\n\nif (!query) return 'Error: Search query required';\nif (query.length < 2) return 'Error: Query too short';\n\nconst ctx = $('Merge Files')?.item?.json || {};\nconst { owner, repo, branch, requestId, conversationId, site } = ctx;\nif (!owner) return 'Error: No repository context';\n\n// Write thinking step - RUNNING\nawait writeThinkingStep.call(this, {\n  request_id: requestId,\n  conversation_id: conversationId,\n  site_id: site?.id,\n  step_number: Date.now(),\n  tool_name: 'search_files',\n  status: 'running',\n  message: `Searching for \"${query}\"`,\n  details: { query }\n});\n\ntry {\n  // Get file tree\n  const treeResponse = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,\n    headers: { 'Authorization': 'Bearer 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', 'Accept': 'application/vnd.github+json' },\n    timeout: 15000\n  });\n  \n  // Filter to source files only\n  const sourceExts = ['.tsx', '.ts', '.jsx', '.js', '.css', '.html', '.json', '.md'];\n  const files = (treeResponse.tree || [])\n    .filter(f => f.type === 'blob' && sourceExts.some(ext => f.path.endsWith(ext)))\n    .filter(f => !f.path.includes('node_modules') && !f.path.includes('.next'))\n    .slice(0, 30);\n  \n  const matches = [];\n  const queryLower = query.toLowerCase();\n  \n  // Search in files loaded in context first\n  const contextFiles = ctx.fileContents || {};\n  for (const [path, content] of Object.entries(contextFiles)) {\n    if (content.toLowerCase().includes(queryLower)) {\n      const lines = content.split('\\n');\n      for (let i = 0; i < lines.length; i++) {\n        if (lines[i].toLowerCase().includes(queryLower)) {\n          matches.push({ path, line: i + 1, text: lines[i].trim().substring(0, 60) });\n          if (matches.length >= 10) break;\n        }\n      }\n    }\n  }\n  \n  // Search in other files if not enough matches\n  if (matches.length < 10) {\n    for (const file of files) {\n      if (contextFiles[file.path]) continue; // Skip already searched\n      try {\n        const fileResponse = await this.helpers.httpRequest({\n          method: 'GET',\n          url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(file.path)}?ref=${branch}`,\n          headers: { 'Authorization': 'Bearer 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', 'Accept': 'application/vnd.github+json' },\n          timeout: 5000\n        });\n        \n        if (fileResponse.content) {\n          const content = Buffer.from(fileResponse.content, 'base64').toString('utf8');\n          if (content.toLowerCase().includes(queryLower)) {\n            const lines = content.split('\\n');\n            for (let i = 0; i < lines.length; i++) {\n              if (lines[i].toLowerCase().includes(queryLower)) {\n                matches.push({ path: file.path, line: i + 1, text: lines[i].trim().substring(0, 60) });\n                break; // One match per file\n              }\n            }\n          }\n        }\n        if (matches.length >= 10) break;\n      } catch {}\n    }\n  }\n  \n  if (matches.length > 0) {\n    // Write thinking step - COMPLETE\n    await writeThinkingStep.call(this, {\n      request_id: requestId,\n      conversation_id: conversationId,\n      site_id: site?.id,\n      step_number: Date.now(),\n      tool_name: 'search_files',\n      status: 'complete',\n      message: `✓ Found \"${query}\" in ${matches.length} location(s)`,\n      details: { query, matchCount: matches.length }\n    });\n    \n    return 'Found \"' + query + '\" in ' + matches.length + ' location(s):\\n' + \n      matches.map(m => `${m.path}:${m.line} - ${m.text}`).join('\\n');\n  }\n  \n  // Write thinking step - COMPLETE (no results)\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: site?.id,\n    step_number: Date.now(),\n    tool_name: 'search_files',\n    status: 'complete',\n    message: `No results for \"${query}\"`,\n    details: { query, matchCount: 0 }\n  });\n  \n  return 'No results for: \"' + query + '\"';\n} catch (e) {\n  // Write thinking step - ERROR\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: site?.id,\n    step_number: Date.now(),\n    tool_name: 'search_files',\n    status: 'error',\n    message: `Error searching: ${e.message}`,\n    details: { query, error: e.message }\n  });\n  \n  return 'Error: ' + e.message;\n}"
+      },
+      "id": "83b7ba5a-aaf0-44e2-914c-c13266e076ea",
+      "name": "search_files",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [
+        31344,
+        1520
+      ]
+    },
+    {
+      "parameters": {
+        "name": "add_dependency",
+        "description": "Install an npm package. Input: just the package name",
+        "jsCode": "// SUPABASE CONFIG\nconst SUPABASE_URL = 'https://jjrbnjubjiswvxeradzw.supabase.co';\nconst SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4';\n\n// Helper function to write thinking step\nasync function writeThinkingStep(stepData) {\n  try {\n    await this.helpers.httpRequest({\n      method: 'POST',\n      url: `${SUPABASE_URL}/rest/v1/thinking_steps`,\n      headers: {\n        'apikey': SUPABASE_ANON_KEY,\n        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,\n        'Content-Type': 'application/json',\n        'Prefer': 'return=minimal'\n      },\n      body: JSON.stringify(stepData),\n      timeout: 3000\n    });\n  } catch (e) {\n    console.error('Failed to write thinking step:', e.message);\n  }\n}\n\nconst rawInput = $fromAI('query', 'Package name', 'string') || '';\nlet pkg = rawInput.trim();\n\nif (pkg.startsWith('{')) {\n  try { const p = JSON.parse(pkg); pkg = p.package || p.name || p.input || ''; } catch {}\n}\n\nif (!pkg) return 'Error: Package name required';\n\nconst ctx = $('Merge Files')?.item?.json || {};\nconst { requestId, conversationId, site } = ctx;\nconst siteId = site?.id;\nif (!siteId) return 'Error: No site context';\n\n// Write thinking step - RUNNING\nawait writeThinkingStep.call(this, {\n  request_id: requestId,\n  conversation_id: conversationId,\n  site_id: siteId,\n  step_number: Date.now(),\n  tool_name: 'add_dependency',\n  status: 'running',\n  message: `Installing ${pkg}`,\n  details: { package: pkg }\n});\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://preview-orchestrator.fly.dev/preview/install',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ siteId, packages: [pkg] }),\n    timeout: 120000\n  });\n  \n  // Write thinking step - COMPLETE\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: siteId,\n    step_number: Date.now(),\n    tool_name: 'add_dependency',\n    status: 'complete',\n    message: `✓ Installed ${pkg}`,\n    details: { package: pkg, installed: response.installed || [pkg] }\n  });\n  \n  return JSON.stringify({ success: true, installed: response.installed || [pkg] });\n} catch (e) {\n  // Write thinking step - ERROR\n  await writeThinkingStep.call(this, {\n    request_id: requestId,\n    conversation_id: conversationId,\n    site_id: siteId,\n    step_number: Date.now(),\n    tool_name: 'add_dependency',\n    status: 'error',\n    message: `Error installing ${pkg}: ${e.message}`,\n    details: { package: pkg, error: e.message }\n  });\n  \n  return 'Error: ' + e.message;\n}"
+      },
+      "id": "c4e49ae6-19f7-487f-8e8b-92711db011b2",
+      "name": "add_dependency",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [
+        31456,
+        1520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Merge Files').item.json;\nconst raw = $('AI Agent').item.json;\n\nconst output = raw?.output || '';\nconst steps = raw?.intermediateSteps || [];\n\nconst filesModified = new Set();\nconst filesCreated = new Set();\nconst filesDeleted = new Set();\nconst toolCalls = [];\n\nfor (const step of steps) {\n  if (step.action?.tool) toolCalls.push(step.action.tool);\n  const obs = step.observation || '';\n  try {\n    const result = JSON.parse(obs);\n    if (result.success) {\n      const file = result.file || result.to;\n      if (file) {\n        if (result.action === 'created') filesCreated.add(file);\n        else if (result.action === 'updated') filesModified.add(file);\n      }\n      if (result.deleted) filesDeleted.add(result.deleted);\n    }\n  } catch {}\n}\n\nconst warnings = [];\nif (filesModified.size === 0 && filesCreated.size === 0 && filesDeleted.size === 0 && steps.length > 2) {\n  warnings.push('No files were modified');\n}\n\nreturn [{\n  json: {\n    ...ctx,\n    plan: { humanSummary: output, warnings },\n    filesModified: [...filesModified],\n    filesCreated: [...filesCreated],\n    filesDeleted: [...filesDeleted],\n    iterations: steps.length,\n    toolsUsed: [...new Set(toolCalls)]\n  }\n}];"
+      },
+      "id": "97f03079-3661-4add-bf11-e220a00dcd43",
+      "name": "Parse Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        31824,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://preview-orchestrator.fly.dev/preview/pull",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ siteId: $json.site.id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "707f0125-b5c8-4e9a-98ec-3a8897177d75",
+      "name": "Git Pull",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        31984,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/code_versions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ site_id: $('Parse Results').item.json.site.id, request_id: $('Parse Results').item.json.requestId, instruction: $('Parse Results').item.json.message, plan_json: $('Parse Results').item.json.plan, status: 'preview_ready', preview_url: $('Parse Results').item.json.previewUrl, files_modified: $('Parse Results').item.json.filesModified, files_created: $('Parse Results').item.json.filesCreated }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "a399cbb1-ef02-48a5-96d1-756b52e24a56",
+      "name": "Save Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        32144,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ requestId: $('Parse Results').item.json.requestId, status: 'preview_ready', summary: $('Parse Results').item.json.plan.humanSummary, previewUrl: $('Parse Results').item.json.previewUrl, filesModified: $('Parse Results').item.json.filesModified, filesCreated: $('Parse Results').item.json.filesCreated, filesDeleted: $('Parse Results').item.json.filesDeleted, warnings: $('Parse Results').item.json.plan.warnings, iterations: $('Parse Results').item.json.iterations, toolsUsed: $('Parse Results').item.json.toolsUsed }) }}",
+        "options": {}
+      },
+      "id": "f26c5a62-9fff-4fdf-b0be-f97f5fe032bd",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        32304,
+        1024
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Edit UI": {
+      "main": [
+        [
+          {
+            "node": "Validate & Detect Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Detect Intent": {
+      "main": [
+        [
+          {
+            "node": "Load Site",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Site": {
+      "main": [
+        [
+          {
+            "node": "Build Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Context": {
+      "main": [
+        [
+          {
+            "node": "Prepare Fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Fetch": {
+      "main": [
+        [
+          {
+            "node": "Fetch Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Files": {
+      "main": [
+        [
+          {
+            "node": "Merge Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Files": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "list_files": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "read_file": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "write_file": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "str_replace_file": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "delete_file": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "search_files": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "add_dependency": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Results": {
+      "main": [
+        [
+          {
+            "node": "Git Pull",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Git Pull": {
+      "main": [
+        [
+          {
+            "node": "Save Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Request": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8278f0fbb558df00ecd79690c89f9c1e0fbf89bbd188221ebac4a3ae271261b8"
+  }
+}

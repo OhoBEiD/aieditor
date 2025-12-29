@@ -37,6 +37,11 @@
     "**/*.mts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "demo-preview-check",
+    "demo-site",
+    "fly-orchestrator",
+    "n8n",
+    "n8n-fly"
   ]
 }

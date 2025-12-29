@@ -122,7 +122,7 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                             <div className="flex items-center justify-center gap-3 mt-3">
                                 <button
                                     onClick={handleCopyImage}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium hover:bg-[var(--accent-primary-hover)] transition-colors"
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors"
                                 >
                                     {copiedImage ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                     {copiedImage ? 'Copied!' : 'Copy Image'}
@@ -140,21 +140,21 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
 
                 <div className="group flex justify-end p-3">
                     <div className="max-w-[80%]">
-                        <div className="bg-[var(--bg-tertiary)] rounded-2xl rounded-br-sm px-4 py-2.5 shadow-sm">
+                        <div className="bg-blue-500 text-white rounded-2xl rounded-br-sm px-4 py-2.5 shadow-md">
                             {/* Attached Image - Small Thumbnail */}
                             {messageImage && (
                                 <div className="mb-2">
                                     <img
                                         src={messageImage}
                                         alt="Attached"
-                                        className="h-16 rounded-lg object-contain cursor-pointer hover:opacity-80 transition-opacity border border-[var(--border-default)]"
+                                        className="h-16 rounded-lg object-contain cursor-pointer hover:opacity-80 transition-opacity border border-white/20"
                                         onClick={() => setShowImagePopup(true)}
                                     />
                                 </div>
                             )}
                             {/* Message Text */}
                             {message.content && message.content !== 'Sent an image' && (
-                                <p className="text-xs text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed">
+                                <p className="text-xs text-white whitespace-pre-wrap leading-relaxed">
                                     {message.content}
                                 </p>
                             )}
@@ -162,12 +162,12 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                         <div className="flex items-center justify-end gap-2 mt-1 px-1">
                             <button
                                 onClick={handleCopyMessage}
-                                className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-all"
+                                className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[10px] text-gray-500 hover:text-blue-600 transition-all"
                                 title="Copy message"
                             >
                                 {copiedMessage ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                             </button>
-                            <span className="text-[10px] text-[var(--text-muted)]">{timeString}</span>
+                            <span className="text-[10px] text-gray-500">{timeString}</span>
                         </div>
                     </div>
                 </div>
@@ -175,17 +175,17 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
         );
     }
 
-    // AI message - rounded blue gradient background
+    // AI message - light purple gradient background
     return (
         <div className="group p-3">
-            <div className="flex gap-2.5 p-3 bg-gradient-to-r from-slate-50 to-blue-50 rounded-2xl">
-                <div className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center bg-gradient-to-br from-[var(--accent-secondary)] to-[var(--accent-primary)]">
+            <div className="flex gap-2.5 p-3 bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl">
+                <div className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
                     <Bot className="w-3 h-3 text-white" />
                 </div>
 
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium text-[var(--accent-primary)]">AutoMate Web Editor</span>
+                        <span className="text-xs font-medium text-purple-600">AutoMate Web Editor</span>
                     </div>
 
                     <div className="space-y-2">
@@ -194,7 +194,7 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                                 {part.type === 'text' ? (
                                     <p
                                         className={cn(
-                                            'text-xs text-[var(--text-primary)] font-medium whitespace-pre-wrap leading-relaxed',
+                                            'text-xs text-gray-800 font-medium whitespace-pre-wrap leading-relaxed',
                                             isNew && 'animate-text-reveal',
                                             isStreaming && index === parts.length - 1 && 'typing-cursor'
                                         )}
@@ -202,14 +202,14 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                                         {part.content}
                                     </p>
                                 ) : (
-                                    <div className="rounded-lg overflow-hidden border border-[var(--border-default)]">
-                                        <div className="flex items-center justify-between px-2 py-1 bg-[var(--bg-tertiary)] border-b border-[var(--border-default)]">
-                                            <span className="text-[10px] text-[var(--text-muted)] font-mono">
+                                    <div className="rounded-lg overflow-hidden border border-gray-200">
+                                        <div className="flex items-center justify-between px-2 py-1 bg-gray-100 border-b border-gray-200">
+                                            <span className="text-[10px] text-gray-600 font-mono">
                                                 {part.language}
                                             </span>
                                             <button
                                                 onClick={() => handleCopy(part.content, index)}
-                                                className="flex items-center gap-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                                                className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-900 transition-colors"
                                             >
                                                 {copiedIndex === index ? (
                                                     <><Check className="w-3 h-3" /> Copied</>
@@ -224,7 +224,7 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                                             customStyle={{
                                                 margin: 0,
                                                 padding: '8px 10px',
-                                                background: 'var(--bg-secondary)',
+                                                background: '#ffffff',
                                                 fontSize: '11px',
                                             }}
                                         >
@@ -237,11 +237,11 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                     </div>
 
                     <div className="flex items-center justify-between mt-2">
-                        <span className="text-[10px] text-[var(--text-muted)]">{timeString}</span>
+                        <span className="text-[10px] text-gray-500">{timeString}</span>
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={handleCopyMessage}
-                                className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-all"
+                                className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:text-purple-600 transition-all"
                                 title="Copy message"
                             >
                                 {copiedMessage ? (
@@ -253,7 +253,7 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                             {onRevert && (
                                 <button
                                     onClick={() => onRevert(message.id)}
-                                    className="flex items-center justify-center w-6 h-6 rounded-full bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary-hover)] transition-colors shadow-sm"
+                                    className="flex items-center justify-center w-6 h-6 rounded-full bg-purple-500 text-white hover:bg-purple-600 transition-colors shadow-sm"
                                     title="Revert this change"
                                 >
                                     <Undo2 className="w-3 h-3" />

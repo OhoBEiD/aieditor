@@ -1,0 +1,25 @@
+{
+  "name": "search_code",
+  "description": "Search for code patterns across all files in the repository. Use this to find where specific text, classes, functions, or patterns are used. Returns file paths and line numbers of matches.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "pattern": {
+        "type": "string",
+        "description": "The text or regex pattern to search for (e.g., 'cyan', 'gradient-text', 'function.*onClick')"
+      },
+      "fileTypes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Optional: File extensions to search (e.g., ['tsx', 'css', 'js']). If not provided, searches all files."
+      },
+      "caseSensitive": {
+        "type": "boolean",
+        "description": "Whether search should be case sensitive. Default: false"
+      }
+    },
+    "required": ["pattern"]
+  }
+}

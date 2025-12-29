@@ -6,12 +6,167 @@ import { ChatPanel } from '@/components/chat/ChatPanel';
 import { PreviewPanel } from '@/components/editor/PreviewPanel';
 import { DeploymentSettings } from '@/components/settings/DeploymentSettings';
 import { supabase } from '@/lib/supabase/client';
-import { sendEditRequest, applyChanges, rollbackChanges } from '@/lib/n8n/client';
+import { applyChanges, rollbackChanges } from '@/lib/n8n/client';
+import { useThinkingSteps } from '@/hooks/useThinkingSteps';
+import type { ThinkingStep } from '@/components/chat/ThinkingSteps';
 import { cn } from '@/lib/utils';
 import { Bot, X, Settings, MessageSquare } from 'lucide-react';
+import { LandingPage } from '@/components/landing/LandingPage';
+import { gsap } from 'gsap';
+import Image from 'next/image';
 
-// Configuration - Use a valid UUID for the demo client
-const DEMO_CLIENT_ID = '00000000-0000-0000-0000-000000000001';
+// Configuration - Can be overridden by active project
+const DEFAULT_CLIENT_ID = '00000000-0000-0000-0000-000000000001';
+
+// Loading Screen Component with Animated Logo
+function LoadingScreen() {
+    const logoRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const ctx = gsap.context(() => {
+            const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+
+            // Logo reveal with shine effect
+            tl.fromTo(logoRef.current,
+                {
+                    scale: 0.8,
+                    opacity: 0,
+                    rotation: -10
+                },
+                {
+                    scale: 1,
+                    opacity: 1,
+                    rotation: 0,
+                    duration: 1.2,
+                    ease: 'back.out(1.7)'
+                }
+            )
+                // Shine effect on logo
+                .to(logoRef.current, {
+                    filter: 'brightness(1.4)',
+                    duration: 0.4,
+                    yoyo: true,
+                    repeat: 1
+                }, '-=0.4');
+
+        }, logoRef);
+
+        return () => ctx.revert();
+    }, []);
+
+    return (
+        <div className="h-screen w-full relative overflow-hidden flex items-center justify-center">
+            {/* Animated SVG Background */}
+            <svg
+                className="absolute inset-0 w-full h-full"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 1920 1080"
+                preserveAspectRatio="xMidYMid slice"
+            >
+                <defs>
+                    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur in="SourceGraphic" stdDeviation="80" />
+                    </filter>
+
+                    <radialGradient id="blob1" cx="50%" cy="50%">
+                        <stop offset="0%" stopColor="#6366f1" stopOpacity="0.9">
+                            <animate attributeName="stop-color" values="#6366f1;#8b5cf6;#ec4899;#6366f1" dur="8s" repeatCount="indefinite" />
+                        </stop>
+                        <stop offset="100%" stopColor="#6366f1" stopOpacity="0">
+                            <animate attributeName="stop-color" values="#6366f1;#8b5cf6;#ec4899;#6366f1" dur="8s" repeatCount="indefinite" />
+                        </stop>
+                    </radialGradient>
+
+                    <radialGradient id="blob2" cx="50%" cy="50%">
+                        <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.9">
+                            <animate attributeName="stop-color" values="#8b5cf6;#ec4899;#f59e0b;#8b5cf6" dur="10s" repeatCount="indefinite" />
+                        </stop>
+                        <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0">
+                            <animate attributeName="stop-color" values="#8b5cf6;#ec4899;#f59e0b;#8b5cf6" dur="10s" repeatCount="indefinite" />
+                        </stop>
+                    </radialGradient>
+
+                    <radialGradient id="blob3" cx="50%" cy="50%">
+                        <stop offset="0%" stopColor="#ec4899" stopOpacity="0.9">
+                            <animate attributeName="stop-color" values="#ec4899;#f59e0b;#10b981;#ec4899" dur="12s" repeatCount="indefinite" />
+                        </stop>
+                        <stop offset="100%" stopColor="#ec4899" stopOpacity="0">
+                            <animate attributeName="stop-color" values="#ec4899;#f59e0b;#10b981;#ec4899" dur="12s" repeatCount="indefinite" />
+                        </stop>
+                    </radialGradient>
+
+                    <radialGradient id="blob4" cx="50%" cy="50%">
+                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.9">
+                            <animate attributeName="stop-color" values="#f59e0b;#10b981;#06b6d4;#f59e0b" dur="9s" repeatCount="indefinite" />
+                        </stop>
+                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0">
+                            <animate attributeName="stop-color" values="#f59e0b;#10b981;#06b6d4;#f59e0b" dur="9s" repeatCount="indefinite" />
+                        </stop>
+                    </radialGradient>
+
+                    <radialGradient id="blob5" cx="50%" cy="50%">
+                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.9">
+                            <animate attributeName="stop-color" values="#10b981;#06b6d4;#6366f1;#10b981" dur="11s" repeatCount="indefinite" />
+                        </stop>
+                        <stop offset="100%" stopColor="#10b981" stopOpacity="0">
+                            <animate attributeName="stop-color" values="#10b981;#06b6d4;#6366f1;#10b981" dur="11s" repeatCount="indefinite" />
+                        </stop>
+                    </radialGradient>
+                </defs>
+
+                <rect width="100%" height="100%" fill="#ffffff" />
+
+                <g filter="url(#blur)">
+                    <ellipse cx="20%" cy="35%" rx="450" ry="380" fill="url(#blob1)">
+                        <animate attributeName="cx" values="20%;35%;15%;20%" dur="15s" repeatCount="indefinite" />
+                        <animate attributeName="cy" values="35%;50%;30%;35%" dur="12s" repeatCount="indefinite" />
+                        <animate attributeName="rx" values="450;480;450" dur="10s" repeatCount="indefinite" />
+                        <animate attributeName="ry" values="380;410;380" dur="11s" repeatCount="indefinite" />
+                    </ellipse>
+
+                    <ellipse cx="75%" cy="45%" rx="420" ry="350" fill="url(#blob2)">
+                        <animate attributeName="cx" values="75%;65%;80%;75%" dur="18s" repeatCount="indefinite" />
+                        <animate attributeName="cy" values="45%;60%;40%;45%" dur="14s" repeatCount="indefinite" />
+                        <animate attributeName="rx" values="420;450;420" dur="12s" repeatCount="indefinite" />
+                        <animate attributeName="ry" values="350;380;350" dur="13s" repeatCount="indefinite" />
+                    </ellipse>
+
+                    <ellipse cx="50%" cy="65%" rx="480" ry="400" fill="url(#blob3)">
+                        <animate attributeName="cx" values="50%;55%;45%;50%" dur="16s" repeatCount="indefinite" />
+                        <animate attributeName="cy" values="65%;55%;70%;65%" dur="11s" repeatCount="indefinite" />
+                        <animate attributeName="rx" values="480;510;480" dur="14s" repeatCount="indefinite" />
+                        <animate attributeName="ry" values="400;430;400" dur="15s" repeatCount="indefinite" />
+                    </ellipse>
+
+                    <ellipse cx="30%" cy="70%" rx="400" ry="330" fill="url(#blob4)">
+                        <animate attributeName="cx" values="30%;40%;25%;30%" dur="17s" repeatCount="indefinite" />
+                        <animate attributeName="cy" values="70%;60%;75%;70%" dur="13s" repeatCount="indefinite" />
+                        <animate attributeName="rx" values="400;430;400" dur="11s" repeatCount="indefinite" />
+                        <animate attributeName="ry" values="330;360;330" dur="12s" repeatCount="indefinite" />
+                    </ellipse>
+
+                    <ellipse cx="80%" cy="25%" rx="380" ry="320" fill="url(#blob5)">
+                        <animate attributeName="cx" values="80%;70%;85%;80%" dur="14s" repeatCount="indefinite" />
+                        <animate attributeName="cy" values="25%;35%;20%;25%" dur="16s" repeatCount="indefinite" />
+                        <animate attributeName="rx" values="380;410;380" dur="13s" repeatCount="indefinite" />
+                        <animate attributeName="ry" values="320;350;320" dur="14s" repeatCount="indefinite" />
+                    </ellipse>
+                </g>
+            </svg>
+
+            {/* Animated Logo */}
+            <div ref={logoRef} className="relative z-10">
+                <Image
+                    src="/automatelogo.png"
+                    alt="AutoMate"
+                    width={120}
+                    height={120}
+                    className="drop-shadow-2xl object-contain"
+                />
+            </div>
+        </div>
+    );
+}
 
 // Types
 interface ChatSession {
@@ -40,12 +195,30 @@ interface RequestContext {
     messageId: string;
 }
 
+interface Project {
+    id: string;
+    siteKey: string;
+    name: string;
+    repoUrl: string;
+    previewSubdomain: string;
+}
+
 export default function Home() {
     const [showPreview, setShowPreview] = useState(true);
     const [isPanelOpen, setIsPanelOpen] = useState(true);
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
+
+    // Active project state - replaces hardcoded DEMO_CLIENT_ID
+    const [activeProject, setActiveProject] = useState<Project | null>(null);
+    const activeProjectId = activeProject?.siteKey || DEFAULT_CLIENT_ID;
+
+    // Thinking steps state - Live updates from Supabase
+    const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
+    const { steps: liveThinkingSteps, isSubscribed } = useThinkingSteps(currentRequestId);
+    const [agentThinking, setAgentThinking] = useState<string[]>([]); // Real thinking from n8n
+    const [isStreaming, setIsStreaming] = useState(false);
 
     // Helper to add message without duplicates
     const addMessage = useCallback((newMsg: Message) => {
@@ -66,12 +239,159 @@ export default function Home() {
     const [previewUrl, setPreviewUrl] = useState<string | undefined>();
     const [requestContexts, setRequestContexts] = useState<Map<string, RequestContext>>(new Map());
     const [isDeploying, setIsDeploying] = useState(false);
+    const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+    const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
+    const [availablePages, setAvailablePages] = useState<string[]>(['/']);
 
     // Settings view toggle
     const [showSettings, setShowSettings] = useState(false);
 
     // Abort controller for canceling requests
     const abortControllerRef = useRef<AbortController | null>(null);
+
+    // Current request ID for stopping n8n execution
+    const currentRequestIdRef = useRef<string | null>(null);
+
+    // No inactivity timeout - preview stays running until page closes or preview mode is off
+
+    // Start preview by calling orchestrator
+    const startPreview = useCallback(async () => {
+        setIsPreviewLoading(true);
+        setShowPreview(true);
+
+        try {
+            const response = await fetch('https://preview-orchestrator.fly.dev/preview/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    siteId: activeProjectId,
+                    repoUrl: 'https://github.com/OhoBEiD/ai-demo-shop.git',
+                    branch: 'main'
+                })
+            });
+
+            const data = await response.json();
+            if (data.previewUrl) {
+                // Poll health check to ensure server is ready
+                const maxAttempts = 30; // 60 seconds total
+                let attempts = 0;
+
+                const checkHealth = async (): Promise<boolean> => {
+                    try {
+                        const healthResp = await fetch('https://preview-orchestrator.fly.dev/health', {
+                            method: 'GET',
+                            signal: AbortSignal.timeout(5000)
+                        });
+                        const healthData = await healthResp.json();
+                        return healthData.ok && healthData.activePreviews > 0;
+                    } catch {
+                        return false;
+                    }
+                };
+
+                // Wait for server to be ready
+                while (attempts < maxAttempts) {
+                    const isReady = await checkHealth();
+                    if (isReady) {
+                        console.log('[Preview] Server is ready after', attempts * 2, 'seconds');
+                        break;
+                    }
+                    console.log('[Preview] Waiting for server... attempt', attempts + 1);
+                    await new Promise(r => setTimeout(r, 2000));
+                    attempts++;
+                }
+
+                setPreviewUrl(data.previewUrl);
+                // Detect available pages from repo
+                detectAvailablePages();
+            }
+        } catch (err) {
+            console.error('Failed to start preview:', err);
+        } finally {
+            setIsPreviewLoading(false);
+        }
+    }, []);
+
+    // Detect available pages from the repository
+    const detectAvailablePages = async () => {
+        try {
+            const response = await fetch('https://api.github.com/repos/OhoBEiD/ai-demo-shop/git/trees/main?recursive=1', {
+                headers: {
+                    'Accept': 'application/vnd.github+json'
+                }
+            });
+            const data = await response.json();
+
+            if (data.tree) {
+                const pages: string[] = ['/'];
+
+                // Detect Next.js App Router pages
+                data.tree.forEach((file: any) => {
+                    if (file.type === 'blob' && file.path.match(/^(app|src\/app)\/.+\/page\.(tsx|jsx|js|ts)$/)) {
+                        const pagePath = file.path
+                            .replace(/^(app|src\/app)/, '')
+                            .replace(/\/page\.(tsx|jsx|js|ts)$/, '')
+                            || '/';
+                        if (!pages.includes(pagePath)) {
+                            pages.push(pagePath);
+                        }
+                    }
+
+                    // Detect Next.js Pages Router
+                    if (file.type === 'blob' && file.path.match(/^(pages|src\/pages)\/.+\.(tsx|jsx|js|ts)$/)) {
+                        const pagePath = file.path
+                            .replace(/^(pages|src\/pages)/, '')
+                            .replace(/\.(tsx|jsx|js|ts)$/, '')
+                            .replace(/\/index$/, '')
+                            || '/';
+                        if (!pagePath.startsWith('/_') && !pagePath.startsWith('/api/') && !pages.includes(pagePath)) {
+                            pages.push(pagePath);
+                        }
+                    }
+                });
+
+                // Sort pages alphabetically
+                pages.sort();
+                setAvailablePages(pages);
+            }
+        } catch (error) {
+            console.error('Failed to detect pages:', error);
+        }
+    };
+
+    // Exit preview and stop orchestrator
+    const handleExitPreview = useCallback(async () => {
+        setShowPreview(false);
+        setPreviewUrl(undefined);
+        // Clear preview URL from localStorage when exiting
+        localStorage.removeItem('previewUrl');
+
+        // Stop the preview server
+        try {
+            await fetch('https://preview-orchestrator.fly.dev/preview/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ siteId: activeProjectId })
+            });
+            console.log('[Preview] Preview server stopped');
+        } catch (err) {
+            console.error('[Preview] Failed to stop preview server:', err);
+        }
+    }, []);
+
+    // Stop preview when page unloads
+    useEffect(() => {
+        const handleBeforeUnload = () => {
+            // Note: This is best-effort, may not always fire (e.g., PC shutdown)
+            navigator.sendBeacon?.('https://preview-orchestrator.fly.dev/preview/stop', JSON.stringify({ siteId: activeProjectId }));
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+        };
+    }, []);
 
     // Fix hydration + restore preferences
     useEffect(() => {
@@ -84,6 +404,11 @@ export default function Home() {
         const savedPanelOpen = localStorage.getItem('isPanelOpen');
         if (savedPanelOpen !== null) {
             setIsPanelOpen(savedPanelOpen === 'true');
+        }
+        // Restore preview URL from localStorage
+        const savedPreviewUrl = localStorage.getItem('previewUrl');
+        if (savedPreviewUrl) {
+            setPreviewUrl(savedPreviewUrl);
         }
     }, []);
 
@@ -99,8 +424,20 @@ export default function Home() {
         if (isClient) {
             localStorage.setItem('showPreview', String(showPreview));
             localStorage.setItem('isPanelOpen', String(isPanelOpen));
+            // Save preview URL when it changes
+            if (previewUrl) {
+                localStorage.setItem('previewUrl', previewUrl);
+            }
         }
-    }, [isClient, showPreview, isPanelOpen]);
+    }, [isClient, showPreview, isPanelOpen, previewUrl]);
+
+    // Auto-start preview when showPreview is true and preview isn't loaded yet
+    useEffect(() => {
+        if (isClient && showPreview && !previewUrl && !isPreviewLoading) {
+            console.log('[Preview] Auto-starting preview on load...');
+            startPreview();
+        }
+    }, [isClient, showPreview, previewUrl, isPreviewLoading, startPreview]);
 
     // Load messages when session changes + persist to localStorage
     useEffect(() => {
@@ -118,7 +455,7 @@ export default function Home() {
             const { data, error } = await supabase
                 .from('chat_sessions')
                 .select('*')
-                .eq('client_id', DEMO_CLIENT_ID)
+                .eq('client_id', activeProjectId)
                 .eq('is_active', true)
                 .order('updated_at', { ascending: false });
 
@@ -182,7 +519,7 @@ export default function Home() {
             const { data, error } = await supabase
                 .from('chat_sessions')
                 .insert({
-                    client_id: DEMO_CLIENT_ID,
+                    client_id: activeProjectId,
                     title: 'New Chat',
                     is_active: true,
                 })
@@ -244,13 +581,37 @@ export default function Home() {
         }
     }, []);
 
-    // Handle stop button - abort the current request
-    const handleStop = useCallback(() => {
+    // Handle stop button - abort the current request and stop n8n execution
+    const handleStop = useCallback(async () => {
+        // Abort the fetch request
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
         }
+
+        // Stop the n8n execution via orchestrator
+        if (currentRequestIdRef.current) {
+            try {
+                console.log(`Stopping n8n execution for request ${currentRequestIdRef.current}...`);
+                await fetch('https://preview-orchestrator.fly.dev/execution/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ requestId: currentRequestIdRef.current })
+                });
+                console.log('N8n execution stop request sent');
+            } catch (err) {
+                console.error('Failed to stop n8n execution:', err);
+            }
+            currentRequestIdRef.current = null;
+        }
+
+        // Reset all UI state
         setIsSending(false);
+        setIsStreaming(false);
+        setCurrentRequestId(null); // Clear thinking steps subscription
+        setAgentThinking([]);
+
+        console.log('Request stopped by user');
     }, []);
 
     const handleSendMessage = useCallback(async (content: string, image?: File) => {
@@ -273,7 +634,7 @@ export default function Home() {
                 const { data, error } = await supabase
                     .from('chat_sessions')
                     .insert({
-                        client_id: DEMO_CLIENT_ID,
+                        client_id: activeProjectId,
                         title: (content || 'Image message').slice(0, 40) + (content.length > 40 ? '...' : ''),
                         is_active: true,
                     })
@@ -293,6 +654,14 @@ export default function Home() {
         }
 
         setIsSending(true);
+        setIsStreaming(true);
+
+        // Generate requestId for this request
+        const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+        setCurrentRequestId(requestId);
+
+        // Clear previous thinking steps
+        setAgentThinking([]);
 
         // Create new abort controller for this request
         abortControllerRef.current = new AbortController();
@@ -323,19 +692,40 @@ export default function Home() {
                 setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title } : s));
             }
 
-            // Call n8n webhook
+            // Call /api/chat endpoint (which routes to n8n)
             try {
-                const response = await sendEditRequest({
-                    siteId: DEMO_CLIENT_ID,
-                    conversationId: sessionId,
-                    userId: DEMO_CLIENT_ID,
-                    message: content.trim(),
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        siteId: activeProjectId,
+                        conversationId: sessionId,
+                        userId: activeProjectId,
+                        message: content.trim(),
+                        image: imageData, // Pass image for AI vision analysis
+                        requestId, // Pass requestId for live thinking
+                    }),
+                    signal: abortControllerRef.current.signal,
                 });
 
-                // Format AI response
-                const aiContent = formatAIResponse(response);
+                const result = await response.json();
+                console.log('N8N Response:', result);
 
-                // Save AI message
+                // Store real thinking from n8n (if provided)
+                if (result.thinking?.length > 0) {
+                    setAgentThinking(result.thinking);
+                }
+
+                // Clear thinking steps after completion
+                setTimeout(() => {
+                    setCurrentRequestId(null); // Stop live subscription
+                    setAgentThinking([]);
+                    setIsStreaming(false);
+                }, 3000);
+
+                // Format and save AI response
+                const aiContent = result.summary || 'Changes processed.';
+
                 const { data: aiMsg, error: aiError } = await supabase
                     .from('messages')
                     .insert({
@@ -343,10 +733,12 @@ export default function Home() {
                         role: 'assistant',
                         content: aiContent,
                         metadata: {
-                            requestId: response.requestId,
-                            status: response.status,
-                            previewUrl: response.previewUrl,
-                            prUrl: response.prUrl,
+                            requestId: result.requestId,
+                            status: result.status || 'pending',
+                            previewUrl: result.previewUrl,
+                            diff: result.diff,
+                            filesChanged: result.filesChanged,
+                            warnings: result.warnings,
                         },
                     })
                     .select()
@@ -357,20 +749,35 @@ export default function Home() {
 
                 // Store context
                 setRequestContexts(prev => new Map(prev).set(aiMsg.id, {
-                    requestId: response.requestId,
-                    status: response.status,
-                    previewUrl: response.previewUrl,
-                    prUrl: response.prUrl,
+                    requestId: result.requestId,
+                    status: result.status || 'preview_ready',
+                    previewUrl: result.previewUrl || '',
+                    prUrl: '',
                     messageId: aiMsg.id,
                 }));
 
-                // Update preview
-                if (response.previewUrl) {
-                    setPreviewUrl(response.previewUrl);
+                // Update preview and force reload
+                if (result.previewUrl) {
+                    // Extract base URL without query params
+                    const baseUrl = result.previewUrl.split('?')[0].split('#')[0];
+                    console.log('Setting preview URL:', baseUrl);
+                    setPreviewUrl(baseUrl);
+                    // CRITICAL: Wait for dev server to rebuild before refreshing preview
+                    // Next.js dev server needs ~2-3 seconds to rebuild after file changes
+                    setTimeout(() => {
+                        setPreviewRefreshKey(prev => prev + 1);
+                        console.log('Preview refresh triggered - dev server should be ready');
+                    }, 3000); // 3 second delay to allow rebuild
+                } else {
+                    console.warn('No preview URL in result:', result);
                 }
-            } catch (n8nError) {
+            } catch (apiError) {
+                // Stop streaming on error
+                setCurrentRequestId(null);
+                setIsStreaming(false);
+
                 // Save error message
-                const errorContent = `❌ **Error:** ${n8nError instanceof Error ? n8nError.message : 'Failed to process request'}`;
+                const errorContent = `❌ **Error:** ${apiError instanceof Error ? apiError.message : 'Failed to process request'}`;
                 const { data: errorMsg } = await supabase
                     .from('messages')
                     .insert({
@@ -387,6 +794,9 @@ export default function Home() {
             }
         } catch (err) {
             console.error('Failed to send message:', err);
+            // Cleanup thinking on error
+            setCurrentRequestId(null);
+            setIsStreaming(false);
         } finally {
             setIsSending(false);
         }
@@ -401,9 +811,9 @@ export default function Home() {
 
         try {
             const response = await rollbackChanges({
-                siteId: DEMO_CLIENT_ID,
+                siteId: activeProjectId,
                 requestId: context.requestId,
-                userId: DEMO_CLIENT_ID,
+                userId: activeProjectId,
             });
 
             // Update context
@@ -459,9 +869,9 @@ export default function Home() {
         setIsDeploying(true);
         try {
             const response = await applyChanges({
-                siteId: DEMO_CLIENT_ID,
+                siteId: activeProjectId,
                 requestId: pendingContext.requestId,
-                userId: DEMO_CLIENT_ID,
+                userId: activeProjectId,
             });
 
             // Update context
@@ -492,43 +902,215 @@ export default function Home() {
         }
     }, [requestContexts, activeSessionId, addMessage]);
 
+    // Create a new project from a message
+    const createNewProject = useCallback(async (initialMessage: string) => {
+        setIsSending(true);
+        try {
+            const response = await fetch('/api/projects/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ initialMessage }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('[Project] Creation failed:', errorData);
+                return;
+            }
+
+            const data = await response.json();
+            console.log('[Project] Created:', data.project);
+
+            // Set as active project
+            setActiveProject(data.project);
+
+            // Start preview for the new project
+            await startPreview();
+
+            // Send the initial message to the AI
+            handleSendMessage(initialMessage, undefined);
+        } catch (error) {
+            console.error('[Project] Creation error:', error);
+        } finally {
+            setIsSending(false);
+        }
+    }, [startPreview, handleSendMessage]);
+
+    // Import an existing GitHub repo
+    const importGitHubRepo = useCallback(async (repoUrl: string) => {
+        setIsSending(true);
+        try {
+            const response = await fetch('/api/projects/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repoUrl }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('[Project] Import failed:', errorData);
+                throw new Error(errorData.error || 'Import failed');
+            }
+
+            const data = await response.json();
+            console.log('[Project] Imported:', data.project);
+
+            // Set as active project
+            setActiveProject(data.project);
+
+            // Start preview for the imported project
+            await startPreview();
+        } catch (error) {
+            console.error('[Project] Import error:', error);
+            throw error;
+        } finally {
+            setIsSending(false);
+        }
+    }, [startPreview]);
+
     const hasPendingChanges = Array.from(requestContexts.values()).some(
         ctx => ctx.status === 'preview_ready'
     );
 
     if (!isClient) {
         return (
-            <div className="h-screen bg-[var(--bg-primary)] flex items-center justify-center">
-                <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-secondary)] animate-pulse" />
-                    <span className="text-[var(--text-muted)] animate-pulse">Loading...</span>
-                </div>
-            </div>
+            <LoadingScreen />
         );
     }
 
     return (
-        <div className="h-screen overflow-hidden bg-[var(--bg-primary)]">
+        <div className="h-screen overflow-hidden relative">
+            {/* Global SVG Background */}
+            <svg
+                className="absolute inset-0 w-full h-full z-0"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 1920 1080"
+                preserveAspectRatio="xMidYMid slice"
+            >
+                <defs>
+                    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur in="SourceGraphic" stdDeviation="80" />
+                    </filter>
+
+                    <radialGradient id="blob1" cx="50%" cy="50%">
+                        <stop offset="0%" stopColor="#6366f1" stopOpacity="0.9">
+                            <animate attributeName="stop-color" values="#6366f1;#8b5cf6;#ec4899;#6366f1" dur="8s" repeatCount="indefinite" />
+                        </stop>
+                        <stop offset="100%" stopColor="#6366f1" stopOpacity="0">
+                            <animate attributeName="stop-color" values="#6366f1;#8b5cf6;#ec4899;#6366f1" dur="8s" repeatCount="indefinite" />
+                        </stop>
+                    </radialGradient>
+
+                    <radialGradient id="blob2" cx="50%" cy="50%">
+                        <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.9">
+                            <animate attributeName="stop-color" values="#8b5cf6;#ec4899;#f59e0b;#8b5cf6" dur="10s" repeatCount="indefinite" />
+                        </stop>
+                        <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0">
+                            <animate attributeName="stop-color" values="#8b5cf6;#ec4899;#f59e0b;#8b5cf6" dur="10s" repeatCount="indefinite" />
+                        </stop>
+                    </radialGradient>
+
+                    <radialGradient id="blob3" cx="50%" cy="50%">
+                        <stop offset="0%" stopColor="#ec4899" stopOpacity="0.9">
+                            <animate attributeName="stop-color" values="#ec4899;#f59e0b;#10b981;#ec4899" dur="12s" repeatCount="indefinite" />
+                        </stop>
+                        <stop offset="100%" stopColor="#ec4899" stopOpacity="0">
+                            <animate attributeName="stop-color" values="#ec4899;#f59e0b;#10b981;#ec4899" dur="12s" repeatCount="indefinite" />
+                        </stop>
+                    </radialGradient>
+
+                    <radialGradient id="blob4" cx="50%" cy="50%">
+                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.9">
+                            <animate attributeName="stop-color" values="#f59e0b;#10b981;#06b6d4;#f59e0b" dur="9s" repeatCount="indefinite" />
+                        </stop>
+                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0">
+                            <animate attributeName="stop-color" values="#f59e0b;#10b981;#06b6d4;#f59e0b" dur="9s" repeatCount="indefinite" />
+                        </stop>
+                    </radialGradient>
+
+                    <radialGradient id="blob5" cx="50%" cy="50%">
+                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.9">
+                            <animate attributeName="stop-color" values="#10b981;#06b6d4;#6366f1;#10b981" dur="11s" repeatCount="indefinite" />
+                        </stop>
+                        <stop offset="100%" stopColor="#10b981" stopOpacity="0">
+                            <animate attributeName="stop-color" values="#10b981;#06b6d4;#6366f1;#10b981" dur="11s" repeatCount="indefinite" />
+                        </stop>
+                    </radialGradient>
+                </defs>
+
+                <rect width="100%" height="100%" fill="#ffffff" />
+
+                <g filter="url(#blur)">
+                    <ellipse cx="20%" cy="35%" rx="450" ry="380" fill="url(#blob1)">
+                        <animate attributeName="cx" values="20%;35%;15%;20%" dur="15s" repeatCount="indefinite" />
+                        <animate attributeName="cy" values="35%;50%;30%;35%" dur="12s" repeatCount="indefinite" />
+                        <animate attributeName="rx" values="450;480;450" dur="10s" repeatCount="indefinite" />
+                        <animate attributeName="ry" values="380;410;380" dur="11s" repeatCount="indefinite" />
+                    </ellipse>
+
+                    <ellipse cx="75%" cy="45%" rx="420" ry="350" fill="url(#blob2)">
+                        <animate attributeName="cx" values="75%;65%;80%;75%" dur="18s" repeatCount="indefinite" />
+                        <animate attributeName="cy" values="45%;60%;40%;45%" dur="14s" repeatCount="indefinite" />
+                        <animate attributeName="rx" values="420;450;420" dur="12s" repeatCount="indefinite" />
+                        <animate attributeName="ry" values="350;380;350" dur="13s" repeatCount="indefinite" />
+                    </ellipse>
+
+                    <ellipse cx="50%" cy="65%" rx="480" ry="400" fill="url(#blob3)">
+                        <animate attributeName="cx" values="50%;55%;45%;50%" dur="16s" repeatCount="indefinite" />
+                        <animate attributeName="cy" values="65%;55%;70%;65%" dur="11s" repeatCount="indefinite" />
+                        <animate attributeName="rx" values="480;510;480" dur="14s" repeatCount="indefinite" />
+                        <animate attributeName="ry" values="400;430;400" dur="15s" repeatCount="indefinite" />
+                    </ellipse>
+
+                    <ellipse cx="30%" cy="70%" rx="400" ry="330" fill="url(#blob4)">
+                        <animate attributeName="cx" values="30%;40%;25%;30%" dur="17s" repeatCount="indefinite" />
+                        <animate attributeName="cy" values="70%;60%;75%;70%" dur="13s" repeatCount="indefinite" />
+                        <animate attributeName="rx" values="400;430;400" dur="11s" repeatCount="indefinite" />
+                        <animate attributeName="ry" values="330;360;330" dur="12s" repeatCount="indefinite" />
+                    </ellipse>
+
+                    <ellipse cx="80%" cy="25%" rx="380" ry="320" fill="url(#blob5)">
+                        <animate attributeName="cx" values="80%;70%;85%;80%" dur="14s" repeatCount="indefinite" />
+                        <animate attributeName="cy" values="25%;35%;20%;25%" dur="16s" repeatCount="indefinite" />
+                        <animate attributeName="rx" values="380;410;380" dur="13s" repeatCount="indefinite" />
+                        <animate attributeName="ry" values="320;350;320" dur="14s" repeatCount="indefinite" />
+                    </ellipse>
+                </g>
+            </svg>
+
             {showPreview ? (
-                <div className="flex h-full">
-                    {/* Side Panel */}
+                <div className="flex h-full relative z-10 p-4 gap-4">
+                    {/* Side Panel - Floating Liquid Glass */}
                     <div className={cn(
-                        'flex flex-col border-r border-[var(--border-default)] bg-[var(--bg-secondary)] transition-all duration-300 ease-in-out',
-                        isPanelOpen ? 'w-[340px]' : 'w-0 overflow-hidden'
+                        'flex flex-col backdrop-blur-xl bg-white/30 border border-white/20 transition-all duration-300 ease-in-out rounded-3xl shadow-[0_8px_32px_0_rgba(31,38,135,0.37)]',
+                        isPanelOpen ? 'w-[360px] opacity-100' : 'w-0 opacity-0 overflow-hidden p-0 border-0'
                     )}>
                         {/* Header */}
-                        <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)] flex items-center justify-between">
-                            <span className="text-sm font-medium text-[var(--text-primary)]">
-                                {showSettings ? 'Settings' : 'Chat'}
-                            </span>
+                        <div className="flex-shrink-0 px-4 py-3 flex items-center justify-between border-b border-white/10">
+                            {showSettings ? (
+                                <span className="text-sm font-medium text-gray-900/80">Settings</span>
+                            ) : (
+                                <div className="flex items-center gap-2">
+                                    <Image
+                                        src="/automatelogo.png"
+                                        alt="AutoMate"
+                                        width={24}
+                                        height={24}
+                                        className="object-contain opacity-90"
+                                    />
+                                    <span className="text-sm font-bold text-gray-900/90 tracking-tight" style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}>
+                                        AutoMate
+                                    </span>
+                                </div>
+                            )}
                             <div className="flex items-center gap-1">
                                 <button
                                     onClick={() => setShowSettings(!showSettings)}
                                     className={cn(
-                                        'p-1.5 rounded-md transition-colors',
+                                        'p-2 rounded-xl transition-all duration-200',
                                         showSettings
-                                            ? 'bg-[var(--accent-primary)] text-white'
-                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
+                                            ? 'bg-blue-500/90 text-white shadow-md'
+                                            : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
                                     )}
                                     title={showSettings ? 'Back to Chat' : 'Settings'}
                                 >
@@ -547,7 +1129,7 @@ export default function Home() {
                             /* Chat View */
                             <>
                                 {/* Chat Selector */}
-                                <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)]">
+                                <div className="flex-shrink-0 px-3 py-2">
                                     <ChatSelector
                                         sessions={sessions as any}
                                         activeSessionId={activeSessionId}
@@ -566,110 +1148,43 @@ export default function Home() {
                                         onStop={handleStop}
                                         isLoading={isSending}
                                         isLoadingMessages={isLoadingMessages}
+                                        isStreaming={isStreaming}
+                                        thinkingSteps={liveThinkingSteps}
+                                        agentThinking={agentThinking}
                                     />
                                 </div>
                             </>
                         )}
                     </div>
 
-                    {/* Preview */}
-                    <div className="flex-1">
+                    {/* Preview - No borders, transparent */}
+                    <div className="flex-1 border-0 mr-4">
                         <PreviewPanel
                             previewUrl={previewUrl}
-                            onExitPreview={() => setShowPreview(false)}
+                            onExitPreview={handleExitPreview}
                             onDeploy={handleDeploy}
+                            onFixError={(errorMessage) => handleSendMessage(errorMessage)}
                             hasChanges={hasPendingChanges}
                             isDeploying={isDeploying}
+                            availablePages={availablePages}
+                            isLoading={isPreviewLoading}
+                            refreshKey={previewRefreshKey}
                         />
                     </div>
                 </div>
             ) : (
-                <div className="h-full relative">
-                    {/* Floating Side Panel */}
-                    <div className={cn(
-                        'absolute right-4 top-1/2 -translate-y-1/2 flex flex-col bg-[var(--bg-secondary)] rounded-3xl shadow-2xl border border-[var(--border-default)] overflow-hidden transition-all duration-300 ease-in-out',
-                        isPanelOpen
-                            ? 'w-[320px] h-[80vh] opacity-100 scale-100'
-                            : 'w-0 h-0 opacity-0 scale-95'
-                    )}>
-                        {/* Top Bar */}
-                        <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)] flex items-center justify-between">
-                            <button
-                                onClick={() => setShowPreview(true)}
-                                className="px-3 py-1.5 rounded-full text-xs font-medium bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary-hover)] transition-colors"
-                            >
-                                Show Preview
-                            </button>
-                            <div className="flex items-center gap-1">
-                                <button
-                                    onClick={() => setShowSettings(!showSettings)}
-                                    className={cn(
-                                        'p-1.5 rounded-md transition-colors',
-                                        showSettings
-                                            ? 'bg-[var(--accent-primary)] text-white'
-                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
-                                    )}
-                                    title={showSettings ? 'Back to Chat' : 'Settings'}
-                                >
-                                    <Settings className="w-4 h-4" />
-                                </button>
-                                <button
-                                    onClick={() => setIsPanelOpen(false)}
-                                    className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
-                                >
-                                    <X className="w-4 h-4" />
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Conditional Content */}
-                        {showSettings ? (
-                            /* Settings View */
-                            <div className="flex-1 overflow-y-auto">
-                                <DeploymentSettings />
-                            </div>
-                        ) : (
-                            /* Chat View */
-                            <>
-                                {/* Chat Selector */}
-                                <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)]">
-                                    <ChatSelector
-                                        sessions={sessions as any}
-                                        activeSessionId={activeSessionId}
-                                        onSelectSession={setActiveSessionId}
-                                        onNewChat={handleNewChat}
-                                        onDeleteChat={handleDeleteChat}
-                                        onRenameChat={handleRenameChat}
-                                    />
-                                </div>
-                                {/* Chat */}
-                                <div className="flex-1 overflow-hidden">
-                                    <ChatPanel
-                                        messages={messages as any}
-                                        onSendMessage={handleSendMessage}
-                                        onRevert={handleRevert}
-                                        onStop={handleStop}
-                                        isLoading={isSending}
-                                        isLoadingMessages={isLoadingMessages}
-                                    />
-                                </div>
-                            </>
-                        )}
-                    </div>
-
-                    {/* Agent Button */}
-                    <button
-                        onClick={() => setIsPanelOpen(!isPanelOpen)}
-                        className={cn(
-                            'fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ease-in-out',
-                            'bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-secondary)]',
-                            'hover:scale-110 hover:shadow-2xl',
-                            !isPanelOpen && 'animate-pulse'
-                        )}
-                    >
-                        <Bot className="w-7 h-7 text-white" />
-                    </button>
-                </div>
+                <LandingPage
+                    onSendMessage={async (content: string) => {
+                        // Start preview first
+                        await startPreview();
+                        // Then send the message
+                        handleSendMessage(content);
+                    }}
+                    onCreateProject={createNewProject}
+                    onImportRepo={importGitHubRepo}
+                    onOpenPreview={startPreview}
+                    isLoading={isPreviewLoading || isSending}
+                />
             )}
         </div>
     );

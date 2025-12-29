@@ -1,0 +1,39 @@
+{
+  "name": "Tool: read_file Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "execute-workflow-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// AI Agent Tool: read_file\nconst filePath = $input.item.json.filePath;\n\n// Get site info\nlet site;\ntry {\n  site = $('Merge Files').item.json.site;\n} catch (e) {\n  site = $input.item.json.site || {};\n}\n\nconst owner = site.owner;\nconst repo = site.repo;\nconst branch = site.default_branch || 'main';\n\nif (!owner || !repo || !filePath) {\n  return {\n    json: {\n      success: false,\n      error: 'Missing required parameters (owner/repo/filePath)'\n    }\n  };\n}\n\n// Build GitHub file URL\nconst url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`;\n\ntry {\n  // Fetch file contents\n  const response = await fetch(url, {\n    headers: {\n      'Authorization': `Bearer ${$env.GITHUB_TOKEN}`,\n      'Accept': 'application/vnd.github.raw',\n      'X-GitHub-Api-Version': '2022-11-28'\n    }\n  });\n\n  const content = await response.text();\n\n  // Add line numbers\n  const lines = content.split('\\n');\n  const numberedContent = lines.map((line, i) => `${i + 1}\\t${line}`).join('\\n');\n\n  return {\n    json: {\n      success: true,\n      filePath: filePath,\n      content: numberedContent,\n      rawContent: content,\n      lines: lines.length,\n      message: `Successfully read ${filePath} (${lines.length} lines)`\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      success: false,\n      error: error.message,\n      filePath: filePath\n    }\n  };\n}"
+      },
+      "id": "code-node",
+      "name": "Read File Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read File Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
