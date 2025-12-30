@@ -53,7 +53,22 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const result = await n8nResponse.json();
+        // Read text response first to debug/handle empty responses
+        const textResponse = await n8nResponse.text();
+
+        if (!textResponse) {
+            console.error('n8n returned empty response');
+            throw new Error('Empty response from workflow');
+        }
+
+        let result;
+        try {
+            result = JSON.parse(textResponse);
+        } catch (e) {
+            console.error('Failed to parse n8n response:', textResponse);
+            // Verify if it is an HTML error page or similar
+            throw new Error(`Invalid JSON response: ${textResponse.slice(0, 100)}`);
+        }
 
         // Return the n8n response directly
         return NextResponse.json({

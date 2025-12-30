@@ -1,0 +1,612 @@
+{
+    "nodes": [
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify({ requestId: $('Parse Results').item.json.requestId, status: 'preview_ready', summary: $('Parse Results').item.json.plan.humanSummary, previewUrl: $('Parse Results').item.json.previewUrl, filesModified: $('Parse Results').item.json.filesModified, filesCreated: $('Parse Results').item.json.filesCreated, filesDeleted: $('Parse Results').item.json.filesDeleted, warnings: $('Parse Results').item.json.plan.warnings, iterations: $('Parse Results').item.json.iterations, toolsUsed: $('Parse Results').item.json.toolsUsed }) }}",
+                "options": {}
+            },
+            "id": "8de60296-cb67-4703-8605-d79117a3f26f",
+            "name": "Response",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                34960,
+                1456
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/code_versions",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        },
+                        {
+                            "name": "Prefer",
+                            "value": "return=representation"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ site_id: $('Parse Results').item.json.site.id, request_id: $('Parse Results').item.json.requestId, instruction: $('Parse Results').item.json.message, plan_json: $('Parse Results').item.json.plan, status: 'preview_ready', preview_url: $('Parse Results').item.json.previewUrl, files_modified: $('Parse Results').item.json.filesModified, files_created: $('Parse Results').item.json.filesCreated, files_deleted: $('Parse Results').item.json.filesDeleted }) }}",
+                "options": {
+                    "response": {
+                        "response": {
+                            "neverError": true
+                        }
+                    },
+                    "timeout": 10000
+                }
+            },
+            "id": "e0552c55-a27f-456e-8b9f-86f0ec6cbd14",
+            "name": "Save Request",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                34800,
+                1456
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Pull latest changes from Git to preview workspace\n// This syncs the preview with GitHub commits made by the AI\nconst ctx = $input.item.json;\nconst siteId = ctx.site?.id;\n\nif (!siteId) {\n  console.log('⚠️ No siteId found, skipping git pull');\n  return [{ json: ctx }];\n}\n\nconsole.log(`🔄 Waiting 2s for GitHub to process commits...`);\n// Small delay to ensure GitHub has processed all commits from the AI\nawait new Promise(resolve => setTimeout(resolve, 2000));\n\nconsole.log(`🔄 Pulling latest changes for site ${siteId}...`);\n\ntry {\n  const result = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://preview-orchestrator.fly.dev/preview/pull',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ siteId }),\n    timeout: 60000\n  });\n  console.log(`✅ Git pull successful for ${siteId}:`, result);\n  return [{ json: ctx }];\n} catch (e) {\n  console.error(`❌ Git pull failed for ${siteId}:`, e.message);\n  // Continue anyway - preview might have direct writes\n  return [{ json: ctx }];\n}"
+            },
+            "id": "69b1c156-c6db-4796-9f78-37a55444b430",
+            "name": "Git Pull",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                34640,
+                1456
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $('Merge Files').item.json;\nconst raw = $('AI Agent').item.json;\n\nconst output = raw?.output || '';\nconst steps = raw?.intermediateSteps || [];\n\nconst filesModified = new Set();\nconst filesCreated = new Set();\nconst filesDeleted = new Set();\nconst toolCalls = [];\n\nfor (const step of steps) {\n  if (step.action?.tool) toolCalls.push(step.action.tool);\n  const obs = step.observation || '';\n  try {\n    const result = JSON.parse(obs);\n    if (result.success) {\n      const file = result.file || result.to;\n      if (file) {\n        if (result.action === 'created') filesCreated.add(file);\n        else if (result.action === 'updated') filesModified.add(file);\n      }\n      if (result.deleted) filesDeleted.add(result.deleted);\n    }\n  } catch {}\n}\n\nconst warnings = [];\nif (filesModified.size === 0 && filesCreated.size === 0 && filesDeleted.size === 0 && steps.length > 2) {\n  warnings.push('No files were modified');\n}\n\nreturn [{\n  json: {\n    ...ctx,\n    plan: { humanSummary: output, warnings },\n    filesModified: [...filesModified],\n    filesCreated: [...filesCreated],\n    filesDeleted: [...filesDeleted],\n    iterations: steps.length,\n    toolsUsed: [...new Set(toolCalls)]\n  }\n}];"
+            },
+            "id": "3064c002-67fa-48bb-ab54-23654d111114",
+            "name": "Parse Results",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                34480,
+                1456
+            ]
+        },
+        {
+            "parameters": {
+                "name": "add_dependency",
+                "description": "Install an npm package. Input: just the package name",
+                "jsCode": "const rawInput = $fromAI('query', 'Package name', 'string') || '';\nlet pkg = rawInput.trim();\n\nif (pkg.startsWith('{')) {\n  try { const p = JSON.parse(pkg); pkg = p.package || p.name || p.input || ''; } catch {}\n}\n\nif (!pkg) return 'Error: Package name required';\n\nconst ctx = $('Merge Files')?.item?.json || {};\nconst siteId = ctx.site?.id;\nif (!siteId) return 'Error: No site context';\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://preview-orchestrator.fly.dev/preview/install',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ siteId, packages: [pkg] }),\n    timeout: 120000\n  });\n  return JSON.stringify({ success: true, installed: response.installed || [pkg] });\n} catch (e) {\n  return 'Error: ' + e.message;\n}"
+            },
+            "id": "e81f87f5-b683-45f1-9c8a-d7d28ce98b8d",
+            "name": "add_dependency",
+            "type": "@n8n/n8n-nodes-langchain.toolCode",
+            "typeVersion": 1,
+            "position": [
+                34112,
+                1952
+            ]
+        },
+        {
+            "parameters": {
+                "name": "search_files",
+                "description": "Search for text in the codebase. Input: just the search query. Searches file contents directly.",
+                "jsCode": "const rawInput = $fromAI('query', 'Search query', 'string') || '';\nlet query = rawInput.trim();\n\nif (query.startsWith('{')) {\n  try { const p = JSON.parse(query); query = p.query || p.input || ''; } catch {}\n}\n\nif (!query) return 'Error: Search query required';\nif (query.length < 2) return 'Error: Query too short';\n\nconst ctx = $('Merge Files')?.item?.json || {};\nconst { owner, repo, branch, githubToken } = ctx;\nif (!owner) return 'Error: No repository context';\nif (!githubToken) return 'Error: No GitHub token provided';\n\ntry {\n  // Get file tree\n  const treeResponse = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,\n    headers: { 'Authorization': 'Bearer ' + githubToken, 'Accept': 'application/vnd.github+json' },\n    timeout: 15000\n  });\n  \n  // Filter to source files only\n  const sourceExts = ['.tsx', '.ts', '.jsx', '.js', '.css', '.html', '.json', '.md'];\n  const files = (treeResponse.tree || [])\n    .filter(f => f.type === 'blob' && sourceExts.some(ext => f.path.endsWith(ext)))\n    .filter(f => !f.path.includes('node_modules') && !f.path.includes('.next'))\n    .slice(0, 30);\n  \n  const matches = [];\n  const queryLower = query.toLowerCase();\n  \n  // Search in files loaded in context first\n  const contextFiles = ctx.fileContents || {};\n  for (const [path, content] of Object.entries(contextFiles)) {\n    if (content.toLowerCase().includes(queryLower)) {\n      const lines = content.split('\\n');\n      for (let i = 0; i < lines.length; i++) {\n        if (lines[i].toLowerCase().includes(queryLower)) {\n          matches.push({ path, line: i + 1, text: lines[i].trim().substring(0, 60) });\n          if (matches.length >= 10) break;\n        }\n      }\n    }\n  }\n  \n  // Search in other files if not enough matches\n  if (matches.length < 10) {\n    for (const file of files) {\n      if (contextFiles[file.path]) continue; // Skip already searched\n      try {\n        const fileResponse = await this.helpers.httpRequest({\n          method: 'GET',\n          url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(file.path)}?ref=${branch}`,\n          headers: { 'Authorization': 'Bearer ' + githubToken, 'Accept': 'application/vnd.github+json' },\n          timeout: 5000\n        });\n        \n        if (fileResponse.content) {\n          const content = Buffer.from(fileResponse.content, 'base64').toString('utf8');\n          if (content.toLowerCase().includes(queryLower)) {\n            const lines = content.split('\\n');\n            for (let i = 0; i < lines.length; i++) {\n              if (lines[i].toLowerCase().includes(queryLower)) {\n                matches.push({ path: file.path, line: i + 1, text: lines[i].trim().substring(0, 60) });\n                break; // One match per file\n              }\n            }\n          }\n        }\n        if (matches.length >= 10) break;\n      } catch {}\n    }\n  }\n  \n  if (matches.length > 0) {\n    return 'Found \"' + query + '\" in ' + matches.length + ' location(s):\\n' + \n      matches.map(m => `${m.path}:${m.line} - ${m.text}`).join('\\n');\n  }\n  return 'No results for: \"' + query + '\"';\n} catch (e) {\n  return 'Error: ' + e.message;\n}"
+            },
+            "id": "c778d07b-5f5e-42ac-94b1-d05ba001ee96",
+            "name": "search_files",
+            "type": "@n8n/n8n-nodes-langchain.toolCode",
+            "typeVersion": 1,
+            "position": [
+                34000,
+                1952
+            ]
+        },
+        {
+            "parameters": {
+                "name": "delete_file",
+                "description": "Delete a file. Input: just the file path",
+                "jsCode": "const rawInput = $fromAI('query', 'File path', 'string') || '';\nlet filePath = rawInput.trim().replace(/^\\/+/, '');\n\nif (filePath.startsWith('{')) {\n  try { const p = JSON.parse(filePath); filePath = p.path || p.input || ''; } catch {}\n}\n\nif (!filePath) return 'Error: File path required';\n\nconst ctx = $('Merge Files')?.item?.json || {};\nconst { owner, repo, branch, githubToken } = ctx;\nif (!owner) return 'Error: No repository context';\nif (!githubToken) return 'Error: No GitHub token provided';\n\ntry {\n  const existing = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}?ref=${branch}`,\n    headers: { 'Authorization': 'Bearer ' + githubToken, 'Accept': 'application/vnd.github+json' },\n    timeout: 10000\n  });\n  \n  await this.helpers.httpRequest({\n    method: 'DELETE',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}`,\n    headers: { 'Authorization': 'Bearer ' + githubToken, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },\n    body: JSON.stringify({ message: 'Delete ' + filePath, sha: existing.sha, branch }),\n    timeout: 15000\n  });\n  \n  return JSON.stringify({ success: true, deleted: filePath });\n} catch (e) {\n  return e.message.includes('404') ? 'Error: File not found: ' + filePath : 'Error: ' + e.message;\n}"
+            },
+            "id": "7f31cb15-80aa-4b20-aeba-f0268813261b",
+            "name": "delete_file",
+            "type": "@n8n/n8n-nodes-langchain.toolCode",
+            "typeVersion": 1,
+            "position": [
+                34480,
+                1808
+            ]
+        },
+        {
+            "parameters": {
+                "name": "str_replace_file",
+                "description": "Search and replace text in a file. Input format: filePath|||searchText|||replaceText. Search must match EXACTLY.",
+                "jsCode": "// Get raw input - format: filePath|||search|||replace\nconst rawInput = $fromAI('query', 'filePath|||search|||replace', 'string') || '';\nconst parts = rawInput.split('|||');\nif (parts.length < 3) return 'Error: Use format filePath|||searchText|||replaceText';\nconst filePath = parts[0].trim().replace(/^\\/+/, '');\nconst search = parts[1];\nconst replace = parts.slice(2).join('|||');\nif (!filePath) return 'Error: filePath required';\nif (!search) return 'Error: searchText required';\nconst ctx = $('Merge Files')?.item?.json || {};\nconst { owner, repo, branch, githubToken } = ctx;\nconst siteId = ctx.site?.id;\nif (!owner) return 'Error: No repository context';\nif (!githubToken) return 'Error: No GitHub token provided';\n\ntry {\n  // Get current file\n  const response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}?ref=${branch}`,\n    headers: { 'Authorization': 'Bearer ' + githubToken, 'Accept': 'application/vnd.github+json' },\n    timeout: 15000\n  });\n  \n  let content = Buffer.from(response.content, 'base64').toString('utf8');\n  let matchedString = null;\n  // Strategy 1: Exact Match\n  if (content.includes(search)) {\n    matchedString = search;\n  } \n  // Strategy 2: Flexible Whitespace Match\n  else {\n    // Escape regex characters\n    const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\n    \n    // Split into lines and create a regex that ignores leading/trailing whitespace difference\n    const searchLines = search.split(/\\r?\\n/).map(l => l.trim()).filter(l => l);\n    \n    if (searchLines.length > 0) {\n       // Construct regex: match lines with any amount of whitespace in between\n       const regexPattern = searchLines.map(line => {\n         return '[\\\\t ]*' + escapeRegExp(line) + '[\\\\t ]*';\n       }).join('\\\\r?\\\\n');\n       \n       const regex = new RegExp(regexPattern, 'g'); // Global to check match count\n       const matches = content.match(regex);\n       \n       if (matches && matches.length === 1) {\n         matchedString = matches[0];\n       } else if (matches && matches.length > 1) {\n         return 'Error: Ambiguous search. Found ' + matches.length + ' matches. Include more context.';\n       }\n    }\n  }\n  if (!matchedString) {\n    const lines = content.split('\\n');\n    let hint = '';\n    const searchLower = search.toLowerCase().substring(0, 20);\n    // Simple similarity hint\n    for (let i = 0; i < lines.length; i++) {\n        if (lines[i].toLowerCase().includes(searchLower)) {\n            hint = ` Similar line found at ${i+1}. Check whitespace/indentation.`;\n            break;\n        }\n    }\n    return 'Error: Search text not found. Try including more unique context lines.' + hint;\n  }\n  \n  // Perform Replacement\n  content = content.replace(matchedString, replace);\n  \n  // Update preview\n  if (siteId) {\n    this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://preview-orchestrator.fly.dev/preview/write',\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({ siteId, filePath, content }),\n      timeout: 5000\n    }).catch(() => {});\n  }\n  \n  // Commit to GitHub\n  await this.helpers.httpRequest({\n    method: 'PUT',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}`,\n    headers: { 'Authorization': 'Bearer ' + githubToken, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },\n    body: JSON.stringify({ message: 'Update ' + filePath, content: Buffer.from(content).toString('base64'), sha: response.sha, branch }),\n    timeout: 30000\n  });\n  \n  return JSON.stringify({ success: true, file: filePath, action: 'updated' });\n} catch (e) {\n  return e.message.includes('404') ? 'Error: File not found: ' + filePath : 'Error: ' + e.message;\n}"
+            },
+            "id": "4b9818d7-67ab-49bd-8510-82a4107f5dac",
+            "name": "str_replace_file",
+            "type": "@n8n/n8n-nodes-langchain.toolCode",
+            "typeVersion": 1,
+            "position": [
+                34352,
+                1808
+            ]
+        },
+        {
+            "parameters": {
+                "name": "write_file",
+                "description": "Create or overwrite a file. Input format: filePath|||fileContent",
+                "jsCode": "// Get raw input - format: filePath|||content\nconst rawInput = $fromAI('query', 'filePath|||content', 'string') || '';\nconst parts = rawInput.split('|||');\n\nif (parts.length < 2) return 'Error: Use format filePath|||content';\n\nconst filePath = parts[0].trim().replace(/^\\/+/, '');\nconst content = parts.slice(1).join('|||'); // In case content has |||\n\nif (!filePath) return 'Error: filePath required';\n\nconst ctx = $('Merge Files')?.item?.json || {};\nconst { owner, repo, branch, githubToken } = ctx;\nconst siteId = ctx.site?.id;\nif (!owner) return 'Error: No repository context';\nif (!githubToken) return 'Error: No GitHub token provided';\n\ntry {\n  // Update preview\n  if (siteId) {\n    this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://preview-orchestrator.fly.dev/preview/write',\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({ siteId, filePath, content }),\n      timeout: 5000\n    }).catch(() => {});\n  }\n  \n  // Check if file exists\n  let sha = null;\n  try {\n    const existing = await this.helpers.httpRequest({\n      method: 'GET',\n      url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}?ref=${branch}`,\n      headers: { 'Authorization': 'Bearer ' + githubToken, 'Accept': 'application/vnd.github+json' },\n      timeout: 10000\n    });\n    sha = existing.sha;\n  } catch {}\n  \n  const body = { message: (sha ? 'Update ' : 'Create ') + filePath, content: Buffer.from(content).toString('base64'), branch };\n  if (sha) body.sha = sha;\n  \n  await this.helpers.httpRequest({\n    method: 'PUT',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}`,\n    headers: { 'Authorization': 'Bearer ' + githubToken, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },\n    body: JSON.stringify(body),\n    timeout: 30000\n  });\n  \n  return JSON.stringify({ success: true, file: filePath, action: sha ? 'updated' : 'created' });\n} catch (e) {\n  return 'Error: ' + e.message;\n}"
+            },
+            "id": "c2a1c592-f6c6-4f87-966d-ddf30342bc85",
+            "name": "write_file",
+            "type": "@n8n/n8n-nodes-langchain.toolCode",
+            "typeVersion": 1,
+            "position": [
+                34240,
+                1808
+            ]
+        },
+        {
+            "parameters": {
+                "name": "read_file",
+                "description": "Read file contents. Input: just the file path (e.g., src/components/Header.tsx). Do NOT use for files already in context.",
+                "jsCode": "// Get raw input string - it's just the file path\nconst rawInput = $fromAI('query', 'File path', 'string') || '';\nlet filePath = rawInput.trim();\n\n// Clean up any wrapped formats\nif (filePath.startsWith('{')) {\n  try { const p = JSON.parse(filePath); filePath = p.path || p.input || p.filePath || ''; } catch {}\n}\nfilePath = filePath.replace(/^\\/+/, '');\n\nif (!filePath) return 'Error: File path required. Just pass the path like: src/components/Header.tsx';\n\nconst ctx = $('Merge Files')?.item?.json || {};\nif (ctx.fileContents?.[filePath]) return 'This file is ALREADY in context above. Look at FILES IN CONTEXT section.';\n\nconst { owner, repo, branch, githubToken } = ctx;\nif (!owner) return 'Error: No repository context';\nif (!githubToken) return 'Error: No GitHub token provided';\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}?ref=${branch}`,\n    headers: { 'Authorization': 'Bearer ' + githubToken, 'Accept': 'application/vnd.github+json' },\n    timeout: 15000\n  });\n  \n  if (response.content) {\n    const content = Buffer.from(response.content, 'base64').toString('utf8');\n    return content.length > 6000 ? content.substring(0, 6000) + '\\n// ... truncated' : content;\n  }\n  return 'Error: No content in response';\n} catch (e) {\n  return e.message.includes('404') ? 'Error: File not found: ' + filePath : 'Error: ' + e.message;\n}"
+            },
+            "id": "f82f44a3-710d-4530-9445-dc74b289c502",
+            "name": "read_file",
+            "type": "@n8n/n8n-nodes-langchain.toolCode",
+            "typeVersion": 1,
+            "position": [
+                34112,
+                1808
+            ]
+        },
+        {
+            "parameters": {
+                "name": "list_files",
+                "description": "List files in a directory. Input: directory path (e.g., src/components or . for root)",
+                "jsCode": "// Get raw input string\nconst rawInput = $fromAI('query', 'Directory path', 'string') || '.';\nlet path = rawInput.trim();\n\n// Clean up any wrapped formats\nif (path.startsWith('{')) {\n  try { path = JSON.parse(path).path || JSON.parse(path).input || '.'; } catch { path = '.'; }\n}\n\nconst ctx = $('Merge Files')?.item?.json || {};\nconst { owner, repo, branch, githubToken } = ctx;\nif (!owner) return 'Error: No repository context';\nif (!githubToken) return 'Error: No GitHub token provided';\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,\n    headers: { 'Authorization': 'Bearer ' + githubToken, 'Accept': 'application/vnd.github+json' },\n    timeout: 15000\n  });\n  \n  const normalizedPath = path.replace(/^\\/+/, '').replace(/\\/+$/, '');\n  let files = (response.tree || []).filter(f => f.type === 'blob').map(f => f.path);\n  if (normalizedPath && normalizedPath !== '.') files = files.filter(f => f.startsWith(normalizedPath + '/'));\n  \n  return files.slice(0, 50).join('\\n') || 'No files found in ' + path;\n} catch (e) {\n  return 'Error: ' + e.message;\n}"
+            },
+            "id": "c2cb26d1-72bf-4894-8761-2e2ea2d4733d",
+            "name": "list_files",
+            "type": "@n8n/n8n-nodes-langchain.toolCode",
+            "typeVersion": 1,
+            "position": [
+                34000,
+                1808
+            ]
+        },
+        {
+            "parameters": {
+                "model": {
+                    "__rl": true,
+                    "value": "claude-sonnet-4-5-20250929",
+                    "mode": "list"
+                },
+                "options": {
+                    "maxTokensToSample": 4096,
+                    "temperature": 0.1
+                }
+            },
+            "id": "df3c2d6c-e6c7-4c9a-93e9-605757fd1c10",
+            "name": "Claude",
+            "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+            "typeVersion": 1.3,
+            "position": [
+                34000,
+                1648
+            ],
+            "credentials": {
+                "anthropicApi": {
+                    "id": "cR1eoa32avbXUEse",
+                    "name": "Anthropic account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "promptType": "define",
+                "text": "={{ $json.message }}",
+                "options": {
+                    "systemMessage": "You are AutoMate, an expert AI software engineer specializing in Next.js, Tailwind CSS, and TypeScript.\\nYour goal is to fulfill the user's request by modifying their web application code.\\n\\n## PROJECT CONTEXT\\n- **Repository:** {{ $json.owner }}/{{ $json.repo }}\\n- **Branch:** {{ $json.branch }}\\n- **Preview URL:** {{ $json.previewUrl || 'N/A' }}\\n\\n## FILES IN CONTEXT\\nThe following files are ALREADY LOADED into your memory. DO NOT read them again.\\n{{ Object.keys($json.fileContents || {}).length > 0 ? Object.entries($json.fileContents).map(([path, content]) => '### ' + path + '\\n```\\n' + content + '\\n```').join('\\n\\n') : 'No files loaded. Use list_files to explore.' }}\\n\\n## CRITICAL RULES\\n1. **Analyze First**: Briefly think about what needs to be done.\\n2. **Prefer Existing Files**: Modify existing files (like `src/app/page.tsx`) instead of creating new routes/folders unless the user EXPLICITLY asks for a \"new page\" or \"new route\".\\n3. **Context Awareness**: Use the files provided above. If you need to edit a file not shown, use `read_file` first.\\n4. **Exact Matching**: For `str_replace_file`, the `searchText` MUST exist character-for-character in the file.\\n5. **Concise Output**: Provide a very brief summary (1-2 sentences) of what you did.\\n\\n## TOOL USAGE GUIDE\\nAll tools accept a SINGLE string argument.\\n\\n### `str_replace_file`\\n**Format**: `filePath|||searchText|||replaceText`\\n**Example**: `src/components/Header.tsx|||<h1>Old Title</h1>|||<h1>New Title</h1>`\\n\\n### `write_file`\\n**Format**: `filePath|||fileContent`\\n**Example**: `src/app/about/page.tsx|||export default function Page() { return <div>About</div> }`\\n\\n### `read_file`\\n**Format**: `path/to/file`\\n\\n### `list_files`\\n**Format**: `directory/path`\\n\\n### `search_files`\\n**Format**: `search pattern`\\n\\n### `delete_file`\\n**Format**: `path/to/file`\\n\\n### `add_dependency`\\n**Format**: `package-name`\\n\\n## INTERACTION EXAMPLE\\n**User**: \\\"Change shop name to Omar Shop\\\"\\n**Thinking**: \\\"I should look at `src/app/page.tsx` or `src/components/Header.tsx`. I see `ooo shop` in `src/app/page.tsx`. I will replace it.\\\"\\n**Tool**: `str_replace_file(\\\"src/app/page.tsx|||ooo shop|||Omar Shop\\\")`\\n**Final Response**: \\\"I updated the shop title in the home page.\\\"",
+                    "maxIterations": 10,
+                    "returnIntermediateSteps": true
+                }
+            },
+            "id": "6189bae1-a545-4303-917f-2a67b4bb7db7",
+            "name": "AI Agent",
+            "type": "@n8n/n8n-nodes-langchain.agent",
+            "typeVersion": 1.7,
+            "position": [
+                34112,
+                1456
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const items = $input.all();\nconst prepItems = $('Prepare Fetch').all();\nconst ctx = prepItems[0]?.json?._ctx;\nif (!ctx) throw new Error('Lost context');\n\nconst fileContents = {};\nconst contextFiles = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i].json;\n  const path = prepItems[i]?.json?.currentFile || item.path;\n  if (!path) continue;\n  \n  if (item.content) {\n    try {\n      const decoded = Buffer.from(item.content, 'base64').toString('utf8');\n      fileContents[path] = decoded.length > 4000 ? decoded.substring(0, 4000) + '\\n// ... truncated' : decoded;\n      contextFiles.push(path);\n    } catch (e) {}\n  }\n}\n\nreturn [{ json: { ...ctx, fileContents, contextFiles } }];"
+            },
+            "id": "a120f3f9-c544-4791-8e59-8aa815cbcb61",
+            "name": "Merge Files",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                33952,
+                1456
+            ]
+        },
+        {
+            "parameters": {
+                "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/contents/{{ $json.currentFile }}?ref={{ $json.branch }}",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Authorization",
+                            "value": "=Bearer {{ $json.githubToken }}"
+                        },
+                        {
+                            "name": "Accept",
+                            "value": "application/vnd.github+json"
+                        }
+                    ]
+                },
+                "options": {
+                    "response": {
+                        "response": {
+                            "neverError": true,
+                            "responseFormat": "json"
+                        }
+                    },
+                    "timeout": 15000
+                }
+            },
+            "id": "0f799f3b-8b2a-4918-a8dc-af576f43c36a",
+            "name": "Fetch Files",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                33792,
+                1456
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $('Build Context').item.json;\nconst files = ctx.filesToFetch || [];\nif (files.length === 0) return [{ json: { ...ctx, currentFile: null } }];\n\nreturn files.map(f => ({\n  json: {\n    _ctx: { ...ctx },\n    currentFile: f,\n    owner: ctx.owner,\n    repo: ctx.repo,\n    branch: ctx.branch,\n    githubToken: ctx.githubToken\n  }\n}));"
+            },
+            "id": "4499b3af-7f38-4b42-9b7f-ccc8f0a9a1f0",
+            "name": "Prepare Fetch",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                33632,
+                1456
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const inp = $('Validate & Detect Intent').item.json;\nconst rawSite = $input.first().json;\n\nlet site = Array.isArray(rawSite) ? rawSite[0] : (rawSite?.id ? rawSite : rawSite?.data?.[0]);\nif (!site?.id) throw new Error('Site not found for siteId: ' + inp.siteId);\n\n// Extract GitHub Token: Prefer User Token, fallback to hardcoded System Token\nconst SYSTEM_GITHUB_TOKEN = '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';\nlet githubToken = (site.access_token && site.access_token.trim()) || SYSTEM_GITHUB_TOKEN;\n\n// Use siteKey for preview URL (subdomain-safe), fallback to site_key column or inp.siteId\nconst siteKey = site.site_key || inp.siteId;\n\nconst repoMatch = (site.repo_url || '').match(/github\\.com\\/([^/]+)\\/([^/]+)/);\nif (!repoMatch) throw new Error('Invalid GitHub repo URL');\n\nconst owner = repoMatch[1];\nconst repo = repoMatch[2].replace(/\\.git$/, '');\nconst msg = inp.message.toLowerCase();\n\nconst fileScores = new Map();\nconst addFile = (file, score) => fileScores.set(file, (fileScores.get(file) || 0) + score);\n\nif (/shop|brand|name|title|logo/.test(msg)) {\n  addFile('src/components/Header.tsx', 15);\n  addFile('src/app/layout.tsx', 10);\n  addFile('src/components/Footer.tsx', 8);\n}\nif (/color|theme|style|css|dark|light/.test(msg)) {\n  addFile('src/app/globals.css', 10);\n  addFile('tailwind.config.ts', 7);\n}\nif (/header|nav|menu/.test(msg)) addFile('src/components/Header.tsx', 12);\nif (/footer/.test(msg)) addFile('src/components/Footer.tsx', 10);\nif (/hero/.test(msg)) addFile('src/components/Hero.tsx', 10);\nif (/page|home|landing/.test(msg) || fileScores.size === 0) addFile('src/app/page.tsx', 10);\n\nconst sortedFiles = [...fileScores.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([f]) => f);\nif (sortedFiles.length === 0) sortedFiles.push('src/app/page.tsx');\n\nreturn [{\n  json: {\n    ...inp,\n    site: { id: siteKey, name: site.name || 'Unknown', repo_url: site.repo_url, branch: site.default_branch || 'main' },\n    owner, repo,\n    branch: site.default_branch || 'main',\n    previewUrl: 'https://' + siteKey + '.preview.automatelb.com',\n    filesToFetch: sortedFiles,\n    fileContents: {},\n    contextFiles: [],\n    githubToken: githubToken\n  }\n}];"
+            },
+            "id": "cd0a99a1-3bbd-431f-a621-5d545aa7b42a",
+            "name": "Build Context",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                33472,
+                1456
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/rpc/get_site_with_token",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "p_site_key",
+                            "value": "={{$json.siteId}}"
+                        }
+                    ]
+                },
+                "options": {
+                    "response": {
+                        "response": {
+                            "neverError": true
+                        }
+                    },
+                    "timeout": 10000
+                }
+            },
+            "id": "b216b8df-6162-469c-a275-10e20e26d28f",
+            "name": "Load Site",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                33312,
+                1456
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const b = $input.first().json.body || $input.first().json;\n\nif (!b.siteId) throw new Error('Missing required field: siteId');\nif (!b.message) throw new Error('Missing required field: message');\n\nconst msg = b.message.toLowerCase().trim();\nconst actionWords = /\\b(implement|create|add|build|make|fix|update|change|edit|delete|remove|install|modify|replace|refactor|style|redesign|adjust|set|configure|enable|disable|write|code)\\b/;\nconst questionWords = /^(what|why|how|can you|could you|should|is it|explain|describe|tell me)/;\nconst isQuestion = questionWords.test(msg);\nconst isActionIntent = actionWords.test(msg) && !isQuestion;\n\nreturn [{\n  json: {\n    siteId: b.siteId,\n    conversationId: b.conversationId || null,\n    userId: b.userId || 'anon',\n    message: b.message.trim(),\n    requestId: 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),\n    image: b.image || null,\n    isActionIntent,\n    isQuestion\n  }\n}];"
+            },
+            "id": "0cbd1028-4620-413c-9433-6a4e2d432c7b",
+            "name": "Validate & Detect Intent",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                33152,
+                1456
+            ]
+        },
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "agent/edit-ui",
+                "responseMode": "responseNode",
+                "options": {
+                    "allowedOrigins": "*"
+                }
+            },
+            "id": "0f80fa07-2881-4c0f-a7be-790894d15bad",
+            "name": "Webhook Edit UI",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                32992,
+                1456
+            ],
+            "webhookId": "edit-ui"
+        }
+    ],
+    "connections": {
+        "Save Request": {
+            "main": [
+                [
+                    {
+                        "node": "Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Git Pull": {
+            "main": [
+                [
+                    {
+                        "node": "Save Request",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Results": {
+            "main": [
+                [
+                    {
+                        "node": "Git Pull",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "add_dependency": {
+            "ai_tool": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_tool",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "search_files": {
+            "ai_tool": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_tool",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "delete_file": {
+            "ai_tool": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_tool",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "str_replace_file": {
+            "ai_tool": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_tool",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "write_file": {
+            "ai_tool": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_tool",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "read_file": {
+            "ai_tool": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_tool",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "list_files": {
+            "ai_tool": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_tool",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Claude": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Agent": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Results",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge Files": {
+            "main": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fetch Files": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Files",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Fetch": {
+            "main": [
+                [
+                    {
+                        "node": "Fetch Files",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Context": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Fetch",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Load Site": {
+            "main": [
+                [
+                    {
+                        "node": "Build Context",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Validate & Detect Intent": {
+            "main": [
+                [
+                    {
+                        "node": "Load Site",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Webhook Edit UI": {
+            "main": [
+                [
+                    {
+                        "node": "Validate & Detect Intent",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "pinData": {},
+    "meta": {
+        "templateCredsSetupCompleted": true,
+        "instanceId": "8278f0fbb558df00ecd79690c89f9c1e0fbf89bbd188221ebac4a3ae271261b8"
+    }
+}

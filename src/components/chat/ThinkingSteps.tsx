@@ -6,13 +6,13 @@ import { Loader2, Check, AlertCircle, ChevronDown, ChevronRight, Brain, Wrench, 
 
 export interface ThinkingStep {
     id?: string;
-    text?: string;
-    message?: string; // Supabase format
+    text?: string | null;
+    message?: string | null; // Supabase format
     status: 'pending' | 'running' | 'complete' | 'error';
     type?: 'thinking' | 'tool' | 'result';
     details?: string | any; // Can be string or JSON object
-    toolName?: string;
-    tool_name?: string; // Supabase format
+    toolName?: string | null;
+    tool_name?: string | null; // Supabase format
     created_at?: string;
 }
 

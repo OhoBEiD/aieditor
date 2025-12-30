@@ -212,7 +212,7 @@ export default function Home() {
 
     // Active project state - replaces hardcoded DEMO_CLIENT_ID
     const [activeProject, setActiveProject] = useState<Project | null>(null);
-    const activeProjectId = activeProject?.siteKey || DEFAULT_CLIENT_ID;
+    const activeProjectId = activeProject?.id || DEFAULT_CLIENT_ID; // Use UUID id for database queries
 
     // Thinking steps state - Live updates from Supabase
     const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
@@ -254,43 +254,141 @@ export default function Home() {
 
     // No inactivity timeout - preview stays running until page closes or preview mode is off
 
-    // Start preview by calling orchestrator
-    const startPreview = useCallback(async () => {
+    // Start the preview server
+    const startPreview = useCallback(async (projectOverride?: Project) => {
+        const project = projectOverride || activeProject;
+        console.log('[Preview] startPreview called with:', project);
+
+        if (!project) {
+            console.warn('[Preview] No project provided');
+            return;
+        }
+
+        // Use siteKey if available, otherwise fall back to id
+        const effectiveSiteKey = project.siteKey || project.id;
+        if (!effectiveSiteKey) {
+            console.error('[Preview] Project has no siteKey or id:', project);
+            return;
+        }
+
         setIsPreviewLoading(true);
-        setShowPreview(true);
+        setPreviewUrl(undefined);
+
+        // Get GitHub token for detecting pages and orchestrator
+        // Fallback to system token for email-only users
+        const SYSTEM_GITHUB_TOKEN = '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';
+        let token: string | undefined;
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            token = session?.provider_token || undefined;
+            if (!token && session?.user) {
+                // Try fetching from DB - Use maybeSingle() to avoid 406 triggers on strict cardinatlity errors
+                const { data: dbToken } = await supabase.from('github_tokens' as any).select('access_token').eq('user_id', session.user.id).limit(1).maybeSingle();
+                if (dbToken) token = dbToken.access_token;
+            }
+        } catch (e) {
+            console.warn('Failed to get token for preview:', e);
+        }
+
+        // Use system token as fallback if no user token
+        if (!token) {
+            console.log('[Preview] Using system GitHub token as fallback');
+            token = SYSTEM_GITHUB_TOKEN;
+        }
 
         try {
-            const response = await fetch('https://preview-orchestrator.fly.dev/preview/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    siteId: activeProjectId,
-                    repoUrl: 'https://github.com/OhoBEiD/ai-demo-shop.git',
-                    branch: 'main'
-                })
+            const targetSiteId = effectiveSiteKey;
+            const targetRepoUrl = project.repoUrl;
+
+            console.log('[Preview] Starting for:', {
+                targetSiteId,
+                targetRepoUrl,
+                hasToken: !!token,
+                tokenPrefix: token?.substring(0, 10) + '...',
+                project
             });
 
-            const data = await response.json();
-            if (data.previewUrl) {
-                // Poll health check to ensure server is ready
-                const maxAttempts = 30; // 60 seconds total
-                let attempts = 0;
+            const requestBody = {
+                siteId: targetSiteId,
+                repoUrl: targetRepoUrl,
+                gitToken: token
+            };
+            console.log('[Preview] Sending to orchestrator:', { ...requestBody, gitToken: requestBody.gitToken ? '***' : undefined });
 
-                const checkHealth = async (): Promise<boolean> => {
-                    try {
-                        const healthResp = await fetch('https://preview-orchestrator.fly.dev/health', {
-                            method: 'GET',
-                            signal: AbortSignal.timeout(5000)
-                        });
-                        const healthData = await healthResp.json();
-                        return healthData.ok && healthData.activePreviews > 0;
-                    } catch {
-                        return false;
+            // Retry logic for orchestrator call (handles race condition with new repo creation)
+            let response: Response | null = null;
+            let lastError: Error | null = null;
+            const maxRetries = 3;
+
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    response = await fetch('https://preview-orchestrator.fly.dev/preview/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestBody),
+                    });
+
+                    if (response.ok) {
+                        break; // Success, exit retry loop
                     }
-                };
 
-                // Wait for server to be ready
-                while (attempts < maxAttempts) {
+                    // Try to get error details - handle both JSON and text responses
+                    let errorData: { error?: string; message?: string; raw?: string } = {};
+                    try {
+                        const text = await response.text();
+                        try {
+                            errorData = JSON.parse(text);
+                        } catch {
+                            errorData = { raw: text.substring(0, 500) }; // Capture raw text if not JSON
+                        }
+                    } catch {
+                        errorData = { raw: 'Failed to read response body' };
+                    }
+                    // Use warn instead of error for retryable attempts to avoid Next.js error overlay
+                    if (response.status === 500 && attempt < maxRetries - 1) {
+                        console.warn(`[Preview] Orchestrator error (attempt ${attempt + 1}/${maxRetries}), will retry:`, response.status, errorData);
+                        const delay = (attempt + 1) * 2000; // 2s, 4s, 6s
+                        console.log(`[Preview] Retrying in ${delay / 1000}s...`);
+                        await new Promise(r => setTimeout(r, delay));
+                        continue;
+                    }
+
+                    // Final attempt or non-retryable error - log as error
+                    console.error(`[Preview] Orchestrator error (final):`, response.status, errorData);
+
+                    // Non-retryable error or max retries reached
+                    setShowPreview(true);
+                    const errorMessage = errorData.error || errorData.message || errorData.raw || response.statusText || `HTTP ${response.status}`;
+                    throw new Error(`Failed to start preview: ${errorMessage}`);
+                } catch (err) {
+                    if (err instanceof Error && err.message.startsWith('Failed to start preview:')) {
+                        throw err; // Re-throw our own errors
+                    }
+                    lastError = err instanceof Error ? err : new Error(String(err));
+                    if (attempt < maxRetries - 1) {
+                        const delay = (attempt + 1) * 2000;
+                        console.log(`[Preview] Network error, retrying in ${delay / 1000}s...`, err);
+                        await new Promise(r => setTimeout(r, delay));
+                    }
+                }
+            }
+
+            if (!response?.ok) {
+                throw lastError || new Error('Failed to start preview after retries');
+            }
+
+            const data = await response.json();
+            if (data.status === 'ready' || data.status === 'starting') {
+                // Poll for readiness
+                let attempts = 0;
+                while (attempts < 30) {
+                    const checkHealth = async () => {
+                        try {
+                            const res = await fetch(`https://${targetSiteId}.preview.automatelb.com/api/health`);
+                            return res.ok;
+                        } catch { return false; }
+                    };
+
                     const isReady = await checkHealth();
                     if (isReady) {
                         console.log('[Preview] Server is ready after', attempts * 2, 'seconds');
@@ -301,25 +399,43 @@ export default function Home() {
                     attempts++;
                 }
 
-                setPreviewUrl(data.previewUrl);
+                setPreviewUrl(data.previewUrl || `https://${targetSiteId}.preview.automatelb.com`);
+                setShowPreview(true); // Ensure we switch to Editor view
                 // Detect available pages from repo
-                detectAvailablePages();
+                detectAvailablePages(targetRepoUrl, token);
             }
         } catch (err) {
             console.error('Failed to start preview:', err);
+            // Still switch to preview view so user can see the error state
+            setShowPreview(true);
         } finally {
             setIsPreviewLoading(false);
         }
-    }, []);
+    }, [supabase]);
 
     // Detect available pages from the repository
-    const detectAvailablePages = async () => {
+    const detectAvailablePages = async (repoUrl: string, token?: string) => {
         try {
-            const response = await fetch('https://api.github.com/repos/OhoBEiD/ai-demo-shop/git/trees/main?recursive=1', {
-                headers: {
-                    'Accept': 'application/vnd.github+json'
-                }
-            });
+            // Parse owner/repo from URL
+            const match = repoUrl.match(/github\.com\/([^/]+)\/([^/.]+)/);
+            if (!match) return;
+            const [, owner, repo] = match;
+
+            const headers: HeadersInit = {
+                'Accept': 'application/vnd.github+json'
+            };
+
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/main?recursive=1`, { headers });
+
+            if (!response.ok) {
+                console.log('[Preview] Failed to fetch repo tree:', response.status);
+                return;
+            }
+
             const data = await response.json();
 
             if (data.tree) {
@@ -393,7 +509,17 @@ export default function Home() {
         };
     }, []);
 
-    // Fix hydration + restore preferences
+
+
+    // Auto-start preview when showPreview is true and preview isn't loaded yet
+    useEffect(() => {
+        if (isClient && showPreview && !previewUrl && !isPreviewLoading) {
+            console.log('[Preview] Auto-starting preview on load...');
+            startPreview();
+        }
+    }, [isClient, showPreview, previewUrl, isPreviewLoading, startPreview]);
+
+    // Fix hydration + restore preferences + restore active project
     useEffect(() => {
         setIsClient(true);
         // Restore preview mode from localStorage
@@ -410,6 +536,18 @@ export default function Home() {
         if (savedPreviewUrl) {
             setPreviewUrl(savedPreviewUrl);
         }
+
+        // Restore active project
+        try {
+            const savedProject = localStorage.getItem('activeProject');
+            if (savedProject) {
+                const parsedProject = JSON.parse(savedProject);
+                console.log('[App] Restoring active project:', parsedProject);
+                setActiveProject(parsedProject);
+            }
+        } catch (e) {
+            console.error('Failed to restore active project:', e);
+        }
     }, []);
 
     // Load sessions on mount
@@ -419,7 +557,7 @@ export default function Home() {
         }
     }, [isClient]);
 
-    // Save preview preferences to localStorage
+    // Save preview preferences & active project to localStorage
     useEffect(() => {
         if (isClient) {
             localStorage.setItem('showPreview', String(showPreview));
@@ -428,16 +566,14 @@ export default function Home() {
             if (previewUrl) {
                 localStorage.setItem('previewUrl', previewUrl);
             }
-        }
-    }, [isClient, showPreview, isPanelOpen, previewUrl]);
 
-    // Auto-start preview when showPreview is true and preview isn't loaded yet
-    useEffect(() => {
-        if (isClient && showPreview && !previewUrl && !isPreviewLoading) {
-            console.log('[Preview] Auto-starting preview on load...');
-            startPreview();
+            // Save active project (or clear if null/undefined? No, only save truthy to persist)
+            if (activeProject) {
+                console.log('[App] Saving active project:', activeProject);
+                localStorage.setItem('activeProject', JSON.stringify(activeProject));
+            }
         }
-    }, [isClient, showPreview, previewUrl, isPreviewLoading, startPreview]);
+    }, [isClient, showPreview, isPanelOpen, previewUrl, activeProject]);
 
     // Load messages when session changes + persist to localStorage
     useEffect(() => {
@@ -605,6 +741,25 @@ export default function Home() {
             currentRequestIdRef.current = null;
         }
 
+        // Add "Stopped by user" message
+        if (activeSessionId) {
+            try {
+                const { data: stopMsg } = await supabase
+                    .from('messages')
+                    .insert({
+                        session_id: activeSessionId,
+                        role: 'assistant',
+                        content: '🛑 **Message stopped by user**',
+                    })
+                    .select()
+                    .single();
+
+                if (stopMsg) addMessage(stopMsg as Message);
+            } catch (err) {
+                console.error('Failed to add stop message:', err);
+            }
+        }
+
         // Reset all UI state
         setIsSending(false);
         setIsStreaming(false);
@@ -612,10 +767,28 @@ export default function Home() {
         setAgentThinking([]);
 
         console.log('Request stopped by user');
-    }, []);
+    }, [activeSessionId, addMessage]);
 
-    const handleSendMessage = useCallback(async (content: string, image?: File) => {
+    const handleSendMessage = useCallback(async (content: string, image?: File, projectOverride?: Project) => {
         if (!content.trim() && !image) return;
+
+        // Auto-stop previous request if running
+        if (abortControllerRef.current) {
+            console.log('[App] Aborting previous request for new message...');
+            abortControllerRef.current.abort();
+            // Fire-and-forget stop signal to backend
+            if (currentRequestIdRef.current) {
+                fetch('https://preview-orchestrator.fly.dev/execution/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ requestId: currentRequestIdRef.current })
+                }).catch(e => console.error('Failed to ignore-stop:', e));
+            }
+        }
+
+        // Use override if provided (during project creation), otherwise use current state
+        const targetProject = projectOverride || activeProject;
+        const targetSiteId = targetProject?.siteKey || DEFAULT_CLIENT_ID;
 
         // Convert image to base64 if provided
         let imageData: string | undefined;
@@ -629,19 +802,28 @@ export default function Home() {
 
         // Create session if none exists
         let sessionId = activeSessionId;
+
+        // If switching projects (override provided), force new session creation
+        if (projectOverride) {
+            sessionId = null;
+        }
+
         if (!sessionId) {
             try {
                 const { data, error } = await supabase
                     .from('chat_sessions')
                     .insert({
-                        client_id: activeProjectId,
+                        client_id: targetProject?.id, // Use UUID (Project ID), not Site Key
                         title: (content || 'Image message').slice(0, 40) + (content.length > 40 ? '...' : ''),
                         is_active: true,
                     })
                     .select()
                     .single();
 
-                if (error) throw error;
+                if (error) {
+                    console.error('[DEBUG] Session insert error:', error);
+                    throw error;
+                }
 
                 const newSession = data as ChatSession;
                 setSessions(prev => [newSession, ...prev]);
@@ -659,6 +841,7 @@ export default function Home() {
         // Generate requestId for this request
         const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
         setCurrentRequestId(requestId);
+        currentRequestIdRef.current = requestId;
 
         // Clear previous thinking steps
         setAgentThinking([]);
@@ -694,13 +877,17 @@ export default function Home() {
 
             // Call /api/chat endpoint (which routes to n8n)
             try {
+                // Fetch real user ID for the request
+                const { data: { user } } = await supabase.auth.getUser();
+                const targetSiteId = targetProject?.siteKey || DEFAULT_CLIENT_ID;
+
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        siteId: activeProjectId,
+                        siteId: targetSiteId,
                         conversationId: sessionId,
-                        userId: activeProjectId,
+                        userId: user?.id || targetSiteId, // Real User ID
                         message: content.trim(),
                         image: imageData, // Pass image for AI vision analysis
                         requestId, // Pass requestId for live thinking
@@ -772,6 +959,14 @@ export default function Home() {
                     console.warn('No preview URL in result:', result);
                 }
             } catch (apiError) {
+                // Ignore abort errors
+                if (apiError instanceof Error && apiError.name === 'AbortError') {
+                    console.log('Request flow aborted');
+                    // Do not show error message for cancellations
+                    setIsSending(false);
+                    return;
+                }
+
                 // Stop streaming on error
                 setCurrentRequestId(null);
                 setIsStreaming(false);
@@ -906,10 +1101,26 @@ export default function Home() {
     const createNewProject = useCallback(async (initialMessage: string) => {
         setIsSending(true);
         try {
+            // Get session to retrieve provider token
+            const { data: { session } } = await supabase.auth.getSession();
+            const user = session?.user;
+            const providerToken = session?.provider_token;
+
+            // Sync GitHub token if available
+            if (user && providerToken) {
+                await supabase.from('github_tokens' as any).upsert({
+                    user_id: user.id,
+                    access_token: providerToken
+                });
+            }
+
             const response = await fetch('/api/projects/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ initialMessage }),
+                body: JSON.stringify({
+                    initialMessage,
+                    userId: user?.id
+                }),
             });
 
             if (!response.ok) {
@@ -921,14 +1132,23 @@ export default function Home() {
             const data = await response.json();
             console.log('[Project] Created:', data.project);
 
-            // Set as active project
+            // Set as active project and switch to preview view
             setActiveProject(data.project);
+            setShowPreview(true); // Switch from LandingPage to Editor view
+            setActiveSessionId(null); // Clear active session to force new chat for new project
+            setMessages([]); // Clear messages
 
-            // Start preview for the new project
-            await startPreview();
+            // Send the initial message to the AI IMMEDIATELY to show it in UI
+            // We don't await this because we want to start preview in parallel/after
+            handleSendMessage(initialMessage, undefined, data.project);
 
-            // Send the initial message to the AI
-            handleSendMessage(initialMessage, undefined);
+            // Wait a bit for GitHub to fully provision the new repo from template
+            // GitHub's template generation is asynchronous and may take a few seconds
+            console.log('[Project] Waiting for GitHub to provision repo...');
+            await new Promise(r => setTimeout(r, 3000));
+
+            // Start preview for the new project (in background)
+            await startPreview(data.project);
         } catch (error) {
             console.error('[Project] Creation error:', error);
         } finally {
@@ -940,10 +1160,26 @@ export default function Home() {
     const importGitHubRepo = useCallback(async (repoUrl: string) => {
         setIsSending(true);
         try {
+            // Get session to retrieve provider token
+            const { data: { session } } = await supabase.auth.getSession();
+            const user = session?.user;
+            const providerToken = session?.provider_token;
+
+            // Sync GitHub token if available
+            if (user && providerToken) {
+                await supabase.from('github_tokens' as any).upsert({
+                    user_id: user.id,
+                    access_token: providerToken
+                });
+            }
+
             const response = await fetch('/api/projects/import', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ repoUrl }),
+                body: JSON.stringify({
+                    repoUrl,
+                    userId: user?.id
+                }),
             });
 
             if (!response.ok) {
@@ -957,9 +1193,11 @@ export default function Home() {
 
             // Set as active project
             setActiveProject(data.project);
+            setActiveSessionId(null);
+            setMessages([]);
 
-            // Start preview for the imported project
-            await startPreview();
+            // Start preview for the imported project immediately
+            await startPreview(data.project);
         } catch (error) {
             console.error('[Project] Import error:', error);
             throw error;
@@ -1182,7 +1420,14 @@ export default function Home() {
                     }}
                     onCreateProject={createNewProject}
                     onImportRepo={importGitHubRepo}
-                    onOpenPreview={startPreview}
+                    onOpenPreview={(project?: Project) => {
+                        // When opening a recent project, set it as active and switch to Editor view
+                        if (project) {
+                            setActiveProject(project);
+                        }
+                        setShowPreview(true);
+                        startPreview(project);
+                    }}
                     isLoading={isPreviewLoading || isSending}
                 />
             )}

@@ -14,7 +14,7 @@ interface LandingPageProps {
     onSendMessage: (message: string) => void;
     onCreateProject?: (message: string) => Promise<void>;
     onImportRepo?: (repoUrl: string) => Promise<void>;
-    onOpenPreview?: () => void;
+    onOpenPreview?: (project?: any) => void;
     isLoading?: boolean;
 }
 
@@ -36,73 +36,93 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
     const sublineRef = useRef<HTMLParagraphElement>(null);
     const inputRef = useRef<HTMLDivElement>(null);
 
+    const usernameRef = useRef<HTMLSpanElement>(null);
+    const signoutRef = useRef<HTMLButtonElement>(null);
+
     // GSAP animations
     useEffect(() => {
         const ctx = gsap.context(() => {
             const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
 
-            // Logo reveal with shine effect
-            tl.fromTo(logoRef.current,
-                {
-                    scale: 0.8,
-                    opacity: 0,
-                    rotation: -10
-                },
-                {
-                    scale: 1,
-                    opacity: 1,
-                    rotation: 0,
-                    duration: 1,
-                    ease: 'back.out(1.7)'
-                }
-            )
-                // Shine effect on logo
-                .to(logoRef.current, {
-                    filter: 'drop-shadow(0 0 15px rgba(56, 189, 248, 0.6)) brightness(1.2)',
-                    duration: 0.5,
-                    yoyo: true,
-                    repeat: 1,
-                    ease: "power2.inOut"
-                }, '-=0.3')
-                // Brand name reveal
-                .fromTo(brandRef.current,
-                    { x: -30, opacity: 0 },
-                    { x: 0, opacity: 1, duration: 0.6 },
-                    '-=0.5'
-                );
+            // Initial load animations (Logo, Brand, Headline)
+            // Only run these once on mount
+            if (!containerRef.current?.dataset.animated) {
+                // Logo reveal with shine effect
+                tl.fromTo(logoRef.current,
+                    {
+                        scale: 0.8,
+                        opacity: 0,
+                        rotation: -10
+                    },
+                    {
+                        scale: 1,
+                        opacity: 1,
+                        rotation: 0,
+                        duration: 1,
+                        ease: 'back.out(1.7)'
+                    }
+                )
+                    // Shine effect on logo
+                    .to(logoRef.current, {
+                        filter: 'drop-shadow(0 0 15px rgba(56, 189, 248, 0.6)) brightness(1.2)',
+                        duration: 0.5,
+                        yoyo: true,
+                        repeat: 1,
+                        ease: "power2.inOut"
+                    }, '-=0.3')
+                    // Brand name reveal
+                    .fromTo(brandRef.current,
+                        { x: -30, opacity: 0 },
+                        { x: 0, opacity: 1, duration: 0.6 },
+                        '-=0.5'
+                    )
+                    // Headline with split reveal
+                    .fromTo(headlineRef.current,
+                        { y: 40, opacity: 0 },
+                        { y: 0, opacity: 1, duration: 0.8 },
+                        '-=0.3'
+                    )
+                    // Subline
+                    .fromTo(sublineRef.current,
+                        { y: 30, opacity: 0 },
+                        { y: 0, opacity: 1, duration: 0.7 },
+                        '-=0.5'
+                    )
+                    // Input box
+                    .fromTo(inputRef.current,
+                        { y: 40, opacity: 0, scale: 0.95 },
+                        { y: 0, opacity: 1, scale: 1, duration: 0.8 },
+                        '-=0.4'
+                    );
 
-            // Auth buttons (only animate if not authenticated - refs exist)
-            if (loginRef.current && signupRef.current) {
-                tl.fromTo([loginRef.current, signupRef.current],
-                    { y: -20, opacity: 0 },
-                    { y: 0, opacity: 1, duration: 0.5, stagger: 0.1 },
-                    '-=0.4'
-                );
+                if (containerRef.current) {
+                    containerRef.current.dataset.animated = 'true';
+                }
             }
 
-            // Headline with split reveal
-            tl.fromTo(headlineRef.current,
-                { y: 40, opacity: 0 },
-                { y: 0, opacity: 1, duration: 0.8 },
-                '-=0.3'
-            )
-                // Subline
-                .fromTo(sublineRef.current,
-                    { y: 30, opacity: 0 },
-                    { y: 0, opacity: 1, duration: 0.7 },
-                    '-=0.5'
-                )
-                // Input box
-                .fromTo(inputRef.current,
-                    { y: 40, opacity: 0, scale: 0.95 },
-                    { y: 0, opacity: 1, scale: 1, duration: 0.8 },
-                    '-=0.4'
-                );
+            // Auth buttons animation - Independent timeline for just these elements
+            const authTl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+
+            if (isAuthenticated) {
+                if (usernameRef.current && signoutRef.current) {
+                    authTl.fromTo([usernameRef.current, signoutRef.current],
+                        { y: -20, opacity: 0 },
+                        { y: 0, opacity: 1, duration: 0.5, stagger: 0.1 }
+                    );
+                }
+            } else {
+                if (loginRef.current && signupRef.current) {
+                    authTl.fromTo([loginRef.current, signupRef.current],
+                        { y: -20, opacity: 0 },
+                        { y: 0, opacity: 1, duration: 0.5, stagger: 0.1 }
+                    );
+                }
+            }
 
         }, containerRef);
 
         return () => ctx.revert();
-    }, []);
+    }, [isAuthenticated]); // Re-run when auth state changes
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -166,11 +186,11 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
     return (
         <div
             ref={containerRef}
-            className="relative h-screen w-full overflow-hidden"
+            className="relative h-screen w-full overflow-y-auto overflow-x-hidden"
             style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
         >
             {/* Animated SVG Background - Lovable style */}
-            <div className="absolute inset-0 z-0">
+            <div className="fixed inset-0 z-0 pointer-events-none">
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 1920 1080"
@@ -294,10 +314,14 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                         <div className="w-8 h-8 rounded-full bg-gray-200 animate-pulse" />
                     ) : isAuthenticated ? (
                         <>
-                            <span className="px-4 py-2 text-sm font-medium text-purple-700 bg-purple-100 rounded-full">
+                            <span
+                                ref={usernameRef}
+                                className="px-4 py-2 text-sm font-medium text-purple-700 bg-purple-100 rounded-full"
+                            >
                                 {user?.user_metadata?.user_name || user?.user_metadata?.preferred_username || user?.email?.split('@')[0]}
                             </span>
                             <button
+                                ref={signoutRef}
                                 onClick={() => signOut()}
                                 className="px-4 py-2 text-sm font-medium text-red-600 bg-red-100/60 hover:bg-red-200/80 transition-colors rounded-full"
                             >
@@ -329,7 +353,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
             </header>
 
             {/* Content */}
-            <div className="relative z-10 flex flex-col items-center justify-center h-full px-4 pt-24">
+            <div className="relative z-10 flex flex-col items-center justify-center min-h-full w-full px-4 py-24">
                 {/* Headline */}
                 <h1
                     ref={headlineRef}

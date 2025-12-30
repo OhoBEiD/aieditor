@@ -50,13 +50,17 @@ export function PreviewPanel({
     // Listen for build errors from iframe
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
-            // Only accept messages from the preview domain
-            if (!previewUrl || !event.origin.includes(new URL(previewUrl).hostname)) {
-                return;
+            // Only accept messages from the preview domain if set, but log everything for debug
+            if (previewUrl && !event.origin.includes(new URL(previewUrl).hostname)) {
+                // console.log('[Preview Debug] Ignoring message from different origin:', event.origin);
+                // return; // Don't return yet, let's see what we get
             }
 
+            // DEBUG: Log all messages
+            // console.log('[Preview Debug] Received message:', event.data);
+
             // Check for Next.js build errors
-            if (event.data?.type === 'webpack-error' || event.data?.type === 'build-error') {
+            if (event.data?.type === 'webpack-error' || event.data?.type === 'build-error' || event.data?.type === 'turbopack-error') {
                 const errorMessage = event.data.message || event.data.error || 'Build error occurred';
                 setBuildError(errorMessage);
             } else if (event.data?.type === 'build-ok') {
@@ -80,23 +84,59 @@ export function PreviewPanel({
                     const iframeDoc = iframe.contentDocument;
 
                     // Check for various Next.js error indicators
+
+                    // Method 1: Check known selectors
                     const errorOverlay = iframeDoc.querySelector('nextjs-portal') ||
-                                        iframeDoc.querySelector('[data-nextjs-dialog-overlay]') ||
-                                        iframeDoc.querySelector('#__next-build-error') ||
-                                        iframeDoc.querySelector('[data-nextjs-toast]') ||
-                                        iframeDoc.querySelector('body > div[style*="position: fixed"]');
+                        iframeDoc.querySelector('[data-nextjs-dialog-overlay]') ||
+                        iframeDoc.querySelector('#__next-build-error') ||
+                        iframeDoc.querySelector('[data-nextjs-toast]');
 
-                    // Also check for "Build Error" text in the document
+                    // Method 2: Check text content (works if not in Shadow DOM)
                     const bodyText = iframeDoc.body?.textContent || '';
-                    const hasBuildError = bodyText.includes('Build Error') ||
-                                         bodyText.includes('Failed to compile') ||
-                                         bodyText.includes('Conflicting app and page');
+                    const hasBuildErrorText = bodyText.includes('Build Error') ||
+                        bodyText.includes('Failed to compile') ||
+                        bodyText.includes('Conflicting app and page');
 
-                    if (errorOverlay || hasBuildError) {
-                        const errorText = errorOverlay?.textContent || bodyText;
+                    // Method 3: Scan all body children for Shadow Roots (Next.js 13/14 method)
+                    let shadowErrorText = '';
+                    if (!errorOverlay && !hasBuildErrorText) {
+                        const children = Array.from(iframeDoc.body?.children || []);
+                        for (const child of children) {
+                            if (child.shadowRoot) {
+                                const shadowText = child.shadowRoot.textContent || '';
+                                if (shadowText.includes('Build Error') ||
+                                    shadowText.includes('Failed to compile') ||
+                                    shadowText.includes('Conflicting app and page')) {
+                                    shadowErrorText = shadowText;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (errorOverlay || hasBuildErrorText || shadowErrorText) {
+                        let errorText = shadowErrorText; // Prioritize shadow text if found
+
+                        if (!errorText && errorOverlay) {
+                            if (errorOverlay.shadowRoot) {
+                                errorText = errorOverlay.shadowRoot.textContent || '';
+                            }
+                            if (!errorText) {
+                                errorText = errorOverlay.textContent || '';
+                            }
+                        }
+
+                        if (!errorText && hasBuildErrorText) {
+                            errorText = bodyText;
+                        }
+
+                        // Default message if we detected an overlay/shadow-root but couldn't get text
+                        if ((errorOverlay || shadowErrorText) && !errorText.trim()) {
+                            errorText = "Build error detected. Please check the preview for details.";
+                        }
+
                         if (errorText.length > 0) {
                             const lines = errorText.split('\n').filter(line => line.trim());
-                            // Get more context - up to 20 lines
                             const errorMessage = lines.slice(0, 20).join('\n');
                             setBuildError(errorMessage);
                         }
@@ -182,36 +222,79 @@ export function PreviewPanel({
             if (iframe?.contentDocument) {
                 const iframeDoc = iframe.contentDocument;
 
+                // DEBUG: Check what we can access
+                console.log('[Preview Debug] Accessing iframe content...');
+
                 // Check for various Next.js error indicators
+                // Method 1: Check known selectors
                 const errorOverlay = iframeDoc.querySelector('nextjs-portal') ||
-                                    iframeDoc.querySelector('[data-nextjs-dialog-overlay]') ||
-                                    iframeDoc.querySelector('#__next-build-error') ||
-                                    iframeDoc.querySelector('[data-nextjs-toast]') ||
-                                    iframeDoc.querySelector('body > div[style*="position: fixed"]');
+                    iframeDoc.querySelector('[data-nextjs-dialog-overlay]') ||
+                    iframeDoc.querySelector('#__next-build-error') ||
+                    iframeDoc.querySelector('[data-nextjs-toast]');
 
-                // Also check for "Build Error" text in the document
+                // Method 2: Check text content (works if not in Shadow DOM)
                 const bodyText = iframeDoc.body?.textContent || '';
-                const hasBuildError = bodyText.includes('Build Error') ||
-                                     bodyText.includes('Failed to compile') ||
-                                     bodyText.includes('Conflicting app and page');
+                const hasBuildErrorText = bodyText.includes('Build Error') ||
+                    bodyText.includes('Failed to compile') ||
+                    bodyText.includes('Conflicting app and page');
 
-                if (errorOverlay || hasBuildError) {
-                    // Try to extract error message
-                    const errorText = errorOverlay?.textContent || bodyText;
+                // Method 3: Scan all body children for Shadow Roots (Next.js 13/14 method)
+                let shadowErrorText = '';
+                if (!errorOverlay && !hasBuildErrorText) {
+                    const children = Array.from(iframeDoc.body?.children || []);
+                    console.log(`[Preview Debug] Scanning ${children.length} body children`);
+
+                    for (const child of children) {
+                        if (child.shadowRoot) {
+                            console.log('[Preview Debug] Found shadow root on', child.tagName);
+                            const shadowText = child.shadowRoot.textContent || '';
+                            if (shadowText.includes('Build Error') ||
+                                shadowText.includes('Failed to compile') ||
+                                shadowText.includes('Conflicting app and page')) {
+                                shadowErrorText = shadowText;
+                                break;
+                            } else {
+                                console.log('[Preview Debug] Shadow content length:', shadowText.length);
+                            }
+                        }
+                    }
+                } else {
+                    console.log('[Preview Debug] Found overlay or text in body');
+                }
+
+                if (errorOverlay || hasBuildErrorText || shadowErrorText) {
+                    let errorText = shadowErrorText; // Prioritize shadow text if found
+
+                    if (!errorText && errorOverlay) {
+                        if (errorOverlay.shadowRoot) {
+                            errorText = errorOverlay.shadowRoot.textContent || '';
+                        }
+                        if (!errorText) {
+                            errorText = errorOverlay.textContent || '';
+                        }
+                    }
+
+                    if (!errorText && hasBuildErrorText) {
+                        errorText = bodyText;
+                    }
+
+                    // Default message if we detected an overlay/shadow-root but couldn't get text
+                    if ((errorOverlay || shadowErrorText) && !errorText.trim()) {
+                        errorText = "Build error detected. Please check the preview for details.";
+                    }
+
                     if (errorText.length > 0) {
-                        // Extract meaningful error (remove Next.js UI chrome)
                         const lines = errorText.split('\n').filter(line => line.trim());
-                        const errorMessage = lines.slice(0, 20).join('\n'); // First 20 lines
+                        const errorMessage = lines.slice(0, 20).join('\n');
                         setBuildError(errorMessage);
                     }
                 } else {
-                    // No error overlay found, clear any previous errors
                     setBuildError(null);
                 }
             }
         } catch (e) {
             // Cross-origin issues or other errors - ignore
-            console.log('[Preview] Could not check iframe content for errors:', e);
+            console.log('[Preview Debug] Error checking content (likely CORS):', e);
         }
     };
 
@@ -310,7 +393,7 @@ export function PreviewPanel({
                             </button>
 
                             {showPageSelector && (
-                                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-50 w-64 max-h-96 overflow-y-auto bg-white/90 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl p-2">
+                                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-[9999] w-64 max-h-96 overflow-y-auto bg-white/90 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl p-2">
                                     <div className="text-xs font-semibold text-gray-500 px-2 py-1 mb-1">
                                         Available Pages
                                     </div>
@@ -362,15 +445,15 @@ export function PreviewPanel({
                     </div>
 
                     <div className="flex items-center gap-1 bg-white/40 border border-white/20 rounded-xl p-1 shadow-sm">
-                        {/* Fix Error Button - Only show when there's a build error */}
+                        {/* Fix Error Button - Only show when a build error is detected */}
                         {onFixError && buildError && (
                             <button
                                 onClick={() => onFixError(`Please fix the following build error:\n\n${buildError}`)}
-                                className="p-1.5 rounded-lg text-red-600 hover:text-red-700 hover:bg-red-50 transition-all flex items-center gap-1"
-                                title="Fix Error - Send error to AI"
+                                className="p-1.5 rounded-lg transition-all flex items-center gap-1 text-red-600 hover:text-red-700 hover:bg-red-50 bg-red-50/50"
+                                title="Fix Build Error"
                             >
-                                <AlertCircle className="w-4 h-4" />
-                                <span className="text-xs font-medium hidden sm:inline">Fix Error</span>
+                                <AlertCircle className="w-4 h-4 animate-pulse" />
+                                <span className="text-xs font-medium">Fix Error</span>
                             </button>
                         )}
 

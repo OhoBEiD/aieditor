@@ -97,6 +97,29 @@ export async function POST(request: NextRequest) {
 
         console.log('[API] Project created:', site.id);
 
+        // 5. Initialize preview workspace (non-blocking)
+        // This clones the repo, installs deps, and starts the dev server
+        // CRITICAL: Use site_key as siteId for preview subdomain routing
+        fetch('https://preview-orchestrator.fly.dev/preview/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                siteId: site.site_key,  // Use site_key, not site.id!
+                repoUrl: newRepo.clone_url,
+                branch: newRepo.default_branch || 'main'
+            })
+        }).then(async (res) => {
+            if (res.ok) {
+                const previewData = await res.json();
+                console.log(`[API] ✅ Preview initialized for ${site.site_key}:`, previewData.previewUrl);
+            } else {
+                const errorText = await res.text();
+                console.error(`[API] ❌ Preview initialization failed for ${site.site_key}:`, errorText);
+            }
+        }).catch(err => {
+            console.error(`[API] ❌ Preview initialization error for ${site.site_key}:`, err);
+        });
+
         return NextResponse.json({
             success: true,
             project: {
@@ -105,6 +128,7 @@ export async function POST(request: NextRequest) {
                 name: site.name,
                 repoUrl: site.repo_url,
                 previewSubdomain: site.preview_subdomain,
+                previewUrl: `https://${site.site_key}.preview.automatelb.com`,
             },
         });
     } catch (error) {

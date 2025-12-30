@@ -95,9 +95,20 @@ export async function POST(request: NextRequest) {
 
                 if (!collabResponse.ok && collabResponse.status !== 201 && collabResponse.status !== 204) {
                     const errorData = await collabResponse.json().catch(() => ({}));
-                    console.error(`[Link Repos] Failed to add collaborator for ${repoName}:`, errorData);
-                    errors.push(`Failed to add collaborator for ${repoName}`);
-                    continue;
+
+                    // Check if the error is safe to ignore (user is already owner)
+                    const isOwnerError = collabResponse.status === 422 && (
+                        errorData.message === 'Repository owner cannot be a collaborator' ||
+                        errorData.errors?.some((e: any) => e.message === 'Repository owner cannot be a collaborator')
+                    );
+
+                    if (isOwnerError) {
+                        console.log(`[Link Repos] User ${githubUsername} is already the owner of ${repoName}, skipping collaborator add.`);
+                    } else {
+                        console.error(`[Link Repos] Failed to add collaborator for ${repoName}:`, errorData);
+                        errors.push(`Failed to add collaborator for ${repoName}`);
+                        continue;
+                    }
                 }
 
                 // Update the sites table with github_username

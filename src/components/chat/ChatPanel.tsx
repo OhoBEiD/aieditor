@@ -3,18 +3,11 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
-import { ThinkingSteps } from './ThinkingSteps';
+import { ThinkingSteps, type ThinkingStep } from './ThinkingSteps';
 import { Bot, Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/lib/supabase/types';
 import Image from 'next/image';
-
-interface ThinkingStep {
-    text: string;
-    status: 'pending' | 'complete' | 'error';
-    toolName?: string;
-    details?: string;
-}
 
 interface ChatPanelProps {
     messages: Message[];

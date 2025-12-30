@@ -500,59 +500,6 @@ app.post('/preview/apply', async (req: Request, res: Response) => {
     }
 });
 
-// POST /preview/write - Write a file to workspace (for tool-based agents)
-app.post('/preview/write', async (req: Request, res: Response) => {
-    try {
-        const { siteId, filePath, content } = req.body;
-
-        if (!siteId || !filePath || content === undefined) {
-            return res.status(400).json({ error: 'Missing required fields: siteId, filePath, content' });
-        }
-
-        const preview = activePreviews.get(siteId);
-        if (!preview || preview.status !== 'running') {
-            return res.status(400).json({ error: 'Preview not running. Call /preview/start first.' });
-        }
-
-        const workspacePath = path.join(WORKSPACES_DIR, siteId);
-        const fullPath = path.join(workspacePath, filePath);
-
-        // Create directory if it doesn't exist
-        await fs.mkdir(path.dirname(fullPath), { recursive: true });
-
-        // Write file
-        await fs.writeFile(fullPath, content, 'utf-8');
-
-        console.log(`Wrote file ${filePath} to workspace ${siteId}`);
-
-        // Update activity time
-        preview.lastActivity = new Date();
-
-        // Check if restart needed (config files)
-        const needsRestart = filePath.includes('next.config') ||
-            filePath.includes('tailwind.config') ||
-            filePath.includes('postcss.config') ||
-            filePath === 'package.json';
-
-        if (needsRestart && preview.pid) {
-            console.log(`Restarting dev server for ${siteId} due to ${filePath} change...`);
-            try {
-                process.kill(preview.pid);
-            } catch { /* ignore */ }
-            await startDevServer(siteId, workspacePath);
-        }
-
-        res.json({
-            ok: true,
-            file: filePath,
-            needsRestart
-        });
-    } catch (error) {
-        console.error('Write error:', error);
-        res.status(500).json({ error: String(error) });
-    }
-});
-
 // POST /preview/read - Read a file from workspace
 app.post('/preview/read', async (req: Request, res: Response) => {
     try {
@@ -591,10 +538,10 @@ app.post('/preview/read', async (req: Request, res: Response) => {
     }
 });
 
-// POST /preview/pull - Git pull latest changes from remote
+// POST /preview/pull - Git pull latest changes from remote and clear cache
 app.post('/preview/pull', async (req: Request, res: Response) => {
     try {
-        const { siteId } = req.body;
+        const { siteId, clearCache = true, restart = true } = req.body;
 
         if (!siteId) {
             return res.status(400).json({ error: 'Missing siteId' });
@@ -609,17 +556,67 @@ app.post('/preview/pull', async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Workspace not found' });
         }
 
-        // Git pull
-        execSync('git pull origin main', {
+        // Reset any local changes and pull latest from GitHub
+        // This ensures the workspace matches GitHub exactly, discarding any direct writes
+        execSync('git fetch origin main && git reset --hard origin/main', {
             cwd: workspacePath,
             stdio: 'pipe'
         });
 
-        console.log(`Pulled latest changes for ${siteId}`);
+        console.log(`Reset workspace and pulled latest changes for ${siteId}`);
+
+        // Clear .next and .turbo caches to force rebuild (fixes stale build errors)
+        if (clearCache) {
+            const nextCachePath = path.join(workspacePath, '.next');
+            const turboCachePath = path.join(workspacePath, '.turbo');
+            const nodeModulesCachePath = path.join(workspacePath, 'node_modules', '.cache');
+
+            try {
+                await fs.rm(nextCachePath, { recursive: true, force: true });
+                console.log(`Cleared .next cache for ${siteId}`);
+            } catch (e) {
+                console.log(`No .next cache to clear for ${siteId}`);
+            }
+
+            try {
+                await fs.rm(turboCachePath, { recursive: true, force: true });
+                console.log(`Cleared .turbo cache for ${siteId}`);
+            } catch (e) {
+                console.log(`No .turbo cache to clear for ${siteId}`);
+            }
+
+            try {
+                await fs.rm(nodeModulesCachePath, { recursive: true, force: true });
+                console.log(`Cleared node_modules cache for ${siteId}`);
+            } catch (e) {
+                console.log(`No node_modules cache to clear for ${siteId}`);
+            }
+        }
+
+        // Restart dev server to pick up changes cleanly
+        if (restart) {
+            const preview = activePreviews.get(siteId);
+            if (preview && preview.status === 'running' && preview.pid) {
+                console.log(`Restarting dev server for ${siteId} after pull...`);
+                try {
+                    process.kill(preview.pid);
+                } catch { /* ignore - process might already be dead */ }
+
+                // Clean up cached proxy middleware
+                const cacheKey = `${siteId}:${preview.port}`;
+                if (proxyCache.has(cacheKey)) {
+                    proxyCache.delete(cacheKey);
+                }
+
+                // Start new dev server
+                await startDevServer(siteId, workspacePath);
+                console.log(`Dev server restarted for ${siteId}`);
+            }
+        }
 
         res.json({
             ok: true,
-            message: 'Pulled latest changes from remote'
+            message: 'Pulled latest changes, cleared cache, and restarted dev server'
         });
     } catch (error) {
         console.error('Pull error:', error);
@@ -1191,8 +1188,37 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`🚀 Fly Orchestrator running on port ${PORT}`);
     console.log(`   Preview domain: ${PREVIEW_DOMAIN}`);
     console.log(`   Workspaces dir: ${WORKSPACES_DIR}`);
+});
+
+// Handle WebSocket upgrades for HMR
+server.on('upgrade', (req, socket, head) => {
+    const host = req.headers.host || '';
+
+    // Check if this is a preview subdomain request
+    if (host.includes(PREVIEW_DOMAIN) && !host.startsWith('preview-orchestrator')) {
+        const subdomain = host.split('.')[0];
+        const preview = activePreviews.get(subdomain);
+
+        if (preview && preview.status === 'running') {
+            const cacheKey = `${subdomain}:${preview.port}`;
+            const proxyMiddleware = proxyCache.get(cacheKey);
+
+            if (proxyMiddleware && proxyMiddleware.upgrade) {
+                // Forward WebSocket upgrade to the proxy middleware
+                proxyMiddleware.upgrade(req, socket, head);
+            } else {
+                console.error(`No proxy middleware found for WebSocket upgrade: ${subdomain}`);
+                socket.destroy();
+            }
+        } else {
+            console.error(`Preview not running for WebSocket upgrade: ${subdomain}`);
+            socket.destroy();
+        }
+    } else {
+        socket.destroy();
+    }
 });
