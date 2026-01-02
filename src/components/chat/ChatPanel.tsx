@@ -99,15 +99,14 @@ export function ChatPanel({
                                 />
                             </div>
                         ))}
-                        {/* Show thinking steps while streaming */}
-                        {thinkingSteps.length > 0 && (
+                        {/* Show thinking steps while streaming OR show loading indicator */}
+                        {thinkingSteps.length > 0 ? (
                             <ThinkingSteps
                                 steps={thinkingSteps}
                                 isComplete={!isStreaming}
                                 thinking={agentThinking}
                             />
-                        )}
-                        {isLoading && thinkingSteps.length === 0 && <LoadingIndicator />}
+                        ) : isLoading && <LoadingIndicator />}
                     </div>
                 )}
                 <div ref={messagesEndRef} />
@@ -179,7 +178,7 @@ function LoadingIndicator() {
                         <div className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '150ms' }} />
                         <div className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
-                    <p className="mt-2 text-xs text-gray-500">Thinking...</p>
+                    <p className="mt-2 text-xs text-gray-500">Agent thinking...</p>
                 </div>
             </div>
         </div>

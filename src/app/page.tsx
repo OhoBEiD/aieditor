@@ -204,7 +204,7 @@ interface Project {
 }
 
 export default function Home() {
-    const [showPreview, setShowPreview] = useState(true);
+    const [showPreview, setShowPreview] = useState(false);
     const [isPanelOpen, setIsPanelOpen] = useState(true);
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -379,28 +379,9 @@ export default function Home() {
 
             const data = await response.json();
             if (data.status === 'ready' || data.status === 'starting') {
-                // Poll for readiness
-                let attempts = 0;
-                while (attempts < 30) {
-                    const checkHealth = async () => {
-                        try {
-                            const res = await fetch(`https://${targetSiteId}.preview.automatelb.com/api/health`);
-                            return res.ok;
-                        } catch { return false; }
-                    };
-
-                    const isReady = await checkHealth();
-                    if (isReady) {
-                        console.log('[Preview] Server is ready after', attempts * 2, 'seconds');
-                        break;
-                    }
-                    console.log('[Preview] Waiting for server... attempt', attempts + 1);
-                    await new Promise(r => setTimeout(r, 2000));
-                    attempts++;
-                }
-
                 setPreviewUrl(data.previewUrl || `https://${targetSiteId}.preview.automatelb.com`);
                 setShowPreview(true); // Ensure we switch to Editor view
+
                 // Detect available pages from repo
                 detectAvailablePages(targetRepoUrl, token);
             }
@@ -511,13 +492,16 @@ export default function Home() {
 
 
 
-    // Auto-start preview when showPreview is true and preview isn't loaded yet
+    // Auto-start preview effect removed to prevent infinite loops and respect manual start triggers
+    // The preview will be started explicitly by createNewProject or user interaction
+    /*
     useEffect(() => {
-        if (isClient && showPreview && !previewUrl && !isPreviewLoading) {
+        if (isClient && showPreview && !previewUrl && !isPreviewLoading && activeProject) {
             console.log('[Preview] Auto-starting preview on load...');
             startPreview();
         }
-    }, [isClient, showPreview, previewUrl, isPreviewLoading, startPreview]);
+    }, [isClient, showPreview, previewUrl, isPreviewLoading, startPreview, activeProject]);
+    */
 
     // Fix hydration + restore preferences + restore active project
     useEffect(() => {
@@ -1099,7 +1083,7 @@ export default function Home() {
 
     // Create a new project from a message
     const createNewProject = useCallback(async (initialMessage: string) => {
-        setIsSending(true);
+        // Don't manage isSending here - handleSendMessage will manage it
         try {
             // Get session to retrieve provider token
             const { data: { session } } = await supabase.auth.getSession();
@@ -1139,6 +1123,7 @@ export default function Home() {
             setMessages([]); // Clear messages
 
             // Send the initial message to the AI IMMEDIATELY to show it in UI
+            // handleSendMessage will manage isSending state
             // We don't await this because we want to start preview in parallel/after
             handleSendMessage(initialMessage, undefined, data.project);
 
@@ -1147,12 +1132,10 @@ export default function Home() {
             console.log('[Project] Waiting for GitHub to provision repo...');
             await new Promise(r => setTimeout(r, 3000));
 
-            // Start preview for the new project (in background)
-            await startPreview(data.project);
+            // Start preview for the new project (in background) - BLOCKED per user request
+            // await startPreview(data.project);
         } catch (error) {
             console.error('[Project] Creation error:', error);
-        } finally {
-            setIsSending(false);
         }
     }, [startPreview, handleSendMessage]);
 
@@ -1407,6 +1390,7 @@ export default function Home() {
                             availablePages={availablePages}
                             isLoading={isPreviewLoading}
                             refreshKey={previewRefreshKey}
+                            repoUrl={activeProject?.repoUrl}
                         />
                     </div>
                 </div>

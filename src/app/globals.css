@@ -194,6 +194,27 @@ body {
   animation: fadeIn 0.3s ease-out forwards;
 }
 
+.animate-fadeIn {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+/* Preview Mode Switch Animation - Smooth scale + opacity */
+@keyframes previewModeEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.preview-mode-enter {
+  animation: previewModeEnter 0.3s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
 /* Text Reveal Animation - Like Cursor AI */
 @keyframes textReveal {
   from {

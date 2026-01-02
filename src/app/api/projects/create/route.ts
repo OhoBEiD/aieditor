@@ -66,6 +66,11 @@ export async function POST(request: NextRequest) {
         const newRepo = await createRepoResponse.json();
         console.log('[API] Created repo:', newRepo.html_url);
 
+        // Wait for GitHub to fully initialize the repository and default branch
+        // This prevents "Remote branch main not found" errors when cloning immediately
+        console.log('[API] ⏳ Waiting 3s for GitHub to initialize repository...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
         // 3. Generate site key and subdomain
         const siteKey = generateSiteKey();
         const previewSubdomain = repoName.toLowerCase().replace(/[^a-z0-9-]/g, '-');
@@ -97,27 +102,25 @@ export async function POST(request: NextRequest) {
 
         console.log('[API] Project created:', site.id);
 
-        // 5. Initialize preview workspace (non-blocking)
-        // This clones the repo, installs deps, and starts the dev server
-        // CRITICAL: Use site_key as siteId for preview subdomain routing
+        // 5. Initialize preview workspace (Async / Fire-and-Forget)
+        // We trigger the start but don't wait for it, ensuring fast response.
+        console.log(`[API] 🚀 Triggering background preview start for ${site.site_key}...`);
+
+        // NO AWAIT here - intentional fire-and-forget
         fetch('https://preview-orchestrator.fly.dev/preview/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                siteId: site.site_key,  // Use site_key, not site.id!
+                siteId: site.site_key,
                 repoUrl: newRepo.clone_url,
                 branch: newRepo.default_branch || 'main'
-            })
-        }).then(async (res) => {
-            if (res.ok) {
-                const previewData = await res.json();
-                console.log(`[API] ✅ Preview initialized for ${site.site_key}:`, previewData.previewUrl);
-            } else {
-                const errorText = await res.text();
-                console.error(`[API] ❌ Preview initialization failed for ${site.site_key}:`, errorText);
-            }
+            }),
+            // Short timeout to ensure we don't hang if the network is weird, 
+            // but we aren't awaiting the full process anyway.
+            // signal: AbortSignal.timeout(5000) // REMOVED: Don't abort, let it run in background!
         }).catch(err => {
-            console.error(`[API] ❌ Preview initialization error for ${site.site_key}:`, err);
+            // Log as info since this is detached
+            console.log(`[API] ℹ️ Background preview trigger detached (expected for speed):`, err.message);
         });
 
         return NextResponse.json({
@@ -129,6 +132,9 @@ export async function POST(request: NextRequest) {
                 repoUrl: site.repo_url,
                 previewSubdomain: site.preview_subdomain,
                 previewUrl: `https://${site.site_key}.preview.automatelb.com`,
+                // We return false because it's not ready YET, but it will be soon.
+                previewReady: false,
+                previewError: undefined,
             },
         });
     } catch (error) {

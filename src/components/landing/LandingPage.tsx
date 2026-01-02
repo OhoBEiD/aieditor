@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Send, Sparkles, Paperclip, Github } from 'lucide-react';
+import { Send, Loader2, Paperclip, Github } from 'lucide-react';
 import { gsap } from 'gsap';
 import { RecentProjectsCard } from './RecentProjectsCard';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,6 +23,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
     const [showImportModal, setShowImportModal] = useState(false);
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [authModalMessage, setAuthModalMessage] = useState('Sign in to start building with AutoMate');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const { isAuthenticated, isLoading: authLoading, signOut, user } = useAuth();
 
@@ -126,19 +127,25 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (message.trim() && !isLoading) {
+        if (message.trim() && !isLoading && !isSubmitting) {
             // Check if user is authenticated
             if (!isAuthenticated) {
                 setShowAuthModal(true);
                 return;
             }
-            // If onCreateProject is provided, create a new project
-            if (onCreateProject) {
-                await onCreateProject(message.trim());
-            } else {
-                onSendMessage(message.trim());
+
+            setIsSubmitting(true);
+            try {
+                // If onCreateProject is provided, create a new project
+                if (onCreateProject) {
+                    await onCreateProject(message.trim());
+                } else {
+                    onSendMessage(message.trim());
+                }
+                setMessage('');
+            } finally {
+                setIsSubmitting(false);
             }
-            setMessage('');
         }
     };
 
@@ -400,14 +407,14 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                 placeholder="Ask AutoMate to create a landing..."
                                 className="w-full pl-16 pr-20 py-6 text-base text-gray-900 placeholder-gray-400 bg-transparent outline-none"
                                 style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
-                                disabled={isLoading}
+                                disabled={isLoading || isSubmitting}
                             />
 
                             {/* Send Button */}
                             <div className="absolute right-4 top-1/2 -translate-y-1/2">
                                 <button
                                     type="submit"
-                                    disabled={!message.trim() || isLoading}
+                                    disabled={!message.trim() || isLoading || isSubmitting}
                                     className="p-3.5 rounded-full text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105"
                                     style={{
                                         background: message.trim()
@@ -416,8 +423,8 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                         boxShadow: message.trim() ? '0 4px 15px rgba(102, 126, 234, 0.4)' : 'none',
                                     }}
                                 >
-                                    {isLoading ? (
-                                        <Sparkles className="w-5 h-5 animate-pulse" />
+                                    {isLoading || isSubmitting ? (
+                                        <Loader2 className="w-5 h-5 animate-spin" />
                                     ) : (
                                         <Send className="w-5 h-5" />
                                     )}

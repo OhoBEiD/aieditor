@@ -1,8 +1,10 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { execSync, exec } from 'child_process';
 import { promises as fs } from 'fs';
+import * as fsSync from 'fs';
 import path from 'path';
 import { createProxyMiddleware } from 'http-proxy-middleware';
+import { createProxyServer } from 'http-proxy';
 import cors from 'cors';
 
 const app = express();
@@ -30,6 +32,132 @@ const activeExecutions: Map<string, string> = new Map();
 // Cache proxy middleware instances to prevent memory leaks from creating new middleware on every request
 const proxyCache: Map<string, any> = new Map();
 
+// Cache WebSocket proxy instances for clean frame handling
+const wsProxyCache: Map<string, ReturnType<typeof createProxyServer>> = new Map();
+
+// Configuration for automatic cleanup
+const MAX_WORKSPACE_AGE_HOURS = 24; // Remove workspaces older than 24 hours
+const MAX_WORKSPACES = 20; // Keep at most 20 workspaces
+const CLEANUP_INTERVAL_MS = 30 * 60 * 1000; // Run cleanup every 30 minutes
+
+// Automatic workspace cleanup function
+async function cleanupOldWorkspaces(force: boolean = false): Promise<{ removed: string[], errors: string[] }> {
+    const removed: string[] = [];
+    const errors: string[] = [];
+
+    try {
+        const entries = await fs.readdir(WORKSPACES_DIR, { withFileTypes: true });
+        const workspaceDirs = entries.filter(e => e.isDirectory());
+
+        console.log(`[Cleanup] Found ${workspaceDirs.length} workspaces`);
+
+        // Get workspace info with last modified times
+        const workspaceInfo: { name: string, mtime: Date, isActive: boolean }[] = [];
+
+        for (const dir of workspaceDirs) {
+            try {
+                const stat = await fs.stat(path.join(WORKSPACES_DIR, dir.name));
+                const isActive = activePreviews.has(dir.name) && activePreviews.get(dir.name)?.status === 'running';
+                workspaceInfo.push({
+                    name: dir.name,
+                    mtime: stat.mtime,
+                    isActive
+                });
+            } catch (e) {
+                // Skip if we can't stat the directory
+            }
+        }
+
+        // Sort by last modified time (oldest first)
+        workspaceInfo.sort((a, b) => a.mtime.getTime() - b.mtime.getTime());
+
+        const now = Date.now();
+        const maxAge = MAX_WORKSPACE_AGE_HOURS * 60 * 60 * 1000;
+
+        for (const ws of workspaceInfo) {
+            const age = now - ws.mtime.getTime();
+            const ageHours = Math.floor(age / (60 * 60 * 1000));
+
+            // Skip active workspaces unless force cleanup
+            if (ws.isActive && !force) {
+                console.log(`[Cleanup] Skipping active workspace: ${ws.name}`);
+                continue;
+            }
+
+            // When force=true, remove ALL inactive workspaces to free up space
+            // Otherwise, remove if older than max age OR if we have too many workspaces
+            const shouldRemove = force || age > maxAge || (workspaceInfo.length - removed.length > MAX_WORKSPACES);
+
+            if (shouldRemove) {
+                try {
+                    // Stop the preview if running
+                    const preview = activePreviews.get(ws.name);
+                    if (preview?.pid) {
+                        try {
+                            process.kill(preview.pid, 'SIGTERM');
+                        } catch { /* ignore */ }
+                    }
+
+                    // Clean up proxy cache
+                    if (preview) {
+                        const cacheKey = `${ws.name}:${preview.port}`;
+                        proxyCache.delete(cacheKey);
+                    }
+
+                    // Remove from active previews
+                    activePreviews.delete(ws.name);
+
+                    // Delete the workspace directory
+                    const wsPath = path.join(WORKSPACES_DIR, ws.name);
+                    await fs.rm(wsPath, { recursive: true, force: true });
+
+                    removed.push(ws.name);
+                    console.log(`[Cleanup] Removed workspace: ${ws.name} (age: ${ageHours}h)`);
+                } catch (e: any) {
+                    errors.push(`${ws.name}: ${e.message}`);
+                    console.error(`[Cleanup] Failed to remove ${ws.name}:`, e.message);
+                }
+            }
+        }
+
+        console.log(`[Cleanup] Complete. Removed ${removed.length} workspaces.`);
+    } catch (e) {
+        console.error('[Cleanup] Error listing workspaces:', e);
+    }
+
+    return { removed, errors };
+}
+
+// Check available disk space (Linux/Mac)
+async function checkDiskSpace(): Promise<{ available: number, total: number, percentFree: number }> {
+    try {
+        const output = execSync(`df -k ${WORKSPACES_DIR} | tail -1`, { encoding: 'utf-8' });
+        const parts = output.trim().split(/\s+/);
+        // Format: Filesystem 1K-blocks Used Available Use% Mounted
+        const total = parseInt(parts[1]) * 1024;
+        const available = parseInt(parts[3]) * 1024;
+        const percentFree = (available / total) * 100;
+        return { available, total, percentFree };
+    } catch (e) {
+        // Fallback: assume we have space
+        return { available: 1024 * 1024 * 1024, total: 1024 * 1024 * 1024, percentFree: 100 };
+    }
+}
+
+// Run cleanup on startup and periodically
+(async () => {
+    // Wait a bit for the server to start
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    console.log('[Cleanup] Running initial cleanup...');
+    await cleanupOldWorkspaces();
+
+    // Schedule periodic cleanup
+    setInterval(async () => {
+        console.log('[Cleanup] Running scheduled cleanup...');
+        await cleanupOldWorkspaces();
+    }, CLEANUP_INTERVAL_MS);
+})();
 
 // Get next available port
 let nextPort = 3100;
@@ -161,6 +289,26 @@ async function ensureWorkspace(siteId: string, repoUrl: string, branch: string):
     const workspacePath = path.join(WORKSPACES_DIR, siteId);
     const gitPath = path.join(workspacePath, '.git');
 
+    // Check disk space before doing anything - cleanup if low
+    const MIN_SPACE_MB = 500; // Require at least 500MB free
+    const disk = await checkDiskSpace();
+    const availableMB = disk.available / 1024 / 1024;
+
+    if (availableMB < MIN_SPACE_MB || disk.percentFree < 10) {
+        console.log(`[Disk] Low disk space detected: ${Math.round(availableMB)}MB (${disk.percentFree.toFixed(1)}% free). Running cleanup...`);
+        await cleanupOldWorkspaces(false);
+
+        // Check again after cleanup
+        const diskAfter = await checkDiskSpace();
+        const availableAfter = diskAfter.available / 1024 / 1024;
+
+        if (availableAfter < MIN_SPACE_MB / 2) {
+            // Still critically low, force cleanup including less old workspaces
+            console.log(`[Disk] Still low: ${Math.round(availableAfter)}MB. Running force cleanup...`);
+            await cleanupOldWorkspaces(true);
+        }
+    }
+
     // Check if it's a valid git repo
     let isValidRepo = false;
     try {
@@ -215,7 +363,16 @@ async function ensureWorkspace(siteId: string, repoUrl: string, branch: string):
 
         // Clone repository
         console.log(`Cloning repository for ${siteId}...`);
-        await fs.mkdir(workspacePath, { recursive: true });
+        console.log(`Creating workspace directory: ${workspacePath}`);
+
+        // Use mkdirSync for better compatibility with mounted volumes
+        try {
+            fsSync.mkdirSync(workspacePath, { recursive: true });
+            console.log(`Successfully created directory: ${workspacePath}`);
+        } catch (mkdirError: any) {
+            console.error(`Failed to create directory ${workspacePath}:`, mkdirError);
+            throw new Error(`Cannot create workspace directory: ${mkdirError.message}`);
+        }
 
         // Add token to URL if available
         let cloneUrl = repoUrl;
@@ -277,8 +434,34 @@ async function startDevServer(siteId: string, workspacePath: string): Promise<nu
         }
     });
 
-    // Wait for server to be ready
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Wait for dev server to be ready by polling it
+    console.log(`Waiting for dev server on port ${port} to be ready...`);
+    const maxAttempts = 60; // 60 attempts = 60 seconds
+    let attempts = 0;
+    let ready = false;
+
+    while (attempts < maxAttempts && !ready) {
+        try {
+            const response = await fetch(`http://localhost:${port}`, {
+                signal: AbortSignal.timeout(1000)
+            });
+            if (response.status < 500) {
+                ready = true;
+                console.log(`Dev server ready on port ${port} after ${attempts + 1} attempts`);
+            }
+        } catch (e) {
+            // Server not ready yet, wait and retry
+        }
+
+        if (!ready) {
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    }
+
+    if (!ready) {
+        console.warn(`Dev server on port ${port} not ready after ${maxAttempts}s, but continuing anyway`);
+    }
 
     return port;
 }
@@ -541,7 +724,7 @@ app.post('/preview/read', async (req: Request, res: Response) => {
 // POST /preview/pull - Git pull latest changes from remote and clear cache
 app.post('/preview/pull', async (req: Request, res: Response) => {
     try {
-        const { siteId, clearCache = true, restart = true } = req.body;
+        const { siteId, clearCache = true, restart = true, retries = 3 } = req.body;
 
         if (!siteId) {
             return res.status(400).json({ error: 'Missing siteId' });
@@ -556,14 +739,44 @@ app.post('/preview/pull', async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Workspace not found' });
         }
 
+        // Retry logic for fetching from GitHub (commits might not be immediately available)
+        let fetchSuccess = false;
+        for (let i = 0; i < retries; i++) {
+            try {
+                if (i > 0) {
+                    console.log(`Retry ${i}/${retries} - waiting 1s before fetching...`);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+
+                execSync('git fetch origin main', {
+                    cwd: workspacePath,
+                    stdio: 'pipe',
+                    timeout: 10000
+                });
+
+                fetchSuccess = true;
+                console.log(`Successfully fetched latest changes for ${siteId}`);
+                break;
+            } catch (e) {
+                console.log(`Fetch attempt ${i + 1} failed for ${siteId}`);
+                if (i === retries - 1) {
+                    throw e;
+                }
+            }
+        }
+
+        if (!fetchSuccess) {
+            throw new Error('Failed to fetch from GitHub after retries');
+        }
+
         // Reset any local changes and pull latest from GitHub
         // This ensures the workspace matches GitHub exactly, discarding any direct writes
-        execSync('git fetch origin main && git reset --hard origin/main', {
+        execSync('git reset --hard origin/main', {
             cwd: workspacePath,
             stdio: 'pipe'
         });
 
-        console.log(`Reset workspace and pulled latest changes for ${siteId}`);
+        console.log(`Reset workspace to latest commit for ${siteId}`);
 
         // Clear .next and .turbo caches to force rebuild (fixes stale build errors)
         if (clearCache) {
@@ -599,7 +812,9 @@ app.post('/preview/pull', async (req: Request, res: Response) => {
             if (preview && preview.status === 'running' && preview.pid) {
                 console.log(`Restarting dev server for ${siteId} after pull...`);
                 try {
-                    process.kill(preview.pid);
+                    process.kill(preview.pid, 'SIGTERM');
+                    // Wait a bit for graceful shutdown
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 } catch { /* ignore - process might already be dead */ }
 
                 // Clean up cached proxy middleware
@@ -960,6 +1175,54 @@ app.post('/preview/stop', async (req: Request, res: Response) => {
     }
 });
 
+// POST /preview/cleanup - Manually trigger workspace cleanup
+app.post('/preview/cleanup', async (req: Request, res: Response) => {
+    try {
+        const { force = false } = req.body;
+
+        console.log(`[Cleanup] Manual cleanup triggered (force: ${force})`);
+
+        const diskBefore = await checkDiskSpace();
+        const result = await cleanupOldWorkspaces(force);
+        const diskAfter = await checkDiskSpace();
+
+        res.json({
+            ok: true,
+            removed: result.removed,
+            errors: result.errors,
+            diskSpace: {
+                before: `${Math.round(diskBefore.available / 1024 / 1024)}MB (${diskBefore.percentFree.toFixed(1)}% free)`,
+                after: `${Math.round(diskAfter.available / 1024 / 1024)}MB (${diskAfter.percentFree.toFixed(1)}% free)`
+            }
+        });
+    } catch (error) {
+        console.error('Cleanup error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+
+// GET /preview/disk - Check disk space status
+app.get('/preview/disk', async (req: Request, res: Response) => {
+    try {
+        const disk = await checkDiskSpace();
+        const entries = await fs.readdir(WORKSPACES_DIR, { withFileTypes: true }).catch(() => []);
+        const workspaceCount = entries.filter(e => e.isDirectory()).length;
+
+        res.json({
+            ok: true,
+            available: `${Math.round(disk.available / 1024 / 1024)}MB`,
+            total: `${Math.round(disk.total / 1024 / 1024)}MB`,
+            percentFree: disk.percentFree.toFixed(1) + '%',
+            workspaces: workspaceCount,
+            activePreview: activePreviews.size,
+            warning: disk.percentFree < 10 ? 'Low disk space!' : undefined
+        });
+    } catch (error) {
+        console.error('Disk check error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+
 // POST /preview/deploy - Commit changes and create PR
 app.post('/preview/deploy', async (req: Request, res: Response) => {
     try {
@@ -1102,13 +1365,13 @@ app.post('/preview/write', async (req: Request, res: Response) => {
     }
 });
 
-// POST /preview/pull - Pull latest changes from GitHub (for when files are committed via API)
-app.post('/preview/pull', async (req: Request, res: Response) => {
+// POST /preview/replace - Search and replace in a file
+app.post('/preview/replace', async (req: Request, res: Response) => {
     try {
-        const { siteId } = req.body;
+        const { siteId, filePath, search, replace, githubToken } = req.body;
 
-        if (!siteId) {
-            return res.status(400).json({ error: 'Missing siteId' });
+        if (!siteId || !filePath || !search) {
+            return res.status(400).json({ error: 'Missing siteId, filePath, or search' });
         }
 
         const preview = activePreviews.get(siteId);
@@ -1117,62 +1380,117 @@ app.post('/preview/pull', async (req: Request, res: Response) => {
         }
 
         const workspacePath = path.join(WORKSPACES_DIR, siteId);
+        const fullPath = path.join(workspacePath, filePath);
 
-        try {
-            // Stash any local changes, pull, then re-apply
-            console.log(`Pulling latest changes for ${siteId}...`);
-
-            // Check for local changes
-            const status = execSync('git status --porcelain', {
-                cwd: workspacePath,
-                encoding: 'utf-8'
-            });
-
-            if (status.trim()) {
-                // Stash local changes
-                execSync('git stash', { cwd: workspacePath, stdio: 'pipe' });
-            }
-
-            // Pull latest
-            execSync('git pull origin main --rebase', { cwd: workspacePath, stdio: 'pipe' });
-
-            if (status.trim()) {
-                // Try to reapply stashed changes
-                try {
-                    execSync('git stash pop', { cwd: workspacePath, stdio: 'pipe' });
-                } catch (e) {
-                    console.log('Could not reapply stashed changes, dropping them');
-                    execSync('git stash drop', { cwd: workspacePath, stdio: 'pipe' });
-                }
-            }
-
-            // Update activity
-            preview.lastActivity = new Date();
-
-            res.json({
-                ok: true,
-                message: 'Pulled latest changes from GitHub'
-            });
-        } catch (pullError) {
-            console.error(`Git pull failed for ${siteId}:`, pullError);
-
-            // Try a hard reset if pull fails
-            try {
-                execSync('git fetch origin && git reset --hard origin/main', {
-                    cwd: workspacePath,
-                    stdio: 'pipe'
-                });
-                res.json({
-                    ok: true,
-                    message: 'Reset to latest from GitHub'
-                });
-            } catch (resetError) {
-                res.status(500).json({ error: 'Failed to sync with GitHub' });
-            }
+        // Security: Prevent path traversal
+        if (!fullPath.startsWith(workspacePath)) {
+            return res.status(400).json({ error: 'Invalid file path' });
         }
+
+        // Read current file
+        let content: string;
+        try {
+            content = await fs.readFile(fullPath, 'utf-8');
+        } catch (e) {
+            return res.status(404).json({ error: `File not found: ${filePath}` });
+        }
+
+        // Check if search text exists
+        if (!content.includes(search)) {
+            return res.status(400).json({
+                error: `Search text not found in file`,
+                searchText: search.substring(0, 100),
+                hint: 'Make sure the exact text exists in the file'
+            });
+        }
+
+        // Perform replacement
+        const newContent = content.replace(search, replace || '');
+
+        // Write file back
+        await fs.writeFile(fullPath, newContent, 'utf-8');
+
+        // Update activity
+        preview.lastActivity = new Date();
+
+        console.log(`[${siteId}] Replace in ${filePath}: "${search.substring(0, 30)}..." -> "${(replace || '').substring(0, 30)}..."`);
+
+        res.json({
+            ok: true,
+            file: filePath,
+            replaced: true
+        });
     } catch (error) {
-        console.error('Pull error:', error);
+        console.error('Replace error:', error);
         res.status(500).json({ error: String(error) });
+    }
+});
+
+// POST /preview/push - Commit and push all changes to GitHub
+app.post('/preview/push', async (req: Request, res: Response) => {
+    try {
+        const { siteId, githubToken, message = 'AI Automated Update' } = req.body;
+
+        if (!siteId) {
+            return res.status(400).json({ error: 'Missing siteId' });
+        }
+
+        const workspacePath = path.join(WORKSPACES_DIR, siteId);
+
+        // Check if workspace exists
+        try {
+            await fs.access(workspacePath);
+        } catch {
+            return res.status(404).json({ error: 'Workspace not found' });
+        }
+
+        // Configure git user identity for commit
+        execSync('git config user.email "ai-editor@automate.dev"', { cwd: workspacePath, stdio: 'pipe' });
+        execSync('git config user.name "AI Editor"', { cwd: workspacePath, stdio: 'pipe' });
+
+        // Check if there are any changes to commit
+        const statusOutput = execSync('git status --porcelain', { cwd: workspacePath, encoding: 'utf-8' });
+
+        if (!statusOutput.trim()) {
+            return res.json({
+                ok: true,
+                message: 'No changes to push',
+                pushed: false
+            });
+        }
+
+        console.log(`[${siteId}] Changes detected, committing and pushing...`);
+        console.log(`[${siteId}] Status:\n${statusOutput}`);
+
+        // Stage all changes
+        execSync('git add -A', { cwd: workspacePath, stdio: 'pipe' });
+
+        // Commit changes
+        const commitMsg = message.replace(/"/g, '\\"'); // Escape quotes
+        execSync(`git commit -m "${commitMsg}"`, { cwd: workspacePath, stdio: 'pipe' });
+
+        // Get the commit SHA
+        const commitSha = execSync('git rev-parse HEAD', { cwd: workspacePath, encoding: 'utf-8' }).trim();
+
+        // Push to origin main
+        execSync('git push origin main', { cwd: workspacePath, stdio: 'pipe' });
+
+        console.log(`[${siteId}] Successfully pushed commit ${commitSha.substring(0, 7)}`);
+
+        res.json({
+            ok: true,
+            message: 'Changes pushed to GitHub',
+            pushed: true,
+            commitSha,
+            changedFiles: statusOutput.trim().split('\n').length
+        });
+    } catch (error: any) {
+        console.error('Push error:', error);
+        res.status(500).json({
+            error: String(error),
+            stderr: error.stderr?.toString() || '',
+            stdout: error.stdout?.toString() || ''
+        });
     }
 });
 
@@ -1194,7 +1512,7 @@ const server = app.listen(PORT, () => {
     console.log(`   Workspaces dir: ${WORKSPACES_DIR}`);
 });
 
-// Handle WebSocket upgrades for HMR
+// Handle WebSocket upgrades for HMR using http-proxy directly for clean frame handling
 server.on('upgrade', (req, socket, head) => {
     const host = req.headers.host || '';
 
@@ -1204,18 +1522,36 @@ server.on('upgrade', (req, socket, head) => {
         const preview = activePreviews.get(subdomain);
 
         if (preview && preview.status === 'running') {
-            const cacheKey = `${subdomain}:${preview.port}`;
-            const proxyMiddleware = proxyCache.get(cacheKey);
+            const cacheKey = `ws:${subdomain}:${preview.port}`;
 
-            if (proxyMiddleware && proxyMiddleware.upgrade) {
-                // Forward WebSocket upgrade to the proxy middleware
-                proxyMiddleware.upgrade(req, socket, head);
-            } else {
-                console.error(`No proxy middleware found for WebSocket upgrade: ${subdomain}`);
+            // Get or create a dedicated WebSocket proxy for this site
+            let wsProxy = wsProxyCache.get(cacheKey);
+            if (!wsProxy) {
+                wsProxy = createProxyServer({
+                    target: `http://localhost:${preview.port}`,
+                    ws: true,
+                    changeOrigin: true,
+                });
+
+                // Handle WebSocket proxy errors gracefully
+                wsProxy.on('error', (err, _req, res) => {
+                    console.error(`[WS Proxy Error] ${subdomain}:`, err.message);
+                    if (res && typeof (res as any).destroy === 'function') {
+                        (res as any).destroy();
+                    }
+                });
+
+                wsProxyCache.set(cacheKey, wsProxy);
+                console.log(`[WS] Created WebSocket proxy for ${cacheKey}`);
+            }
+
+            try {
+                wsProxy.ws(req, socket, head);
+            } catch (err: any) {
+                console.error(`[WS] Upgrade error:`, err.message);
                 socket.destroy();
             }
         } else {
-            console.error(`Preview not running for WebSocket upgrade: ${subdomain}`);
             socket.destroy();
         }
     } else {

@@ -23,8 +23,16 @@ interface ThinkingStepsProps {
 }
 
 export function ThinkingSteps({ steps, isComplete = false, thinking = [] }: ThinkingStepsProps) {
-    const [isExpanded, setIsExpanded] = useState(false);
+    // Auto-expand when agent is working, collapse when complete
+    const [isExpanded, setIsExpanded] = useState(!isComplete);
     const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
+
+    // Auto-expand when new thinking starts
+    React.useEffect(() => {
+        if (!isComplete && (steps.length > 0 || thinking.length > 0)) {
+            setIsExpanded(true);
+        }
+    }, [isComplete, steps.length, thinking.length]);
 
     if (steps.length === 0 && thinking.length === 0) return null;
 
@@ -85,11 +93,15 @@ export function ThinkingSteps({ steps, isComplete = false, thinking = [] }: Thin
                 </button>
 
                 {/* Current step indicator (always visible) */}
-                {!isComplete && steps.length > 0 && (
+                {!isComplete && (
                     <div className="flex items-center gap-2 pl-1 mt-2">
                         <Loader2 className="w-3 h-3 animate-spin text-[var(--accent-primary)]" />
                         <span className="text-xs text-[var(--text-primary)] font-medium">
-                            {steps[steps.length - 1]?.text || 'Processing...'}
+                            {steps.length > 0
+                                ? (steps[steps.length - 1]?.text || steps[steps.length - 1]?.message || 'Processing...')
+                                : thinking.length > 0
+                                    ? 'Agent thinking...'
+                                    : 'Processing...'}
                         </span>
                     </div>
                 )}

@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import { Monitor, Smartphone, RefreshCw, X, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
+import { Monitor, Smartphone, RefreshCw, X, Loader2, ExternalLink, AlertCircle, Download, Github } from 'lucide-react';
 import { Button } from '@/components/ui';
 import Image from 'next/image';
 import { gsap } from 'gsap';
@@ -20,6 +20,7 @@ interface PreviewPanelProps {
     isLoading?: boolean;
     refreshKey?: number;
     availablePages?: string[];
+    repoUrl?: string;
 }
 
 export function PreviewPanel({
@@ -32,7 +33,8 @@ export function PreviewPanel({
     isDeploying = false,
     isLoading = false,
     refreshKey = 0,
-    availablePages = []
+    availablePages = [],
+    repoUrl
 }: PreviewPanelProps) {
     const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
     const [iframeKey, setIframeKey] = useState(0);
@@ -41,11 +43,50 @@ export function PreviewPanel({
     const [currentPage, setCurrentPage] = useState('/');
     const [showPageSelector, setShowPageSelector] = useState(false);
     const [buildError, setBuildError] = useState<string | null>(null);
+    const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+    const [showGithubDropdown, setShowGithubDropdown] = useState(false);
 
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    const iframeContainerRef = useRef<HTMLDivElement>(null);
     const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const prevRefreshKey = useRef(refreshKey);
     const MAX_RETRIES = 3;
+
+    // Desktop iframe target resolution
+    const DESKTOP_WIDTH = 1920;
+    const DESKTOP_HEIGHT = 1080;
+
+    // Mobile iframe target resolution
+    const MOBILE_WIDTH = 390;
+    const MOBILE_HEIGHT = 844;
+
+    // Track container size for scaling
+    useEffect(() => {
+        const container = iframeContainerRef.current;
+        if (!container) return;
+
+        const updateSize = () => {
+            const rect = container.getBoundingClientRect();
+            setContainerSize({ width: rect.width, height: rect.height });
+        };
+
+        updateSize();
+
+        const resizeObserver = new ResizeObserver(updateSize);
+        resizeObserver.observe(container);
+
+        return () => resizeObserver.disconnect();
+    }, []);
+
+    // Calculate scale factor for desktop mode
+    const desktopScale = containerSize.width > 0 && containerSize.height > 0
+        ? Math.min(containerSize.width / DESKTOP_WIDTH, containerSize.height / DESKTOP_HEIGHT)
+        : 1;
+
+    // Calculate scale factor for mobile mode
+    const mobileScale = containerSize.width > 0 && containerSize.height > 0
+        ? Math.min(containerSize.width / MOBILE_WIDTH, containerSize.height / MOBILE_HEIGHT)
+        : 1;
 
     // Listen for build errors from iframe
     useEffect(() => {
@@ -169,22 +210,18 @@ export function PreviewPanel({
         }
     }, [previewUrl]);
 
-    // Handle refreshKey changes - DON'T reload iframe, HMR handles updates automatically
+    // Handle refreshKey changes - Force reload iframe to show updated content
+    // Since AI commits to remote repo and orchestrator needs to pull/rebuild, HMR won't work
     useEffect(() => {
         if (refreshKey !== prevRefreshKey.current && refreshKey > 0) {
             prevRefreshKey.current = refreshKey;
-            // With direct file writes, Next.js HMR picks up changes automatically
-            // No need to reload the iframe - just log for debugging
-            console.log('[Preview] Changes detected, HMR should handle update automatically');
-            // If we're in error state, try reloading
-            if (loadState === 'error') {
-                console.log('[Preview] Was in error state, attempting reload...');
-                setLoadState('loading');
-                setRetryCount(0);
-                setIframeKey(prev => prev + 1);
-            }
+            // Force a full iframe reload to get the latest changes from orchestrator
+            console.log('[Preview] Changes detected, forcing iframe reload to get latest content');
+            setLoadState('loading');
+            setRetryCount(0);
+            setIframeKey(prev => prev + 1);
         }
-    }, [refreshKey, loadState]);
+    }, [refreshKey]);
 
     // Set loading timeout
     useEffect(() => {
@@ -336,7 +373,31 @@ export function PreviewPanel({
         setIframeKey(prev => prev + 1);
     };
 
+    const handleDownloadZip = () => {
+        if (!repoUrl) return;
+        // Convert GitHub repo URL to zip download URL
+        // https://github.com/user/repo -> https://github.com/user/repo/archive/refs/heads/main.zip
+        const zipUrl = `${repoUrl}/archive/refs/heads/main.zip`;
+        window.open(zipUrl, '_blank');
+        setShowGithubDropdown(false);
+    };
+
     const logoRef = useRef<HTMLDivElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setShowGithubDropdown(false);
+            }
+        };
+
+        if (showGithubDropdown) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [showGithubDropdown]);
 
     // Logo animation for loading state
     useEffect(() => {
@@ -365,7 +426,7 @@ export function PreviewPanel({
     return (
         <div className={cn('flex flex-col h-full', className)}>
             {/* Toolbar - Floating Transparent Glass */}
-            <div className="flex items-center justify-between px-4 py-3 backdrop-blur-xl bg-white/30 border border-white/20 rounded-2xl mx-6 mt-6 mb-4 shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] active:scale-[0.99] transition-all duration-300">
+            <div className="relative z-[9999] flex items-center justify-between px-4 py-3 backdrop-blur-xl bg-white/30 border border-white/20 rounded-2xl mx-6 mt-6 mb-4 shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] active:scale-[0.99] transition-all duration-300">
                 {/* Left - Exit Preview */}
                 <div className="flex items-center">
                     {onExitPreview && (
@@ -393,7 +454,7 @@ export function PreviewPanel({
                             </button>
 
                             {showPageSelector && (
-                                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-[9999] w-64 max-h-96 overflow-y-auto bg-white/90 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl p-2">
+                                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-[10000] w-64 max-h-96 overflow-y-auto bg-white/90 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl p-2">
                                     <div className="text-xs font-semibold text-gray-500 px-2 py-1 mb-1">
                                         Available Pages
                                     </div>
@@ -480,8 +541,72 @@ export function PreviewPanel({
                     </div>
                 </div>
 
-                {/* Right - Deploy */}
-                <div className="flex items-center">
+                {/* Right - GitHub & Deploy */}
+                <div className="flex items-center gap-2">
+                    {/* GitHub Dropdown */}
+                    {repoUrl && (
+                        <div className="relative" ref={dropdownRef}>
+                            <button
+                                onClick={() => setShowGithubDropdown(!showGithubDropdown)}
+                                className="p-2 rounded-lg text-gray-700 bg-white/40 border border-white/20 hover:bg-white/60 transition-all shadow-sm"
+                                title="GitHub Repository"
+                            >
+                                <Github className="w-4 h-4" />
+                            </button>
+
+                            {/* Dropdown Menu with Animation */}
+                            {showGithubDropdown && (
+                                <div
+                                    className="absolute right-0 top-full mt-2 w-56 bg-white/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl overflow-hidden z-[10000] animate-in fade-in slide-in-from-top-2 duration-200"
+                                    style={{
+                                        animation: 'slideDown 0.2s ease-out'
+                                    }}
+                                >
+                                    <style jsx>{`
+                                        @keyframes slideDown {
+                                            from {
+                                                opacity: 0;
+                                                transform: translateY(-8px);
+                                            }
+                                            to {
+                                                opacity: 1;
+                                                transform: translateY(0);
+                                            }
+                                        }
+                                    `}</style>
+
+                                    <div className="p-2">
+                                        {/* View Repo */}
+                                        <a
+                                            href={repoUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors group"
+                                            onClick={() => setShowGithubDropdown(false)}
+                                        >
+                                            <Github className="w-4 h-4 text-gray-600 group-hover:text-gray-900" />
+                                            <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
+                                                View Repository
+                                            </span>
+                                        </a>
+
+                                        {/* Download ZIP */}
+                                        <button
+                                            onClick={handleDownloadZip}
+                                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors group"
+                                        >
+                                            <Download className="w-4 h-4 text-gray-600 group-hover:text-gray-900" />
+                                            <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
+                                                Download ZIP
+                                            </span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Deploy Button */}
                     {onDeploy && (
                         <Button
                             variant="primary"
@@ -501,14 +626,14 @@ export function PreviewPanel({
             </div>
 
             {/* Preview Content */}
-            <div className="flex-1 flex items-start justify-center px-6 pb-6 overflow-hidden relative">
+            <div className="flex-1 flex items-center justify-center overflow-hidden relative">
                 <div
+                    ref={iframeContainerRef}
                     className={cn(
-                        'rounded-[2rem] overflow-hidden transition-all duration-500 ease-out ring-1 ring-black/5',
+                        'overflow-hidden transition-all duration-500 ease-out w-full h-full',
                         (isLoading || loadState === 'loading' || loadState === 'error')
-                            ? 'bg-transparent shadow-none border-0 ring-0'
-                            : 'bg-white shadow-2xl border-0',
-                        deviceMode === 'desktop' ? 'w-full h-full' : 'w-[390px] h-[844px] max-h-full my-auto rounded-[3rem] border-0'
+                            ? 'bg-transparent'
+                            : ''
                     )}
                 >
                     {/* Loading overlay - Transparent to show SVG background */}
@@ -551,17 +676,88 @@ export function PreviewPanel({
                     )}
 
                     {previewUrl ? (
-                        <iframe
-                            ref={iframeRef}
-                            key={iframeKey}
-                            src={getFullPreviewUrl()}
-                            className="w-full h-full border-0"
-                            title="Preview"
-                            onLoad={handleIframeLoad}
-                            onError={handleIframeError}
-                        />
+                        <div className="relative w-full h-full flex items-center justify-center">
+                            {/* Desktop View */}
+                            <div
+                                className="absolute inset-0 flex items-center justify-center p-4"
+                                style={{
+                                    opacity: deviceMode === 'desktop' ? 1 : 0,
+                                    transform: deviceMode === 'desktop' ? 'scale(1)' : 'scale(0.98)',
+                                    pointerEvents: deviceMode === 'desktop' ? 'auto' : 'none',
+                                    overflow: 'hidden',
+                                    transition: 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    willChange: 'opacity, transform',
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        borderRadius: '16px',
+                                        overflow: 'hidden',
+                                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.15)',
+                                    }}
+                                >
+                                    <iframe
+                                        ref={deviceMode === 'desktop' ? iframeRef : undefined}
+                                        key={`desktop-${iframeKey}`}
+                                        src={getFullPreviewUrl()}
+                                        style={{
+                                            width: '111.11%',
+                                            height: '111.11%',
+                                            transform: 'scale(0.9)',
+                                            transformOrigin: 'top left',
+                                            border: 'none',
+                                        }}
+                                        title="Preview Desktop"
+                                        onLoad={deviceMode === 'desktop' ? handleIframeLoad : undefined}
+                                        onError={deviceMode === 'desktop' ? handleIframeError : undefined}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Mobile View */}
+                            <div
+                                className="absolute inset-0 flex items-center justify-center"
+                                style={{
+                                    opacity: deviceMode === 'mobile' ? 1 : 0,
+                                    transform: deviceMode === 'mobile' ? 'scale(1)' : 'scale(0.98)',
+                                    pointerEvents: deviceMode === 'mobile' ? 'auto' : 'none',
+                                    transition: 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    willChange: 'opacity, transform',
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        width: `${MOBILE_WIDTH * mobileScale}px`,
+                                        height: `${MOBILE_HEIGHT * mobileScale}px`,
+                                        borderRadius: `${40 * mobileScale}px`,
+                                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)',
+                                        overflow: 'hidden',
+                                        position: 'relative',
+                                    }}
+                                >
+                                    <iframe
+                                        ref={deviceMode === 'mobile' ? iframeRef : undefined}
+                                        key={`mobile-${iframeKey}`}
+                                        src={getFullPreviewUrl()}
+                                        style={{
+                                            width: `${MOBILE_WIDTH}px`,
+                                            height: `${MOBILE_HEIGHT}px`,
+                                            transform: `scale(${mobileScale})`,
+                                            transformOrigin: 'top left',
+                                            border: 'none',
+                                            borderRadius: '40px',
+                                        }}
+                                        title="Preview Mobile"
+                                        onLoad={deviceMode === 'mobile' ? handleIframeLoad : undefined}
+                                        onError={deviceMode === 'mobile' ? handleIframeError : undefined}
+                                    />
+                                </div>
+                            </div>
+                        </div>
                     ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-gray-500 bg-white">
+                        <div className="flex flex-col items-center justify-center h-full text-gray-500">
                             <Monitor className="w-16 h-16 mb-4 opacity-20" />
                             <p className="text-sm font-medium text-gray-700">Preview not available</p>
                             <p className="text-xs mt-1 text-gray-500">Send a message to start preview</p>
