@@ -44,17 +44,41 @@ export function PreviewPanel({
     const [showPageSelector, setShowPageSelector] = useState(false);
     const [buildError, setBuildError] = useState<string | null>(null);
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+    const [isServerReady, setIsServerReady] = useState(false);
+    const [serverCheckCount, setServerCheckCount] = useState(0);
     const [showGithubDropdown, setShowGithubDropdown] = useState(false);
 
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const iframeContainerRef = useRef<HTMLDivElement>(null);
     const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const prevRefreshKey = useRef(refreshKey);
+    const healthCheckRef = useRef<NodeJS.Timeout | null>(null);
     const MAX_RETRIES = 3;
 
     // Desktop iframe target resolution
     const DESKTOP_WIDTH = 1920;
     const DESKTOP_HEIGHT = 1080;
+
+    // Suppress WebSocket errors in the iframe console (HMR connection errors)
+    useEffect(() => {
+        const originalError = console.error;
+        console.error = (...args) => {
+            // Filter out WebSocket HMR errors
+            const message = args[0]?.toString() || '';
+            if (
+                message.includes('WebSocket connection') ||
+                message.includes('Invalid frame header') ||
+                message.includes('_next/webpack-hmr')
+            ) {
+                return; // Suppress these errors
+            }
+            originalError.apply(console, args);
+        };
+
+        return () => {
+            console.error = originalError;
+        };
+    }, []);
 
     // Mobile iframe target resolution
     const MOBILE_WIDTH = 390;
@@ -202,24 +226,80 @@ export function PreviewPanel({
         return `${baseUrl}${currentPage}?_v=${iframeKey}&_t=${Date.now()}`;
     }, [previewUrl, currentPage, iframeKey]);
 
+    // Health check polling - ping preview URL until it responds with 200
+    useEffect(() => {
+        if (!previewUrl) {
+            setIsServerReady(false);
+            return;
+        }
+
+        // Clear any existing health check
+        if (healthCheckRef.current) {
+            clearInterval(healthCheckRef.current);
+        }
+
+        const checkServerHealth = async () => {
+            try {
+                const response = await fetch(previewUrl, {
+                    method: 'HEAD',
+                    mode: 'no-cors', // Allow cross-origin without CORS headers
+                    cache: 'no-store',
+                });
+                // In no-cors mode, we can't check status, but successful fetch means server responded
+                // For more accurate check, we'll try a regular fetch and check for common error patterns
+                const fullResponse = await fetch(`${previewUrl}?_health=${Date.now()}`, {
+                    cache: 'no-store',
+                }).catch(() => null);
+
+                if (fullResponse && fullResponse.ok) {
+                    console.log('[Preview] Server health check passed!');
+                    setIsServerReady(true);
+                    setServerCheckCount(0);
+                    if (healthCheckRef.current) {
+                        clearInterval(healthCheckRef.current);
+                    }
+                } else {
+                    setServerCheckCount(prev => prev + 1);
+                    console.log(`[Preview] Server not ready yet (attempt ${serverCheckCount + 1})`);
+                }
+            } catch (error) {
+                setServerCheckCount(prev => prev + 1);
+                console.log(`[Preview] Server check failed (attempt ${serverCheckCount + 1}):`, error);
+            }
+        };
+
+        // Initial check
+        setIsServerReady(false);
+        setServerCheckCount(0);
+        checkServerHealth();
+
+        // Poll every 2 seconds until ready
+        healthCheckRef.current = setInterval(checkServerHealth, 2000);
+
+        return () => {
+            if (healthCheckRef.current) {
+                clearInterval(healthCheckRef.current);
+            }
+        };
+    }, [previewUrl]);
+
     // Reset load state when URL changes
     useEffect(() => {
         if (previewUrl) {
+            console.log('[Preview] Preview URL set, entering loading state:', previewUrl);
             setLoadState('loading');
             setRetryCount(0);
+            setBuildError(null); // Clear previous build errors
         }
     }, [previewUrl]);
 
-    // Handle refreshKey changes - Force reload iframe to show updated content
-    // Since AI commits to remote repo and orchestrator needs to pull/rebuild, HMR won't work
+    // Handle refreshKey changes - HMR handles updates automatically now
+    // The preview server stays running with health check, so HMR will push updates instantly
     useEffect(() => {
         if (refreshKey !== prevRefreshKey.current && refreshKey > 0) {
             prevRefreshKey.current = refreshKey;
-            // Force a full iframe reload to get the latest changes from orchestrator
-            console.log('[Preview] Changes detected, forcing iframe reload to get latest content');
-            setLoadState('loading');
-            setRetryCount(0);
-            setIframeKey(prev => prev + 1);
+            console.log('[Preview] Changes detected - HMR will update automatically (no reload needed)');
+            // No forced reload - the dev server's HMR will push updates to the iframe
         }
     }, [refreshKey]);
 
@@ -231,11 +311,11 @@ export function PreviewPanel({
                 clearTimeout(loadTimeoutRef.current);
             }
 
-            // Set new timeout - 30 seconds for initial load
+            // Set new timeout - 45 seconds for initial load (preview server may need startup time)
             loadTimeoutRef.current = setTimeout(() => {
                 console.log('[Preview] Load timeout reached, retrying...');
                 handleRetry();
-            }, 30000);
+            }, 45000);
         }
 
         return () => {
@@ -252,6 +332,34 @@ export function PreviewPanel({
         }
         setLoadState('loaded');
         setRetryCount(0);
+
+        // Suppress WebSocket HMR errors inside the iframe (only works for same-origin)
+        // Note: This will fail silently for cross-origin iframes due to CORS
+        try {
+            const iframe = iframeRef.current;
+            if (iframe?.contentWindow) {
+                const iframeWindow = iframe.contentWindow as any;
+                const originalError = iframeWindow.console?.error;
+                if (originalError) {
+                    iframeWindow.console.error = (...args: any[]) => {
+                        const message = args[0]?.toString() || '';
+                        // Filter out WebSocket and HMR errors
+                        if (
+                            message.includes('WebSocket connection') ||
+                            message.includes('Invalid frame header') ||
+                            message.includes('_next/webpack-hmr') ||
+                            message.includes('[HMR]')
+                        ) {
+                            return; // Suppress these errors
+                        }
+                        originalError.apply(iframeWindow.console, args);
+                    };
+                }
+            }
+        } catch (e) {
+            // Silently fail - CORS prevents accessing cross-origin iframe console
+            // This is expected and not an error
+        }
 
         // Try to detect build errors from iframe content
         try {
@@ -636,9 +744,9 @@ export function PreviewPanel({
                             : ''
                     )}
                 >
-                    {/* Loading overlay - Transparent to show SVG background */}
-                    {(isLoading || loadState === 'loading') && previewUrl && (
-                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center">
+                    {/* Loading overlay - Show while waiting for AI OR while server is starting up */}
+                    {(isLoading || (previewUrl && (!isServerReady || loadState === 'loading'))) && (
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-transparent">
                             <div ref={logoRef} className="mb-6">
                                 <Image
                                     src="/automatelogo.png"
@@ -648,35 +756,65 @@ export function PreviewPanel({
                                     className="drop-shadow-2xl object-contain"
                                 />
                             </div>
-                            <p className="text-gray-900 text-sm font-medium drop-shadow-sm">Loading preview...</p>
-                            {retryCount > 0 && (
+                            <p className="text-gray-900 text-sm font-medium drop-shadow-sm">
+                                {!previewUrl ? 'Waiting for AI...' : (!isServerReady ? 'Building your site...' : 'Loading preview...')}
+                            </p>
+                            {!previewUrl && (
+                                <p className="text-gray-600 text-xs mt-2 drop-shadow-sm">
+                                    AI is creating your content
+                                </p>
+                            )}
+                            {previewUrl && !isServerReady && (
+                                <p className="text-gray-600 text-xs mt-2 drop-shadow-sm">
+                                    Starting preview server...
+                                </p>
+                            )}
+                            {previewUrl && isServerReady && retryCount > 0 && (
                                 <p className="text-gray-700 text-xs mt-2 drop-shadow-sm">
                                     Retry {retryCount}/{MAX_RETRIES}
                                 </p>
                             )}
+                            {/* Progress bar - only show when building */}
+                            {previewUrl && !isServerReady && (
+                                <div className="mt-4 w-48 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full animate-pulse"
+                                        style={{
+                                            width: `${Math.min((serverCheckCount / 15) * 100, 95)}%`,
+                                            transition: 'width 0.5s ease-out'
+                                        }}
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
 
-                    {/* Error state */}
+                    {/* Error state - Only show on error */}
                     {loadState === 'error' && previewUrl && (
-                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center">
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/95 backdrop-blur-sm">
                             <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
-                            <p className="text-gray-900 font-semibold mb-2">Preview failed to load</p>
-                            <p className="text-gray-600 text-sm mb-6 text-center px-8">
-                                The preview server might still be starting up. Please try again.
+                            <p className="text-gray-900 font-semibold mb-2">Preview Server Not Ready</p>
+                            <p className="text-gray-600 text-sm mb-2 text-center px-8 max-w-md">
+                                The preview server is still starting up or stopped.
+                            </p>
+                            <p className="text-gray-500 text-xs mb-6 text-center px-8 max-w-md">
+                                Send a message to the AI to trigger changes, or manually refresh after a few seconds.
                             </p>
                             <button
                                 onClick={handleManualRefresh}
                                 className="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 shadow-md"
                             >
                                 <RefreshCw className="w-4 h-4" />
-                                Retry
+                                Retry Preview
                             </button>
                         </div>
                     )}
 
                     {previewUrl ? (
-                        <div className="relative w-full h-full flex items-center justify-center">
+                        <div className={cn(
+                            "relative w-full h-full flex items-center justify-center",
+                            (!isServerReady || loadState === 'loading' || loadState === 'error') && "invisible"
+                        )}>
                             {/* Desktop View */}
                             <div
                                 className="absolute inset-0 flex items-center justify-center p-4"

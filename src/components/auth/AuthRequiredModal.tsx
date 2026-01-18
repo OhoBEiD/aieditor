@@ -59,14 +59,14 @@ export function AuthRequiredModal({ isOpen, onClose, message }: AuthRequiredModa
                     <div className="flex gap-3">
                         <Link
                             href="/login"
-                            className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-medium rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-purple-500/20"
                         >
                             <LogIn className="w-4 h-4" />
                             Sign In
                         </Link>
                         <Link
                             href="/signup"
-                            className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-purple-100 hover:bg-purple-200 text-purple-700 font-medium rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
                         >
                             <UserPlus className="w-4 h-4" />
                             Sign Up

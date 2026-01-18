@@ -1,0 +1,877 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agent/edit-ui",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "590e9765-069a-42b1-a714-8e70aa0e1ca8",
+      "name": "Webhook Edit UI",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        4848,
+        9088
+      ],
+      "webhookId": "edit-ui"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $input.first().json.body || $input.first().json;\n\nif (!b.siteId) throw new Error('Missing required field: siteId');\nif (!b.message) throw new Error('Missing required field: message');\n\nconst msg = b.message.toLowerCase().trim();\nconst actionWords = /\\b(implement|create|add|build|make|fix|update|change|edit|delete|remove|install|modify|replace|refactor|style|redesign|adjust|set|configure|enable|disable|write|code)\\b/;\nconst questionWords = /^(what|why|how|can you|could you|should|is it|explain|describe|tell me)/;\nconst isQuestion = questionWords.test(msg);\nconst isActionIntent = actionWords.test(msg) && !isQuestion;\n\nreturn [{\n  json: {\n    siteId: b.siteId,\n    conversationId: b.conversationId || null,\n    userId: b.userId || 'anon',\n    message: b.message.trim(),\n    requestId: 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),\n    image: b.image || null,\n    images: b.images || (b.image ? [b.image] : []),\n    executorMode: b.executorMode || 'auto', // User-selected mode: auto, fast, thinking\n    isActionIntent,\n    isQuestion\n  }\n}];"
+      },
+      "id": "a3018f03-67b1-4895-aafa-fb427f6bd1b5",
+      "name": "Validate & Detect Intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5040,
+        9088
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/rpc/get_site_with_token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "p_site_key",
+              "value": "={{$json.siteId}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "3a31a0c8-510b-48bb-ba67-14bada0d97c4",
+      "name": "Load Site",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5248,
+        9088
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inp = $('Validate & Detect Intent').item.json;\nconst rawSite = $input.first().json;\n\nlet site = Array.isArray(rawSite) ? rawSite[0] : (rawSite?.id ? rawSite : rawSite?.data?.[0]);\nif (!site?.id) throw new Error('Site not found for siteId: ' + inp.siteId);\n\nconst SYSTEM_GITHUB_TOKEN = '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';\nlet githubToken = (site.access_token && site.access_token.trim()) || SYSTEM_GITHUB_TOKEN;\n\nconst siteKey = site.site_key || inp.siteId;\nconst repoMatch = (site.repo_url || '').match(/github\\.com\\/([^/]+)\\/([^/]+)/);\nif (!repoMatch) throw new Error('Invalid GitHub repo URL');\n\nconst owner = repoMatch[1];\nconst repo = repoMatch[2].replace(/\\.git$/, '');\nconst branch = site.default_branch || 'main';\nconst msg = inp.message.toLowerCase();\n\n// STRICT ROUTING LOGIC\n// 1. Creation/Design tasks -> COMPLEX\nconst isCreation = /\\b(create|add|new|design|generate|build|make a page)\\b/i.test(msg);\nif (isCreation) console.log('Detected CREATION/DESIGN task -> Force COMPLEX');\n\n// 2. Simple Modification -> SIMPLE (only if NOT creation)\n// \"change X to Y\", \"fix typo\", \"update text\"\nconst isStrictlySimple = !isCreation && /^(change|update|replace|set|fix)\\s+(?!the\\s+layout).{5,50}\\s+(to|with|into)\\s+/i.test(inp.message);\nconst isSimple = !isCreation && (isStrictlySimple || /^(change|update|fix)\\s+(the\\s+)?(title|name|text|color|heading)/i.test(inp.message));\n\n// 3. AGGRESSIVE TOKEN SAVING\nconst maxFiles = isStrictlySimple ? 1 : (isSimple ? 2 : 4);\nconsole.log('Request type:', isSimple ? 'SIMPLE' : 'COMPLEX', '- fetching', maxFiles, 'files');\n\n// Fetch repo tree\nlet allFiles = [];\ntry {\n  const tree = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://api.github.com/repos/' + owner + '/' + repo + '/git/trees/' + branch + '?recursive=1',\n    headers: { 'Authorization': 'Bearer ' + githubToken },\n    timeout: 10000\n  });\n  allFiles = (tree.tree || []).filter(f => f.type === 'blob' && /\\.(tsx?|jsx?)$/.test(f.path) && !f.path.includes('node_modules') && f.size < 30000);\n} catch (e) {}\n\n// Score files by relevance\nconst scored = allFiles.map(f => {\n  let score = 0;\n  const p = f.path.toLowerCase();\n  if (p.includes('page.tsx')) score += 10;\n  // LOWER layout score unless heavily implied\n  if (p.includes('layout')) score += 1;\n  if (msg.includes('layout') || msg.includes('title') || msg.includes('metadata')) score += 10; // Boost if relevant\n  \n  if (p.includes('header')) score += 4;\n  if (p.includes('footer')) score += 3;\n  if (p.includes('src/app/')) score += 2;\n  // Boost files matching message words\n  for (const w of msg.split(/\\s+/).filter(w => w.length > 3)) {\n    if (p.includes(w)) score += 20;\n  }\n  return { path: f.path, score };\n}).sort((a, b) => b.score - a.score);\n\nconst filesToFetch = scored.slice(0, maxFiles).map(f => f.path);\n\nreturn [{\n  json: {\n    ...inp,\n    site: { id: siteKey, uuid: site.id, name: site.name || 'Unknown', repo_url: site.repo_url, branch },\n    owner, repo, branch,\n    previewUrl: 'https://' + siteKey + '.preview.automatelb.com',\n    filesToFetch,\n    isSimpleRequest: isSimple,\n    isComplex: !isSimple,\n    fileContents: {},\n    contextFiles: [],\n    executorMode: inp.executorMode || 'auto',\n    githubToken\n  }\n}];"
+      },
+      "id": "0885f370-49ce-47f3-898d-8b4fdd5e38f2",
+      "name": "Build Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5440,
+        9088
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fetch files with token-optimized content limits\nconst ctx = $('Build Context').item.json;\nconst files = ctx.filesToFetch || [];\nif (files.length === 0) return [{ json: { ...ctx, fileContents: {}, contextFiles: [] } }];\n\n// Dynamic content limit based on request type\nconst contentLimit = ctx.isSimpleRequest ? 1500 : 2500; // Was 5000\nconsole.log('Fetching', files.length, 'files, limit:', contentLimit, 'chars/file');\n\nconst results = await Promise.all(files.map(async (file) => {\n  try {\n    const response = await this.helpers.httpRequest({\n      method: 'GET',\n      url: 'https://api.github.com/repos/' + ctx.owner + '/' + ctx.repo + '/contents/' + file + '?ref=' + ctx.branch,\n      headers: { 'Authorization': 'Bearer ' + ctx.githubToken, 'Accept': 'application/vnd.github.v3.raw' },\n      timeout: 8000\n    });\n    return { path: file, content: typeof response === 'string' ? response : '', success: true };\n  } catch (e) {\n    return { path: file, success: false };\n  }\n}));\n\nconst fileContents = {};\nconst contextFiles = [];\nfor (const r of results.filter(r => r.success && r.content)) {\n  fileContents[r.path] = r.content.length > contentLimit ? r.content.substring(0, contentLimit) + '...' : r.content;\n  contextFiles.push(r.path);\n}\n\nreturn [{ json: { ...ctx, fileContents, contextFiles, _parallelFetch: true } }];"
+      },
+      "id": "22d272b4-1bce-47e3-8abf-2fd5a04322e3",
+      "name": "Prepare Fetch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5648,
+        9088
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/contents/{{ $json.currentFile }}?ref={{ $json.branch }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.githubToken }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "7b3ebd5b-9774-4461-bd40-8de029472c34",
+      "name": "Fetch Files",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5840,
+        9088
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge Files - now Prepare Fetch does parallel fetching directly\nconst items = $input.all();\nconst firstItem = items[0]?.json;\n\n// If Prepare Fetch already did parallel fetching, just pass through\nif (firstItem?._parallelFetch || firstItem?.fileContents) {\n  // Add loud warning about files in context\n  const filesInContext = Object.keys(firstItem.fileContents || {});\n  if (filesInContext.length > 0) {\n    firstItem._filesInContextWarning = '🔥 CRITICAL: These ' + filesInContext.length + ' files are ALREADY LOADED in your context. DO NOT call read_file for: ' + filesInContext.join(', ');\n  }\n  return [{ json: firstItem }];\n}\n\n// Fallback: Old flow where Fetch Files HTTP node was used\nconst prepItems = $('Prepare Fetch').all();\nconst ctx = prepItems[0]?.json?._ctx || prepItems[0]?.json || firstItem;\nif (!ctx) return [{ json: { error: 'Lost context', fileContents: {}, contextFiles: [] } }];\n\nconst fileContents = ctx.fileContents || {};\nconst contextFiles = ctx.contextFiles || [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i].json;\n  const path = prepItems[i]?.json?.currentFile || item.path;\n  if (!path || fileContents[path]) continue;\n  if (item.content) {\n    try {\n      const decoded = Buffer.from(item.content, 'base64').toString('utf8');\n      fileContents[path] = decoded.length > 3000 ? decoded.substring(0, 3000) + '\\n// ...truncated' : decoded;\n      contextFiles.push(path);\n    } catch (e) {}\n  }\n}\n\n// Add warning\nconst filesInContext = Object.keys(fileContents);\nif (filesInContext.length > 0) {\n  ctx._filesInContextWarning = '🔥 CRITICAL: These ' + filesInContext.length + ' files are ALREADY LOADED. DO NOT call read_file for: ' + filesInContext.join(', ');\n}\n\nreturn [{ json: { ...ctx, fileContents, contextFiles } }];"
+      },
+      "id": "63cf4179-cb2d-45ee-bc9c-cfa3129a9fd8",
+      "name": "Merge Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6048,
+        9088
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fetch recent memory for this project from Supabase\nconst ctx = $input.item.json;\nconst siteId = ctx.site?.uuid;\nconst requestId = ctx.requestId || 'unknown';\nconst conversationId = ctx.conversationId || null;\n\nif (!siteId) {\n  return [{ json: { ...ctx, memoryContext: 'First request.' } }];\n}\n\n// Insert initial thinking step\ntry {\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/thinking_steps',\n    headers: {\n      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Content-Type': 'application/json',\n      'Prefer': 'return=minimal'\n    },\n    body: JSON.stringify({\n      request_id: requestId,\n      site_id: siteId,\n      conversation_id: conversationId,\n      step_number: 1,\n      tool_name: 'analyze',\n      status: 'running',\n      message: 'Analyzing...',\n      details: { message: ctx.message }\n    }),\n    timeout: 5000\n  });\n} catch (e) {}\n\ntry {\n  let memoryUrl = 'https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/agent_memory?project_id=eq.' + siteId;\n  if (conversationId) {\n    memoryUrl += '&or=(session_id.eq.' + conversationId + ',session_id.is.null)';\n  }\n  memoryUrl += '&order=created_at.desc&limit=5';\n\n  const response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: memoryUrl,\n    headers: {\n      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4'\n    },\n    timeout: 10000\n  });\n\n  let memoryContext = 'First request.';\n  if (Array.isArray(response) && response.length > 0) {\n    // Ultra-compressed format: msg→[files]→result\n    memoryContext = response.reverse().map(function(e) {\n      const d = e.content_json || {};\n      const msg = (d.message || '').slice(0, 50);\n      const files = (d.filesModified || []).concat(d.filesCreated || []).map(f => f.split('/').pop()).join(',');\n      const result = (d.summary || 'ok').slice(0, 60);\n      return msg + '→[' + files + ']→' + result;\n    }).join('\\n');\n  }\n\n  return [{ json: { ...ctx, memoryContext: memoryContext } }];\n} catch (e) {\n  return [{ json: { ...ctx, memoryContext: 'First request.' } }];\n}"
+      },
+      "id": "d9c34cee-b87b-490d-8b47-7a38cb3e6a2c",
+      "name": "Fetch Memory",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6240,
+        9088
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// HTTP-BASED COMPLEX EXECUTOR V5 - TOKEN OPTIMIZED\nconst ctx = $input.item.json;\nconst ANTHROPIC_KEY = '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';\nconst MODEL = 'claude-sonnet-4-5-20250929';\n\nconst TOOLS = [\n    { name: 'write_file', description: 'Write complete file. Use for any change.', input_schema: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] }, cache_control: { type: 'ephemeral' } },\n    { name: 'str_replace', description: 'Single line swap only', input_schema: { type: 'object', properties: { file: { type: 'string' }, old_text: { type: 'string' }, new_text: { type: 'string' } }, required: ['file', 'old_text', 'new_text'] }, cache_control: { type: 'ephemeral' } },\n    { name: 'list_files', description: 'List dir', input_schema: { type: 'object', properties: { dir: { type: 'string' } }, required: ['dir'] }, cache_control: { type: 'ephemeral' } },\n    { name: 'read_file', description: 'Read file', input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] }, cache_control: { type: 'ephemeral' } }\n];\n\nconst SYSTEM = [{ type: 'text', text: 'You are a code editor. CRITICAL: The FILES section below contains all project code ALREADY LOADED. DO NOT ask for files or code samples - USE THE FILES BELOW. Just use write_file to make changes. Complete in 1-2 tool calls. Reply plain text, no markdown, be brief.', cache_control: { type: 'ephemeral' } }];\n\nlet consecutiveErrors = 0;\n\nconst executeTool = async (name, input) => {\n    const siteId = ctx.site?.id;\n    const githubToken = ctx.githubToken;\n    if (!siteId) return 'FATAL: No siteId';\n\n    if (name === 'str_replace') {\n        try {\n            const r = await this.helpers.httpRequest({ method: 'POST', url: 'https://preview-orchestrator.fly.dev/preview/replace', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteId, filePath: input.file, search: input.old_text, replace: input.new_text, githubToken }), timeout: 15000, json: true, ignoreHttpStatusErrors: true, returnFullResponse: true });\n            if (r.statusCode >= 400) { consecutiveErrors++; return 'ERROR: ' + JSON.stringify(r.body || r.statusCode); }\n            consecutiveErrors = 0;\n            return JSON.stringify({ success: true, file: input.file, action: 'replaced' });\n        } catch (e) { consecutiveErrors++; return 'ERROR: ' + e.message; }\n    }\n\n    if (name === 'write_file') {\n        try {\n            const r = await this.helpers.httpRequest({ method: 'POST', url: 'https://preview-orchestrator.fly.dev/preview/write', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteId, filePath: input.path, content: input.content, githubToken }), timeout: 20000, json: true, ignoreHttpStatusErrors: true, returnFullResponse: true });\n            if (r.statusCode >= 400) { consecutiveErrors++; return 'ERROR: ' + JSON.stringify(r.body || r.statusCode); }\n            consecutiveErrors = 0;\n            return JSON.stringify({ success: true, file: input.path, action: 'created' });\n        } catch (e) { consecutiveErrors++; return 'ERROR: ' + e.message; }\n    }\n\n    if (name === 'list_files') {\n        try {\n            const r = await this.helpers.httpRequest({ method: 'GET', url: 'https://api.github.com/repos/' + ctx.owner + '/' + ctx.repo + '/contents/' + (input.dir || 'src') + '?ref=' + ctx.branch, headers: { 'Authorization': 'Bearer ' + githubToken }, timeout: 10000, json: true });\n            return Array.isArray(r) ? r.map(f => f.path).join('\\n') : 'Error';\n        } catch (e) { return 'ERROR: ' + e.message; }\n    }\n\n    if (name === 'read_file') {\n        if (ctx.fileContents?.[input.path]) return ctx.fileContents[input.path].slice(0, 3000);\n        try {\n            const r = await this.helpers.httpRequest({ method: 'POST', url: 'https://preview-orchestrator.fly.dev/preview/read', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteId, filePath: input.path, githubToken }), timeout: 10000, json: true });\n            return (r.content || '').slice(0, 3000);\n        } catch (e) { return 'ERROR: ' + e.message; }\n    }\n\n    return 'Unknown tool';\n};\n\nconst callClaude = async (msgs) => {\n    return await this.helpers.httpRequest({ method: 'POST', url: 'https://api.anthropic.com/v1/messages', headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'prompt-caching-2024-07-31', 'content-type': 'application/json' }, body: JSON.stringify({ model: MODEL, max_tokens: 1536, system: SYSTEM, tools: TOOLS, messages: msgs }), timeout: 60000, json: true });\n};\n\nconst fileCtx = Object.entries(ctx.fileContents || {}).slice(0, 3).map(([f, c]) => f + ':\\n' + c.slice(0, 2000)).join('\\n---\\n');\nconst memCtx = ctx.memoryContext ? '\\nHISTORY:' + ctx.memoryContext : '';\nconst baseMsg = ctx.message + memCtx;\nconst fullMsg = baseMsg + (fileCtx ? '\\n\\nFILES:\\n' + fileCtx : '');\nconst messages = [{ role: 'user', content: fullMsg }];\n\nlet output = ''; let steps = []; let i = 0;\n\nwhile (i++ < 6) {\n    if (consecutiveErrors >= 2) { output = 'Stopped: errors.'; break; }\n    const r = await callClaude(messages);\n    if (r.error) { output = 'Error: ' + JSON.stringify(r.error); break; }\n    if (r.usage) console.log('Tokens:', r.usage.input_tokens, 'out:', r.usage.output_tokens, 'cached:', r.usage.cache_read_input_tokens || 0);\n    const tool = r.content?.find(c => c.type === 'tool_use');\n    if (!tool) { output = r.content?.find(c => c.type === 'text')?.text || 'Done'; break; }\n    const result = await executeTool(tool.name, tool.input);\n    steps.push({ tool: tool.name, input: tool.input, result: result.slice(0, 150) });\n    if (result.startsWith('FATAL:')) { output = result; break; }\n    messages.push({ role: 'assistant', content: r.content });\n    messages.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: tool.id, content: result }] });\n    if (messages[0].content.length > baseMsg.length) { messages[0].content = baseMsg + '\\n(files pruned)'; }\n}\n\nreturn [{ json: { ...ctx, output, intermediateSteps: steps, iterations: i } }];\n"
+      },
+      "id": "a7e03bbd-e28a-4bdd-bcf0-a80f6d74c72b",
+      "name": "Complex Executor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8096,
+        9664
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Save compressed memory entry to Supabase for future context\nconst ctx = $input.item.json;\nconst siteId = ctx.site?.uuid;\nconst conversationId = ctx.conversationId || null;\n\nif (!siteId) {\n  console.log('No site UUID found, skipping memory save');\n  return [{ json: ctx }];\n}\n\n// Create compressed summary (token-efficient format)\nconst files = [...(ctx.filesModified || []), ...(ctx.filesCreated || [])].slice(0, 3);\nconst fileStr = files.length > 0 ? ' [' + files.join(', ') + ']' : '';\n\n// Compress the summary to essential info only\nlet compressedSummary = '';\nconst fullSummary = ctx.plan?.humanSummary || '';\nif (fullSummary) {\n  // Extract first sentence or first 100 chars\n  const firstSentence = fullSummary.match(/^[^.!?]*[.!?]/);\n  compressedSummary = firstSentence ? firstSentence[0] : fullSummary.substring(0, 100);\n}\n\nconst memoryEntry = {\n  project_id: siteId,\n  session_id: conversationId,\n  memory_type: 'conversation',\n  content: (ctx.message || '').substring(0, 100) + ' → ' + compressedSummary.substring(0, 150) + fileStr,\n  content_json: {\n    message: (ctx.message || '').substring(0, 150),\n    summary: compressedSummary,\n    filesModified: (ctx.filesModified || []).slice(0, 5),\n    filesCreated: (ctx.filesCreated || []).slice(0, 5),\n    filesDeleted: (ctx.filesDeleted || []).slice(0, 5),\n    toolsUsed: [...new Set(ctx.toolsUsed || [])].slice(0, 5),\n    iterations: ctx.iterations || 0,\n    requestId: ctx.requestId || null,\n    wasSimple: ctx.isComplex === false\n  }\n};\n\ntry {\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/agent_memory',\n    headers: {\n      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Content-Type': 'application/json',\n      'Prefer': 'return=minimal'\n    },\n    body: JSON.stringify(memoryEntry),\n    timeout: 10000\n  });\n  console.log('Memory saved (compressed) for session ' + conversationId);\n} catch (e) {\n  console.error('Memory save failed:', e.message);\n}\n\nreturn [{ json: ctx }];"
+      },
+      "id": "d1afb47c-3513-430b-8001-667a2a6971fe",
+      "name": "Save Memory",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9136,
+        9184
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Save successful plan to request_cache for next time\nconst ctx = $input.item.json;\nconst siteId = ctx.site?.uuid;\nconst requestHash = ctx.requestHash;\nconst cacheHit = ctx.cacheHit;\n\n// Skip if no hash, cache hit, or is a direct response\nif (!siteId || !requestHash || cacheHit || ctx.isDirectResponse) {\n  return [{ json: ctx }];\n}\n\nconst planToCache = ctx.executionPlan || { tasks: [] };\nconst filesModified = [...(ctx.filesModified || []), ...(ctx.filesCreated || [])].slice(0, 10);\n\ntry {\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/request_cache',\n    headers: {\n      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Content-Type': 'application/json',\n      'Prefer': 'return=minimal'\n    },\n    body: JSON.stringify({\n      site_id: siteId,\n      request_hash: requestHash,\n      original_message: (ctx.message || '').slice(0, 200),\n      plan_json: planToCache,\n      files_modified: filesModified\n    }),\n    timeout: 5000\n  });\n  console.log('Cached plan for hash:', requestHash);\n} catch (e) {\n  console.log('Cache save failed:', e.message);\n}\n\nreturn [{ json: ctx }];"
+      },
+      "id": "789072fe-7a70-42af-ab00-78ae9e5e33bd",
+      "name": "Save Plan Cache",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9248,
+        9184
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Fetch Memory').item.json;\n\nlet raw;\ntry { raw = $('Simple Executor')?.item?.json; } catch (e) {}\nif (!raw?.output) { try { raw = $('Complex Executor')?.item?.json; } catch (e) {} }\nif (!raw) raw = $input.item.json;\n\nconst output = (raw?.output || '');\nconst steps = raw?.intermediateSteps || [];\n\nconst filesModified = new Set();\nconst filesCreated = new Set();\nconst filesDeleted = new Set();\nconst toolCalls = [];\n\nfor (const step of steps) {\n  // FIX: Handle both langchain format (action.tool) and HTTP format (tool)\n  if (step.action?.tool) toolCalls.push(step.action.tool);\n  if (step.tool) toolCalls.push(step.tool);\n  \n  // FIX: Check both observation (langchain) AND result (HTTP executors)\n  const obs = step.observation || step.result;\n  let result = null;\n\n  try {\n    if (typeof obs === 'object' && obs !== null) {\n       result = obs;\n    } else if (typeof obs === 'string') {\n       const jsonMatch = obs.match(/\\{.*\\}/s);\n       if (jsonMatch) {\n         result = JSON.parse(jsonMatch[0]);\n       } else {\n         result = JSON.parse(obs);\n       }\n    }\n  } catch (e) {}\n\n  if (result && result.success) {\n    const file = result.file || result.to;\n    if (file) {\n      if (result.action === 'created') filesCreated.add(file);\n      else if (result.action === 'updated' || result.action === 'replaced') filesModified.add(file);\n    }\n    if (result.deleted) filesDeleted.add(result.deleted);\n  }\n}\n\nconst warnings = [];\nif (!ctx.isDirectResponse && filesModified.size === 0 && filesCreated.size === 0 && filesDeleted.size === 0 && steps.length > 2) {\n  warnings.push('No files were modified');\n}\n\nconst requestId = ctx.requestId || 'unknown';\nconst siteId = ctx.site?.id || 'unknown';\n\ntry {\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/thinking_steps',\n    headers: {\n      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Content-Type': 'application/json',\n      'Prefer': 'return=minimal'\n    },\n    body: JSON.stringify({\n      request_id: requestId,\n      site_id: siteId,\n      step_number: 999999,\n      tool_name: 'complete',\n      status: 'complete',\n      message: output || 'Request completed',\n      details: { filesModified: [...filesModified], filesCreated: [...filesCreated], filesDeleted: [...filesDeleted] }\n    }),\n    timeout: 5000\n  });\n} catch (e) {}\n\nreturn [{\n  json: {\n    ...ctx,\n    plan: { humanSummary: output, warnings },\n    filesModified: [...filesModified],\n    filesCreated: [...filesCreated],\n    filesDeleted: [...filesDeleted],\n    iterations: steps.length,\n    toolsUsed: [...new Set(toolCalls)]\n  }\n}];"
+      },
+      "id": "df7ae656-a3db-4c02-a922-d251df656a49",
+      "name": "Parse Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8944,
+        9184
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Push changes to GitHub\nconst ctx = $input.item.json;\nconst result = $('Parse Results')?.item?.json || {};\nconst siteId = ctx.site?.id || ctx.site?.uuid;\nconst githubToken = ctx.githubToken;\n\nif (!siteId) {\n  ctx.pushError = 'No siteId found';\n  return [{ json: ctx }];\n}\n\n// Check if we actually have changes to push\nconst hasChanges = (result.filesModified?.length > 0 || result.filesCreated?.length > 0 || result.filesDeleted?.length > 0);\n\nif (!hasChanges) {\n  ctx.pushSkipped = 'No files changed';\n  return [{ json: ctx }];\n}\n\nconsole.log(`🚀 Pushing changes for ${siteId}...`);\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://preview-orchestrator.fly.dev/preview/push',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ \n      siteId, \n      githubToken,\n      message: result.plan?.humanSummary || 'AI Automated Update'\n    }),\n    timeout: 60000,\n    json: true,\n    ignoreHttpStatusErrors: true,\n    returnFullResponse: true\n  });\n\n  const body = response.body;\n  ctx.pushStatusCode = response.statusCode;\n  ctx.pushResult = body;\n\n  if (response.statusCode >= 400) {\n    ctx.pushError = 'HTTP ' + response.statusCode + ': ' + JSON.stringify(body);\n    console.error(`❌ Git push failed:`, ctx.pushError);\n  } else {\n    console.log(`✅ Git push success:`, JSON.stringify(body));\n  }\n} catch (e) {\n  ctx.pushError = e.message;\n  console.error(`❌ Git push exception:`, e.message);\n}\n\nreturn [{ json: ctx }];"
+      },
+      "id": "50b89b6e-c3fc-4b7f-a276-c413207174d8",
+      "name": "Git Push",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9344,
+        9184
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if preview server is running, start only if needed\nconst ctx = $input.item.json;\nconst siteId = ctx.site?.id;\nconst githubToken = ctx.githubToken;\nconst repoUrl = ctx.site?.repo_url;\n\nif (!siteId) {\n  console.log('⚠️ No siteId found, skipping preview check');\n  return [{ json: ctx }];\n}\n\nconsole.log(`🔍 Checking if preview server is running for ${siteId}...`);\n\n// First, check if server is already running (health check)\ntry {\n  const healthCheck = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://preview-orchestrator.fly.dev/preview/status/' + siteId,\n    headers: { 'Content-Type': 'application/json' },\n    timeout: 3000,\n    json: true,\n    ignoreHttpStatusErrors: true\n  });\n  \n  if (healthCheck && healthCheck.status === 'running') {\n    console.log(`✅ Preview server already running for ${siteId}, skipping start`);\n    return [{ json: ctx }];\n  }\n} catch (e) {\n  console.log(`⚠️ Health check failed, will try to start: ${e.message}`);\n}\n\n// Server not running or health check failed - start it\nconsole.log(`🚀 Starting preview server for ${siteId}...`);\ntry {\n  const result = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://preview-orchestrator.fly.dev/preview/start',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ \n      siteId,\n      repoUrl,\n      gitToken: githubToken\n    }),\n    timeout: 30000,\n    json: true,\n    ignoreHttpStatusErrors: true\n  });\n  console.log(`✅ Preview server started for ${siteId}:`, JSON.stringify(result));\n} catch (e) {\n  console.log(`⚠️ Preview start had issue (might already be running): ${e.message}`);\n}\n\nreturn [{ json: ctx }];"
+      },
+      "id": "ce7da127-574a-4b71-a4b0-ba88ffe56744",
+      "name": "Ensure Preview Running",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9440,
+        9184
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pull latest changes from Git to preview workspace\n// This syncs the preview with GitHub commits made by the AI\nconst ctx = $input.item.json;\nconst siteId = ctx.site?.id;\n\nif (!siteId) {\n  console.log('⚠️ No siteId found, skipping git pull');\n  return [{ json: ctx }];\n}\n\n// Wait for GitHub to propagate changes\nconsole.log(`🔄 Waiting 1s for GitHub to sync...`);\nawait new Promise(resolve => setTimeout(resolve, 1000));\n\nconsole.log(`🔄 Pulling latest changes for site ${siteId}...`);\n\ntry {\n  const result = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://preview-orchestrator.fly.dev/preview/pull',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ \n      siteId, \n      clearCache: false, \n      restart: false,\n      retries: 1\n    }),\n    timeout: 10000\n  });\n  console.log(`✅ Git pull result for ${siteId}:`, JSON.stringify(result));\n  \n  // Wait for Next.js dev server to rebuild after pulling changes\n  console.log(`⏳ Waiting 2s for Next.js rebuild...`);\n  await new Promise(resolve => setTimeout(resolve, 2000));\n  \n  return [{ json: ctx }];\n} catch (e) {\n  console.error(`❌ Git pull failed for ${siteId}:`, e.message);\n  // Continue anyway - preview might have direct writes\n  return [{ json: ctx }];\n}"
+      },
+      "id": "d3179412-e0e1-49fa-8a40-53ee06672df2",
+      "name": "Git Pull",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9536,
+        9184
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/code_versions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ site_id: $('Parse Results').item.json.site.uuid, request_id: $('Parse Results').item.json.requestId, instruction: $('Parse Results').item.json.message, plan_json: $('Parse Results').item.json.plan, status: 'preview_ready', preview_url: $('Parse Results').item.json.previewUrl, files_modified: $('Parse Results').item.json.filesModified, files_created: $('Parse Results').item.json.filesCreated, files_deleted: $('Parse Results').item.json.filesDeleted }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "e21753fc-2a4c-4a32-a804-c9946aaf6e7a",
+      "name": "Save Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        9744,
+        9184
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ requestId: $('Parse Results').item.json.requestId, status: 'preview_ready', summary: $('Parse Results').item.json.plan.humanSummary, previewUrl: $('Parse Results').item.json.previewUrl, filesModified: $('Parse Results').item.json.filesModified, filesCreated: $('Parse Results').item.json.filesCreated, filesDeleted: $('Parse Results').item.json.filesDeleted, warnings: $('Parse Results').item.json.plan.warnings, iterations: $('Parse Results').item.json.iterations, toolsUsed: $('Parse Results').item.json.toolsUsed }) }}",
+        "options": {}
+      },
+      "id": "277146b9-0f33-4ff0-9525-da0ffd87b8a7",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        9936,
+        9184
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// DETERMINISTIC CLASSIFICATION V4 - With executorMode override\n// Simple = text/style changes. Complex = new pages, landing pages, multi-file.\nconst ctx = $input.item.json;\nconst msg = (ctx.message || '').toLowerCase();\nconst executorMode = ctx.executorMode || 'auto';\n\n// USER OVERRIDE - Skip classification if user explicitly selected a mode\nif (executorMode === 'fast') {\n  console.log('User selected FAST mode - forcing Simple Executor');\n  return [{ json: { ...ctx, isComplex: false, confidence: 1.0, matchedPattern: 'user:fast', output: JSON.stringify({isComplex: false, confidence: 1.0}) } }];\n}\n\nif (executorMode === 'thinking') {\n  console.log('User selected THINKING mode - forcing Complex Executor');\n  return [{ json: { ...ctx, isComplex: true, confidence: 1.0, matchedPattern: 'user:thinking', output: JSON.stringify({isComplex: true, confidence: 1.0}) } }];\n}\n\n// AUTO MODE - Use automatic classification\n// COMPLEX patterns - Check FIRST for these keywords\nconst complexPatterns = [\n  // Landing pages are ALWAYS complex (require full design)\n  /landing\\s*page/i,\n  /nice\\s+(page|landing|website)/i,\n  /beautiful\\s+(page|landing|website)/i,\n  /modern\\s+(page|landing|website)/i,\n  /professional\\s+(page|landing|website)/i,\n  /create\\s+(a\\s+)?new\\s+page/i,\n  \n  // Multi-page/multi-component (explicit)\n  /multiple\\s+(pages|components|files)/i,\n  /(full|complete|entire)\\s+(website|app|application|redesign)/i,\n  \n  // Architecture/Integration\n  /implement|integrate|connect\\s+to|setup\\s+api|configure/i,\n  /api|backend|database|auth|login|signup|payment|checkout/i,\n  /routing|navigation\\s+system|state\\s+management/i,\n  \n  // Advanced UI (multi-component)\n  /(dashboard|admin\\s+panel|e-?commerce|shop|store)/i,\n  /responsive\\s+design|mobile\\s+and\\s+desktop/i,\n  \n  // Refactoring\n  /refactor|restructure|reorganize|migrate/i\n];\n\n// SIMPLE patterns - Text/style changes only\nconst simplePatterns = [\n  // Text/style changes (NOT page creation)\n  /^(change|update|replace|set)\\s+.{2,50}\\s+(to|with|into)/i,\n  /^(change|update|fix)\\s+(the\\s+)?(title|name|text|heading|color|background)/i,\n  /^(remove|delete|hide)\\s+(the\\s+)?/i,\n  /^(make\\s+it|set\\s+it|change\\s+it)/i,\n  /^fix\\s+/i,\n  // Single component changes (NOT full pages)\n  /^(add|update|change)\\s+(a\\s+)?(button|link|image|text|title|heading)/i\n];\n\n// Check COMPLEX patterns FIRST\nlet isComplex = false;\nlet confidence = 0.9;\nlet matchedPattern = 'default';\n\nfor (const p of complexPatterns) {\n  if (p.test(msg)) {\n    isComplex = true;\n    confidence = 0.95;\n    matchedPattern = 'complex:' + p.source.slice(0, 30);\n    break;\n  }\n}\n\n// Only check simple if no complex match\nif (!isComplex) {\n  for (const p of simplePatterns) {\n    if (p.test(msg)) {\n      isComplex = false;\n      confidence = 0.95;\n      matchedPattern = 'simple:' + p.source.slice(0, 30);\n      break;\n    }\n  }\n}\n\n// Default: Long detailed requests = complex\nif (matchedPattern === 'default') {\n  isComplex = msg.length > 80 || msg.split(' ').length > 10;\n  confidence = 0.7;\n  matchedPattern = isComplex ? 'default:complex' : 'default:simple';\n}\n\nconsole.log('Classification:', isComplex ? 'COMPLEX' : 'SIMPLE', '-', matchedPattern);\n\nreturn [{ json: { ...ctx, isComplex, confidence, matchedPattern, output: JSON.stringify({isComplex, confidence}) } }];"
+      },
+      "id": "f901333c-f3ef-4d33-b4d2-17131773c19a",
+      "name": "Planning Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7024,
+        9088
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Simplified Parse Plan - works with deterministic classifier\nconst ctx = $('Fetch Memory').first().json;\nconst classified = $input.item.json;\n\n// Classification already done by CODE node (no JSON parsing needed)\nconst isComplex = classified.isComplex === true;\nconst confidence = classified.confidence || 0.9;\nconst matchedPattern = classified.matchedPattern || 'unknown';\n\n// Insert thinking step\nconst requestId = ctx.requestId || 'unknown';\nconst siteId = ctx.site?.id || 'unknown';\n\ntry {\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/thinking_steps',\n    headers: {\n      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Content-Type': 'application/json',\n      'Prefer': 'return=minimal'\n    },\n    body: JSON.stringify({\n      request_id: requestId,\n      site_id: siteId,\n      step_number: 2,\n      tool_name: 'classify',\n      status: 'complete',\n      message: isComplex ? 'Complex task detected' : 'Simple task - fast path',\n      details: { isComplex, confidence, matchedPattern }\n    }),\n    timeout: 3000\n  });\n} catch (e) {}\n\nreturn [{\n  json: {\n    ...ctx,\n    isComplex,\n    confidence,\n    matchedPattern,\n    plan: { summary: ctx.message },\n    executionPlan: { tasks: [] }\n  }\n}];"
+      },
+      "id": "7ec30621-4ea8-416d-b32e-6b2949672274",
+      "name": "Parse Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7312,
+        9136
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.isComplex }}",
+                    "rightValue": false,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    },
+                    "id": "8ce57c08-74d9-4609-9602-b24c108dbd71"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Simple"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.isComplex }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    },
+                    "id": "835a280b-a41f-49d3-8eaf-dbfe27488c46"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Complex"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.isDirectResponse }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Direct Response"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "1b65cb84-146e-488e-9777-e05dbe26b432",
+      "name": "Complexity Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        7488,
+        9136
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// SIMPLE EXECUTOR V3 - Fixed multi-tool handling\nconst ctx = $input.item.json;\nconst ANTHROPIC_KEY = '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';\nconst MODEL = 'claude-haiku-4-5-20251001';\n\nconst TOOLS = [\n  { name: 'write_file', description: 'Write complete file', input_schema: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } },\n  { name: 'str_replace', description: 'Replace text', input_schema: { type: 'object', properties: { file: { type: 'string' }, old_text: { type: 'string' }, new_text: { type: 'string' } }, required: ['file', 'old_text', 'new_text'] } }\n];\n\nconst SYSTEM = 'You are a code editor. IMPORTANT: The user message contains FILES section with all relevant code ALREADY LOADED. DO NOT ask to see files - they are BELOW. Just use write_file to make changes. Complete in 1-2 tool calls. Be brief.';\n\nconst executeTool = async (name, input) => {\n  const siteId = ctx.site?.id;\n  const githubToken = ctx.githubToken;\n  if (!siteId) return 'ERROR: No siteId';\n\n  if (name === 'write_file') {\n    try {\n      const r = await this.helpers.httpRequest({ method: 'POST', url: 'https://preview-orchestrator.fly.dev/preview/write', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteId, filePath: input.path, content: input.content, githubToken }), timeout: 15000, json: true, ignoreHttpStatusErrors: true, returnFullResponse: true });\n      if (r.statusCode >= 400) return 'ERROR: ' + JSON.stringify(r.body || r.statusCode);\n      return JSON.stringify({ success: true, file: input.path, action: 'created' });\n    } catch (e) { return 'ERROR: ' + e.message; }\n  }\n\n  if (name === 'str_replace') {\n    try {\n      const r = await this.helpers.httpRequest({ method: 'POST', url: 'https://preview-orchestrator.fly.dev/preview/replace', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteId, filePath: input.file, search: input.old_text, replace: input.new_text, githubToken }), timeout: 15000, json: true, ignoreHttpStatusErrors: true, returnFullResponse: true });\n      if (r.statusCode >= 400) return 'ERROR: ' + JSON.stringify(r.body || r.statusCode);\n      return JSON.stringify({ success: true, file: input.file, action: 'replaced' });\n    } catch (e) { return 'ERROR: ' + e.message; }\n  }\n\n  return 'Unknown tool';\n};\n\nconst callClaude = async (msgs) => {\n  try {\n    const r = await this.helpers.httpRequest({ method: 'POST', url: 'https://api.anthropic.com/v1/messages', headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify({ model: MODEL, max_tokens: 1536, system: SYSTEM, tools: TOOLS, messages: msgs }), timeout: 60000, json: true, ignoreHttpStatusErrors: true, returnFullResponse: true });\n    if (r.statusCode >= 400) return { error: r.body || r.statusCode };\n    return r.body;\n  } catch (e) { return { error: e.message }; }\n};\n\nconst fileCtx = Object.entries(ctx.fileContents || {}).slice(0, 2).map(([f,c]) => f + ':\\\\n' + c.slice(0,1500)).join('\\\\n---\\\\n');\nconst baseMsg = ctx.message;\nconst fullMsg = baseMsg + (fileCtx ? '\\\\n\\\\nFILES:\\\\n' + fileCtx : '');\nconst messages = [{ role: 'user', content: fullMsg }];\nlet output = ''; let steps = []; let i = 0;\n\nwhile (i++ < 4) {\n  const r = await callClaude(messages);\n  if (r.error) { output = 'Error: ' + JSON.stringify(r.error); break; }\n  if (r.usage) console.log('Tokens:', r.usage.input_tokens, r.usage.output_tokens);\n\n  // Get ALL tool_use blocks, not just the first one\n  const toolCalls = (r.content || []).filter(c => c.type === 'tool_use');\n\n  // If no tool calls, get text response and exit\n  if (toolCalls.length === 0) {\n    output = r.content?.find(c => c.type === 'text')?.text || 'Done';\n    break;\n  }\n\n  // Execute ALL tools and collect results\n  const toolResults = [];\n  for (const tool of toolCalls) {\n    const result = await executeTool(tool.name, tool.input);\n    steps.push({ tool: tool.name, input: tool.input, result: result.slice(0,150) });\n    toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: result });\n  }\n\n  // Push assistant message with all tool_use blocks\n  messages.push({ role: 'assistant', content: r.content });\n  // Push user message with ALL tool_results\n  messages.push({ role: 'user', content: toolResults });\n\n  // Prune context after first iteration\n  if (messages[0].content.length > baseMsg.length) { messages[0].content = baseMsg + '\\\\n(files pruned)'; }\n}\n\nreturn [{ json: { ...ctx, output, intermediateSteps: steps, iterations: i } }];"
+      },
+      "id": "17f18332-8a8b-4fe3-aacc-9a9b30a819a9",
+      "name": "Simple Executor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8096,
+        8720
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "3d78eada-5253-4a38-a9cc-08a2c448818a",
+      "name": "Merge Executor Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        8784,
+        9184
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.images && $json.images.length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "65718cc2-52b6-40c2-9c15-cd83b2164257",
+      "name": "Check for Image",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        6448,
+        9088
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ \n    JSON.stringify({\n      \"model\": \"claude-3-haiku-20240307\",\n      \"max_tokens\": 1000,\n      \"messages\": [\n        {\n          \"role\": \"user\",\n          \"content\": [\n            ...($json.images || []).map(img => {\n                const parts = img.split('base64,');\n                const header = parts[0] || '';\n                const data = parts[1] || img;\n                let media_type = 'image/png';\n                if (header.includes('image/jpeg')) media_type = 'image/jpeg';\n                else if (header.includes('image/webp')) media_type = 'image/webp';\n                else if (header.includes('image/gif')) media_type = 'image/gif';\n\n                return {\n                    \"type\": \"image\",\n                    \"source\": {\n                        \"type\": \"base64\",\n                        \"media_type\": media_type,\n                        \"data\": data\n                    }\n                };\n            }),\n            {\n              \"type\": \"text\",\n              \"text\": \"Analyze these images for a software engineer. Describe the UI elements, layout, colors, and any visible bugs or text. Be concise but technical.\"\n            }\n          ]\n        }\n      ]\n    }) \n    }}",
+        "options": {}
+      },
+      "id": "793540c5-5256-498e-a972-84a1556f232d",
+      "name": "Analyze Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        6592,
+        8944
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "cR1eoa32avbXUEse",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "3c46fbcf-4749-4ef6-8049-3caadcfa9f6c",
+      "name": "Merge Analysis",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        6736,
+        9088
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Remove heavy payloads (images) to prevent OOM\nconst items = $input.all();\nfor (const item of items) {\n  if (item.json.image) delete item.json.image;\n  if (item.json.images) delete item.json.images;\n  // Also remove raw 'data' if it exists from HTTP nodes\n  if (item.json.data && typeof item.json.data === 'string' && item.json.data.length > 1000) delete item.json.data;\n}\nreturn items;"
+      },
+      "id": "493510bb-f025-42e5-975b-a1c469298558",
+      "name": "Cleanup Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6848,
+        9088
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check cache + Fast Complexity Classifier\n// RESPECTS user executorMode override\nconst ctx = $input.item.json;\nconst siteId = ctx.site?.uuid;\nconst msg = (ctx.message || '').toLowerCase().trim();\nconst executorMode = ctx.executorMode || 'auto';\n\n// USER MODE OVERRIDE - If user selected a mode, skip fast classification\nif (executorMode !== 'auto') {\n  console.log('User mode override: ' + executorMode + ' - skipping fast classification');\n  const isComplex = executorMode === 'thinking';\n  return [{ json: { ...ctx, cacheHit: false, skipPlanning: false, isComplex, executorMode, userModeOverride: true } }];\n}\n\n// Fast complexity check - skip planning for simple requests\nconst SIMPLE_PATTERNS = [/^change\\s+(the\\s+)?(title|text|heading|name|brand)\\s+(to|from)/, /^(update|set|modify)\\s+(the\\s+)?(color|background|font|size)/, /^(add|remove|delete)\\s+(a\\s+)?(button|link|image|text)/, /^(fix|correct)\\s+(the\\s+)?(typo|spelling|grammar)/, /^(make|set)\\s+(it\\s+)?(bigger|smaller|larger|bolder|darker|lighter)/];\nconst COMPLEX_WORDS = ['integrate', 'implement', 'create new', 'build', 'add feature', 'authentication', 'api', 'database', 'state', 'multiple', 'routing', 'form'];\nconst isSimple = SIMPLE_PATTERNS.some(p => p.test(msg));\nconst hasComplex = COMPLEX_WORDS.some(c => msg.includes(c));\n\nif (isSimple && !hasComplex) {\n  console.log('Fast path: Simple request detected (auto mode)');\n  return [{ json: { ...ctx, skipPlanning: true, isComplex: false, fastClassified: true, executionPlan: { summary: 'Simple change', tasks: [{ id: 1, task: msg, status: 'pending' }, { id: 2, task: 'Verify build', status: 'pending' }] } } }];\n}\n\n// Hash for cache\nfunction hash(s) { let h=0; for(let i=0;i<s.length;i++) h=((h<<5)-h)+s.charCodeAt(i); return 'hash_'+Math.abs(h).toString(16); }\nconst requestHash = hash(msg + '_' + siteId);\nif (!siteId) return [{ json: { ...ctx, cacheHit: false, requestHash } }];\n\ntry {\n  const cached = await this.helpers.httpRequest({ method: 'GET', url: 'https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/request_cache?request_hash=eq.' + requestHash + '&site_id=eq.' + siteId + '&limit=1', headers: { 'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4', 'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4' }, timeout: 5000 });\n  if (Array.isArray(cached) && cached.length > 0) {\n    console.log('Cache HIT');\n    return [{ json: { ...ctx, cacheHit: true, skipPlanning: true, executionPlan: cached[0].plan_json, requestHash } }];\n  }\n  return [{ json: { ...ctx, cacheHit: false, requestHash } }];\n} catch (e) { return [{ json: { ...ctx, cacheHit: false, requestHash } }]; }"
+      },
+      "id": "6d2c5cdf-2b03-4e0d-8f05-8313f061a2ca",
+      "name": "Check Request Cache",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6896,
+        9088
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Edit UI": {
+      "main": [
+        [
+          {
+            "node": "Validate & Detect Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Detect Intent": {
+      "main": [
+        [
+          {
+            "node": "Load Site",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Site": {
+      "main": [
+        [
+          {
+            "node": "Build Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Context": {
+      "main": [
+        [
+          {
+            "node": "Prepare Fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Fetch": {
+      "main": [
+        [
+          {
+            "node": "Fetch Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Files": {
+      "main": [
+        [
+          {
+            "node": "Merge Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Files": {
+      "main": [
+        [
+          {
+            "node": "Fetch Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Memory": {
+      "main": [
+        [
+          {
+            "node": "Check for Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complex Executor": {
+      "main": [
+        [
+          {
+            "node": "Merge Executor Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Save Memory": {
+      "main": [
+        [
+          {
+            "node": "Save Plan Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Plan Cache": {
+      "main": [
+        [
+          {
+            "node": "Git Push",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Results": {
+      "main": [
+        [
+          {
+            "node": "Save Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Git Push": {
+      "main": [
+        [
+          {
+            "node": "Ensure Preview Running",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Preview Running": {
+      "main": [
+        [
+          {
+            "node": "Git Pull",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Git Pull": {
+      "main": [
+        [
+          {
+            "node": "Save Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Request": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planning Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Plan": {
+      "main": [
+        [
+          {
+            "node": "Complexity Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complexity Router": {
+      "main": [
+        [
+          {
+            "node": "Simple Executor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Complex Executor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Simple Executor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Executor": {
+      "main": [
+        [
+          {
+            "node": "Merge Executor Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Executor Results": {
+      "main": [
+        [
+          {
+            "node": "Parse Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Image": {
+      "main": [
+        [
+          {
+            "node": "Analyze Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Analysis",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Analyze Image": {
+      "main": [
+        [
+          {
+            "node": "Merge Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Analysis": {
+      "main": [
+        [
+          {
+            "node": "Cleanup Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Payload": {
+      "main": [
+        [
+          {
+            "node": "Check Request Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Request Cache": {
+      "main": [
+        [
+          {
+            "node": "Planning Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8278f0fbb558df00ecd79690c89f9c1e0fbf89bbd188221ebac4a3ae271261b8"
+  }
+}

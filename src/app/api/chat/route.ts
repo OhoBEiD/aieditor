@@ -6,7 +6,7 @@ const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://n8n-ai-editor.fl
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { siteId, conversationId, userId, message, pageUrl, uiContext, image, requestId: clientRequestId } = body;
+        const { siteId, conversationId, userId, message, pageUrl, uiContext, image, requestId: clientRequestId, executorMode } = body;
 
         // Validate required fields
         if (!siteId || !conversationId || !userId || !message) {
@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
                 uiContext,
                 requestId,
                 image, // Pass image data for vision analysis
+                executorMode, // Pass executor mode selection (auto, fast, thinking)
                 statusCallbackUrl: '', // Not used in sync mode
             }),
         });
@@ -71,10 +72,12 @@ export async function POST(request: NextRequest) {
         }
 
         // Return the n8n response directly
+        console.log('n8n response:', JSON.stringify(result, null, 2));
+
         return NextResponse.json({
             requestId: result.requestId || requestId,
             status: result.status || 'pending',
-            summary: result.summary || 'Changes processed.',
+            summary: result.summary || result.output || 'Changes processed.',
             diff: result.diff || '',
             previewUrl: result.previewUrl || '',
             filesChanged: result.filesChanged || [],

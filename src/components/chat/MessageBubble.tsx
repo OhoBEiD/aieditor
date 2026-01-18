@@ -140,7 +140,7 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
 
                 <div className="group flex justify-end p-3">
                     <div className="max-w-[80%]">
-                        <div className="bg-blue-500 text-white rounded-2xl rounded-br-sm px-4 py-2.5 shadow-md">
+                        <div className="relative bg-blue-500 text-white rounded-2xl rounded-br-sm px-4 py-2.5 shadow-md">
                             {/* Attached Image - Small Thumbnail */}
                             {messageImage && (
                                 <div className="mb-2">
@@ -157,6 +157,16 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                                 <p className="text-xs text-white whitespace-pre-wrap leading-relaxed">
                                     {message.content}
                                 </p>
+                            )}
+                            {/* Revert Button - Bottom Right Corner */}
+                            {onRevert && (
+                                <button
+                                    onClick={() => onRevert(message.id)}
+                                    className="absolute -bottom-1 -right-1 flex items-center justify-center w-5 h-5 rounded-full bg-white text-blue-500 hover:bg-blue-50 transition-colors shadow-md"
+                                    title="Revert this request"
+                                >
+                                    <Undo2 className="w-2.5 h-2.5" />
+                                </button>
                             )}
                         </div>
                         <div className="flex items-center justify-end gap-2 mt-1 px-1">
@@ -238,28 +248,17 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
 
                     <div className="flex items-center justify-between mt-2">
                         <span className="text-[10px] text-gray-500">{timeString}</span>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={handleCopyMessage}
-                                className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:text-purple-600 transition-all"
-                                title="Copy message"
-                            >
-                                {copiedMessage ? (
-                                    <><Check className="w-3 h-3" /> Copied</>
-                                ) : (
-                                    <><Copy className="w-3 h-3" /> Copy</>
-                                )}
-                            </button>
-                            {onRevert && (
-                                <button
-                                    onClick={() => onRevert(message.id)}
-                                    className="flex items-center justify-center w-6 h-6 rounded-full bg-purple-500 text-white hover:bg-purple-600 transition-colors shadow-sm"
-                                    title="Revert this change"
-                                >
-                                    <Undo2 className="w-3 h-3" />
-                                </button>
+                        <button
+                            onClick={handleCopyMessage}
+                            className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:text-purple-600 transition-all"
+                            title="Copy message"
+                        >
+                            {copiedMessage ? (
+                                <><Check className="w-3 h-3" /> Copied</>
+                            ) : (
+                                <><Copy className="w-3 h-3" /> Copy</>
                             )}
-                        </div>
+                        </button>
                     </div>
                 </div>
             </div>

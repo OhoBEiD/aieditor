@@ -1,0 +1,77 @@
+const fs = require('fs');
+const path = require('path');
+
+const workflowPath = path.join(__dirname, 'FIXED-AGENT-WORKFLOW-V16.json');
+const workflow = JSON.parse(fs.readFileSync(workflowPath, 'utf8'));
+
+console.log('🔧 Fixing tool output formats...\n');
+
+// FIX 1: create_component should return a STRING, not an object
+const createComponentNode = workflow.nodes.find(n => n.name === 'create_component');
+if (createComponentNode) {
+  console.log('✅ Fixing create_component to return string');
+
+  createComponentNode.parameters.jsCode = `try {
+  const rawInput = $input.item.json.query || '';
+  const type = (typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput)).trim().toLowerCase();
+
+  if (!type) return 'Error: Component type required';
+
+  const components = {
+    hero: 'export default function Hero() { return <section className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-purple-900"><div className="text-center max-w-4xl px-4"><h1 className="text-5xl md:text-7xl font-bold text-white mb-6">Build Something Amazing</h1><p className="text-xl text-gray-300 mb-8">Create stunning experiences with our platform</p><div className="flex gap-4 justify-center"><button className="px-8 py-4 bg-purple-600 text-white rounded-full font-bold hover:bg-purple-700">Get Started</button><button className="px-8 py-4 border border-white text-white rounded-full hover:bg-white/10">Learn More</button></div></div></section>; }',
+    navbar: 'export default function Navbar() { return <nav className="fixed top-0 w-full bg-white/80 backdrop-blur-lg z-50 border-b"><div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between"><a href="/" className="font-bold text-xl">Logo</a><div className="hidden md:flex gap-8">{["Home","Features","Pricing","Contact"].map(l=><a key={l} href={"#"+l.toLowerCase()} className="hover:text-purple-600">{l}</a>)}</div><button className="px-4 py-2 bg-purple-600 text-white rounded-lg">Sign Up</button></div></nav>; }',
+    footer: 'export default function Footer() { return <footer className="bg-gray-900 text-gray-300 py-12"><div className="max-w-6xl mx-auto px-4 grid md:grid-cols-4 gap-8"><div><h3 className="font-bold text-white mb-4">Company</h3><p className="text-sm">Building the future</p></div>{[{t:"Product",l:["Features","Pricing","API"]},{t:"Company",l:["About","Blog","Careers"]},{t:"Legal",l:["Privacy","Terms"]}].map(({t,l})=><div key={t}><h4 className="font-bold text-white mb-4">{t}</h4>{l.map(i=><a key={i} href="#" className="block text-sm hover:text-white mb-2">{i}</a>)}</div>)}</div><div className="border-t border-gray-800 mt-8 pt-8 text-center text-sm">© 2024 Company. All rights reserved.</div></footer>; }',
+    card: 'export default function Card({title,desc,image}:{title:string,desc:string,image?:string}) { return <div className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1">{image && <img src={image} alt={title} className="w-full h-48 object-cover"/>}<div className="p-6"><h3 className="text-xl font-bold mb-2">{title}</h3><p className="text-gray-600">{desc}</p></div></div>; }',
+    pricing: 'export default function Pricing() { const p=[{n:"Starter",pr:"$9",f:["5 projects","10GB","Email support"]},{n:"Pro",pr:"$29",f:["Unlimited","100GB","Priority support"],pop:true},{n:"Enterprise",pr:"$99",f:["Everything","Dedicated","24/7 support"]}]; return <section className="py-20 bg-gray-50"><div className="max-w-5xl mx-auto px-4"><h2 className="text-4xl font-bold text-center mb-12">Simple Pricing</h2><div className="grid md:grid-cols-3 gap-8">{p.map(({n,pr,f,pop})=><div key={n} className={"p-8 rounded-2xl "+(pop?"bg-purple-600 text-white scale-105":"bg-white shadow-lg")}><h3 className="text-2xl font-bold">{n}</h3><p className="text-4xl font-bold my-4">{pr}<span className="text-lg">/mo</span></p><ul className="space-y-2 mb-6">{f.map(x=><li key={x}>✓ {x}</li>)}</ul><button className={"w-full py-3 rounded-full font-bold "+(pop?"bg-white text-purple-600":"bg-purple-600 text-white")}>Get Started</button></div>)}</div></div></section>; }',
+    features: 'export default function Features() { const f=[{i:"⚡",t:"Lightning Fast",d:"Optimized performance"},{i:"🔒",t:"Secure",d:"Enterprise security"},{i:"🎨",t:"Beautiful",d:"Stunning designs"},{i:"📱",t:"Responsive",d:"Perfect on all devices"}]; return <section className="py-20"><div className="max-w-6xl mx-auto px-4"><h2 className="text-4xl font-bold text-center mb-12">Why Choose Us</h2><div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">{f.map(({i,t,d})=><div key={t} className="text-center p-6 rounded-xl hover:bg-gray-50"><div className="text-4xl mb-4">{i}</div><h3 className="text-xl font-bold mb-2">{t}</h3><p className="text-gray-600">{d}</p></div>)}</div></div></section>; }',
+    testimonials: 'export default function Testimonials() { const t=[{n:"Sarah J.",r:"CEO",q:"Amazing product!"},{n:"Mike T.",r:"Developer",q:"Best tool ever."},{n:"Lisa M.",r:"Designer",q:"Love it!"}]; return <section className="py-20 bg-gray-50"><div className="max-w-6xl mx-auto px-4"><h2 className="text-4xl font-bold text-center mb-12">What People Say</h2><div className="grid md:grid-cols-3 gap-8">{t.map(({n,r,q})=><div key={n} className="bg-white p-6 rounded-xl shadow-lg"><p className="text-lg mb-4">"{q}"</p><div className="font-bold">{n}</div><div className="text-gray-500 text-sm">{r}</div></div>)}</div></div></section>; }',
+    faq: 'export default function FAQ() { const q=[{q:"How does it work?",a:"Simply sign up and start."},{q:"Is there a free trial?",a:"Yes, 14 days free."},{q:"Can I cancel anytime?",a:"Absolutely, no questions."}]; return <section className="py-20"><div className="max-w-3xl mx-auto px-4"><h2 className="text-4xl font-bold text-center mb-12">FAQ</h2><div className="space-y-4">{q.map(({q,a})=><details key={q} className="bg-gray-50 p-4 rounded-lg"><summary className="font-bold cursor-pointer">{q}</summary><p className="mt-2 text-gray-600">{a}</p></details>)}</div></div></section>; }',
+    cta: 'export default function CTA() { return <section className="py-20 bg-gradient-to-r from-purple-600 to-pink-600"><div className="max-w-4xl mx-auto text-center px-4"><h2 className="text-4xl font-bold text-white mb-4">Ready to Get Started?</h2><p className="text-xl text-purple-100 mb-8">Join thousands of happy customers today.</p><button className="px-8 py-4 bg-white text-purple-600 font-bold rounded-full hover:scale-105 transition-transform">Start Free Trial</button></div></section>; }',
+    contact: 'export default function Contact() { return <section className="py-20"><div className="max-w-2xl mx-auto px-4"><h2 className="text-4xl font-bold text-center mb-8">Contact Us</h2><form className="space-y-4"><input type="text" placeholder="Name" className="w-full p-3 border rounded-lg"/><input type="email" placeholder="Email" className="w-full p-3 border rounded-lg"/><textarea placeholder="Message" rows={4} className="w-full p-3 border rounded-lg"/><button className="w-full py-3 bg-purple-600 text-white rounded-lg font-bold">Send Message</button></form></div></section>; }',
+    newsletter: 'export default function Newsletter() { return <section className="py-16 bg-gray-100"><div className="max-w-xl mx-auto text-center px-4"><h2 className="text-2xl font-bold mb-4">Subscribe to our newsletter</h2><form className="flex gap-2"><input type="email" placeholder="Enter your email" className="flex-1 p-3 rounded-lg border"/><button className="px-6 py-3 bg-purple-600 text-white rounded-lg font-bold">Subscribe</button></form></div></section>; }',
+    stats: 'export default function Stats() { const s=[{n:"10K+",l:"Users"},{n:"99.9%",l:"Uptime"},{n:"50M+",l:"Requests"},{n:"24/7",l:"Support"}]; return <section className="py-16 bg-purple-600 text-white"><div className="max-w-6xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">{s.map(({n,l})=><div key={l}><div className="text-4xl font-bold">{n}</div><div className="text-purple-200">{l}</div></div>)}</div></section>; }'
+  };
+
+  const key = Object.keys(components).find(k => type.includes(k));
+  if (!key) {
+    return 'Error: Unknown type. Available: ' + Object.keys(components).join(', ');
+  }
+
+  // RETURN STRING NOT OBJECT!
+  return 'Component code for ' + key + ':\\n\\n' + components[key];
+} catch(e) {
+  return 'Error: ' + e.message;
+}`;
+}
+
+// FIX 2: fetch_stock_image should also return string
+const fetchStockNode = workflow.nodes.find(n => n.name === 'fetch_stock_image');
+if (fetchStockNode) {
+  console.log('✅ Fixing fetch_stock_image to return string');
+
+  fetchStockNode.parameters.jsCode = `try {
+  const rawInput = $input.item.json.query || '';
+  const query = (typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput)).trim();
+
+  if (!query) return 'Error: Search query required';
+
+  const q = encodeURIComponent(query);
+  const url = 'https://source.unsplash.com/800x600/?' + q;
+
+  // RETURN STRING NOT OBJECT!
+  return 'Stock photo: ' + url;
+} catch(e) {
+  return 'Error: ' + e.message;
+}`;
+}
+
+// Save
+const outputPath = path.join(__dirname, 'FIXED-AGENT-WORKFLOW-V17.json');
+fs.writeFileSync(outputPath, JSON.stringify(workflow, null, 2));
+
+console.log('\n✅ Fixed tool output formats!');
+console.log('📁 Saved to:', outputPath);
+console.log('\n📋 Changes:');
+console.log('  1. ✅ create_component now returns string instead of object');
+console.log('  2. ✅ fetch_stock_image now returns string instead of object');
+console.log('\n🚀 Import V17 into n8n and test again!');

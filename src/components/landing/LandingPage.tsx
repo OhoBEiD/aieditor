@@ -3,12 +3,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Send, Loader2, Paperclip, Github } from 'lucide-react';
+import { Send, Loader2, Paperclip, Github, Zap, Brain, Bot, ChevronDown, ImagePlus } from 'lucide-react';
 import { gsap } from 'gsap';
 import { RecentProjectsCard } from './RecentProjectsCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { AuthRequiredModal } from '@/components/auth/AuthRequiredModal';
 import { RepoSelectorModal } from '@/components/auth/RepoSelectorModal';
+import type { ExecutorMode } from '@/components/chat/MessageInput';
+import { cn } from '@/lib/utils';
 
 interface LandingPageProps {
     onSendMessage: (message: string) => void;
@@ -16,14 +18,156 @@ interface LandingPageProps {
     onImportRepo?: (repoUrl: string) => Promise<void>;
     onOpenPreview?: (project?: any) => void;
     isLoading?: boolean;
+    executorMode?: ExecutorMode;
+    onModeChange?: (mode: ExecutorMode) => void;
 }
 
-export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOpenPreview, isLoading }: LandingPageProps) {
+export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOpenPreview, isLoading, executorMode = 'thinking', onModeChange }: LandingPageProps) {
     const [message, setMessage] = useState('');
     const [showImportModal, setShowImportModal] = useState(false);
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [authModalMessage, setAuthModalMessage] = useState('Sign in to start building with AutoMate');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isModeDropdownOpen, setIsModeDropdownOpen] = useState(false);
+    const [addImages, setAddImages] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+    const dropdownMenuRef = useRef<HTMLDivElement>(null);
+    const modeBtnRef = useRef<HTMLButtonElement>(null);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsModeDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // GSAP animation for dropdown
+    useEffect(() => {
+        if (!dropdownMenuRef.current) return;
+
+        if (isModeDropdownOpen) {
+            // Opening animation
+            gsap.fromTo(dropdownMenuRef.current,
+                {
+                    opacity: 0,
+                    y: -10,
+                    scale: 0.95,
+                },
+                {
+                    opacity: 1,
+                    y: 0,
+                    scale: 1,
+                    duration: 0.25,
+                    ease: 'back.out(1.7)',
+                }
+            );
+
+            // Animate dropdown items with stagger
+            const items = dropdownMenuRef.current.querySelectorAll('button');
+            gsap.fromTo(items,
+                {
+                    opacity: 0,
+                    x: -10,
+                },
+                {
+                    opacity: 1,
+                    x: 0,
+                    duration: 0.2,
+                    stagger: 0.05,
+                    ease: 'power2.out',
+                    delay: 0.1,
+                }
+            );
+        } else {
+            // Closing animation
+            gsap.to(dropdownMenuRef.current, {
+                opacity: 0,
+                y: -10,
+                scale: 0.95,
+                duration: 0.15,
+                ease: 'power2.in',
+            });
+        }
+    }, [isModeDropdownOpen]);
+
+    // GSAP hover animation for mode button
+    useEffect(() => {
+        if (!modeBtnRef.current) return;
+
+        const btn = modeBtnRef.current;
+
+        const handleMouseEnter = () => {
+            gsap.to(btn, {
+                scale: 1.05,
+                y: -2,
+                duration: 0.2,
+                ease: 'power2.out',
+            });
+        };
+
+        const handleMouseLeave = () => {
+            gsap.to(btn, {
+                scale: 1,
+                y: 0,
+                duration: 0.2,
+                ease: 'power2.out',
+            });
+        };
+
+        btn.addEventListener('mouseenter', handleMouseEnter);
+        btn.addEventListener('mouseleave', handleMouseLeave);
+
+        return () => {
+            btn.removeEventListener('mouseenter', handleMouseEnter);
+            btn.removeEventListener('mouseleave', handleMouseLeave);
+        };
+    }, []);
+
+    // Typing animation for placeholder
+    const [placeholderText, setPlaceholderText] = useState('');
+    const [typingPhase, setTypingPhase] = useState<'typing' | 'pausing' | 'deleting'>('typing');
+    const [phraseIndex, setPhraseIndex] = useState(0);
+
+    useEffect(() => {
+        const phrases = [
+            "Ask AutoMate to create a landing page...",
+            "Ask AutoMate to build a dashboard...",
+            "Ask AutoMate to design a portfolio...",
+            "Ask AutoMate to help with code..."
+        ];
+        const currentPhrase = phrases[phraseIndex];
+
+        let timeout: NodeJS.Timeout;
+
+        if (typingPhase === 'typing') {
+            if (placeholderText.length < currentPhrase.length) {
+                timeout = setTimeout(() => {
+                    setPlaceholderText(currentPhrase.slice(0, placeholderText.length + 1));
+                }, 20 + Math.random() * 30); // Faster typing
+            } else {
+                setTypingPhase('pausing');
+            }
+        } else if (typingPhase === 'pausing') {
+            timeout = setTimeout(() => {
+                setTypingPhase('deleting');
+            }, 1000); // Shorter pause
+        } else if (typingPhase === 'deleting') {
+            if (placeholderText.length > 0) {
+                timeout = setTimeout(() => {
+                    setPlaceholderText(currentPhrase.slice(0, placeholderText.length - 1));
+                }, 10); // Faster deleting
+            } else {
+                setTypingPhase('typing');
+                setPhraseIndex((prev) => (prev + 1) % phrases.length);
+            }
+        }
+
+        return () => clearTimeout(timeout);
+    }, [placeholderText, typingPhase, phraseIndex]);
 
     const { isAuthenticated, isLoading: authLoading, signOut, user } = useAuth();
 
@@ -36,6 +180,8 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
     const headlineRef = useRef<HTMLHeadingElement>(null);
     const sublineRef = useRef<HTMLParagraphElement>(null);
     const inputRef = useRef<HTMLDivElement>(null);
+    const importBtnRef = useRef<HTMLButtonElement>(null);
+    const recentProjectsRef = useRef<HTMLDivElement>(null);
 
     const usernameRef = useRef<HTMLSpanElement>(null);
     const signoutRef = useRef<HTMLButtonElement>(null);
@@ -43,81 +189,152 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
     // GSAP animations
     useEffect(() => {
         const ctx = gsap.context(() => {
-            const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+            const tl = gsap.timeline({ defaults: { ease: 'power3.out' }, delay: 0.1 });
 
-            // Initial load animations (Logo, Brand, Headline)
-            // Only run these once on mount
-            if (!containerRef.current?.dataset.animated) {
-                // Logo reveal with shine effect
-                tl.fromTo(logoRef.current,
-                    {
-                        scale: 0.8,
-                        opacity: 0,
-                        rotation: -10
-                    },
-                    {
-                        scale: 1,
-                        opacity: 1,
-                        rotation: 0,
-                        duration: 1,
-                        ease: 'back.out(1.7)'
-                    }
-                )
-                    // Shine effect on logo
-                    .to(logoRef.current, {
-                        filter: 'drop-shadow(0 0 15px rgba(56, 189, 248, 0.6)) brightness(1.2)',
-                        duration: 0.5,
-                        yoyo: true,
-                        repeat: 1,
-                        ease: "power2.inOut"
-                    }, '-=0.3')
-                    // Brand name reveal
-                    .fromTo(brandRef.current,
-                        { x: -30, opacity: 0 },
-                        { x: 0, opacity: 1, duration: 0.6 },
-                        '-=0.5'
-                    )
-                    // Headline with split reveal
-                    .fromTo(headlineRef.current,
-                        { y: 40, opacity: 0 },
-                        { y: 0, opacity: 1, duration: 0.8 },
-                        '-=0.3'
-                    )
-                    // Subline
-                    .fromTo(sublineRef.current,
-                        { y: 30, opacity: 0 },
-                        { y: 0, opacity: 1, duration: 0.7 },
-                        '-=0.5'
-                    )
-                    // Input box
-                    .fromTo(inputRef.current,
-                        { y: 40, opacity: 0, scale: 0.95 },
-                        { y: 0, opacity: 1, scale: 1, duration: 0.8 },
-                        '-=0.4'
-                    );
+            // Start all animations relative to a common label
+            tl.add('start');
 
-                if (containerRef.current) {
-                    containerRef.current.dataset.animated = 'true';
-                }
-            }
+            // Logo reveal
+            tl.fromTo(logoRef.current,
+                { scale: 0.5, opacity: 0, rotation: -180, y: -50 },
+                { scale: 1, opacity: 1, rotation: 0, y: 0, duration: 0.6, ease: 'back.out(2)' },
+                'start'
+            );
 
-            // Auth buttons animation - Independent timeline for just these elements
-            const authTl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+            // Separate floating animation to avoid blocking the timeline
+            gsap.to(logoRef.current, {
+                y: -10,
+                duration: 2,
+                yoyo: true,
+                repeat: -1,
+                ease: "sine.inOut",
+                delay: 0.7 // Start after reveal
+            });
+
+            // Shine effect on logo
+            tl.to(logoRef.current, {
+                filter: 'drop-shadow(0 0 20px rgba(139, 92, 246, 0.8)) brightness(1.3)',
+                duration: 0.4,
+                yoyo: true,
+                repeat: 1,
+                ease: "power2.inOut"
+            }, 'start+=0.4');
+
+            // Brand name - appearing quickly after logo
+            tl.fromTo(brandRef.current,
+                { x: -50, opacity: 0, scale: 0.8 },
+                { x: 0, opacity: 1, scale: 1, duration: 0.4, ease: 'back.out(1.5)' },
+                'start+=0.1'
+            );
+
+            // Headline
+            tl.fromTo(headlineRef.current,
+                { y: 60, opacity: 0, scale: 0.9 },
+                { y: 0, opacity: 1, scale: 1, duration: 0.5, ease: 'back.out(1.3)' },
+                'start+=0.15'
+            );
+
+            // Subline
+            tl.fromTo(sublineRef.current,
+                { y: 40, opacity: 0 },
+                { y: 0, opacity: 1, duration: 0.4 },
+                'start+=0.2'
+            );
+
+            // Input box
+            tl.fromTo(inputRef.current,
+                { y: 50, opacity: 0, scale: 0.9 },
+                { y: 0, opacity: 1, scale: 1, duration: 0.5, ease: 'back.out(1.2)' },
+                'start+=0.25'
+            );
+
+            // Import button
+            tl.fromTo(importBtnRef.current,
+                { y: 30, opacity: 0, scale: 0.95 },
+                { y: 0, opacity: 1, scale: 1, duration: 0.3 },
+                'start+=0.3'
+            );
+
+            // Recent projects
+            tl.fromTo(recentProjectsRef.current,
+                { y: 30, opacity: 0 },
+                { y: 0, opacity: 1, duration: 0.4 },
+                'start+=0.35'
+            );
+
+            // Auth buttons animation - Independent timeline
+            const authTl = gsap.timeline({ defaults: { ease: 'power3.out' }, delay: 0.3 });
 
             if (isAuthenticated) {
                 if (usernameRef.current && signoutRef.current) {
                     authTl.fromTo([usernameRef.current, signoutRef.current],
-                        { y: -20, opacity: 0 },
-                        { y: 0, opacity: 1, duration: 0.5, stagger: 0.1 }
+                        { y: -20, opacity: 0, scale: 0.9 },
+                        { y: 0, opacity: 1, scale: 1, duration: 0.3, stagger: 0.05, ease: 'back.out(1.5)' }
                     );
                 }
             } else {
                 if (loginRef.current && signupRef.current) {
                     authTl.fromTo([loginRef.current, signupRef.current],
-                        { y: -20, opacity: 0 },
-                        { y: 0, opacity: 1, duration: 0.5, stagger: 0.1 }
+                        { y: -20, opacity: 0, scale: 0.9 },
+                        { y: 0, opacity: 1, scale: 1, duration: 0.3, stagger: 0.05, ease: 'back.out(1.5)' }
                     );
                 }
+            }
+
+            // Add hover animations for interactive elements
+            if (loginRef.current) {
+                loginRef.current.addEventListener('mouseenter', () => {
+                    gsap.to(loginRef.current, {
+                        scale: 1.05,
+                        duration: 0.3,
+                        ease: 'power2.out'
+                    });
+                });
+                loginRef.current.addEventListener('mouseleave', () => {
+                    gsap.to(loginRef.current, {
+                        scale: 1,
+                        duration: 0.3,
+                        ease: 'power2.out'
+                    });
+                });
+            }
+
+            if (signupRef.current) {
+                signupRef.current.addEventListener('mouseenter', () => {
+                    gsap.to(signupRef.current, {
+                        scale: 1.08,
+                        y: -2,
+                        duration: 0.3,
+                        ease: 'power2.out'
+                    });
+                });
+                signupRef.current.addEventListener('mouseleave', () => {
+                    gsap.to(signupRef.current, {
+                        scale: 1,
+                        y: 0,
+                        duration: 0.3,
+                        ease: 'power2.out'
+                    });
+                });
+            }
+
+            if (importBtnRef.current) {
+                importBtnRef.current.addEventListener('mouseenter', () => {
+                    gsap.to(importBtnRef.current, {
+                        scale: 1.05,
+                        y: -2,
+                        duration: 0.3,
+                        ease: 'power2.out'
+                    });
+                });
+                importBtnRef.current.addEventListener('mouseleave', () => {
+                    gsap.to(importBtnRef.current, {
+                        scale: 1,
+                        y: 0,
+                        duration: 0.3,
+                        ease: 'power2.out'
+                    });
+                });
             }
 
         }, containerRef);
@@ -136,11 +353,17 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
 
             setIsSubmitting(true);
             try {
+                // Build the message with optional image instruction
+                let finalMessage = message.trim();
+                if (addImages) {
+                    finalMessage += '\n\n[IMPORTANT: Use the generate_image tool to create and include relevant, high-quality images throughout the website. Add hero images, feature images, and decorative visuals to make the website visually appealing.]';
+                }
+
                 // If onCreateProject is provided, create a new project
                 if (onCreateProject) {
-                    await onCreateProject(message.trim());
+                    await onCreateProject(finalMessage);
                 } else {
-                    onSendMessage(message.trim());
+                    onSendMessage(finalMessage);
                 }
                 setMessage('');
             } finally {
@@ -193,7 +416,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
     return (
         <div
             ref={containerRef}
-            className="relative h-screen w-full overflow-y-auto overflow-x-hidden"
+            className="relative h-screen w-full overflow-hidden"
             style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
         >
             {/* Animated SVG Background - Lovable style */}
@@ -298,7 +521,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
             <header className={`absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-8 py-6 transition-all duration-300 ${showImportModal || showAuthModal ? 'blur-sm pointer-events-none' : ''}`}>
                 {/* Logo + Brand */}
                 <div className="flex items-center gap-4">
-                    <div ref={logoRef} className="relative w-16 h-16">
+                    <div ref={logoRef} className="relative w-16 h-16 opacity-0">
                         <Image
                             src="/automatelogo.png"
                             alt="AutoMate Logo"
@@ -308,7 +531,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                     </div>
                     <span
                         ref={brandRef}
-                        className="text-3xl font-bold text-gray-900 tracking-tight"
+                        className="text-3xl font-bold text-gray-900 tracking-tight opacity-0"
                         style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}
                     >
                         AutoMate
@@ -323,14 +546,14 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                         <>
                             <span
                                 ref={usernameRef}
-                                className="px-4 py-2 text-sm font-medium text-purple-700 bg-purple-100 rounded-full"
+                                className="px-4 py-2 text-sm font-medium text-purple-700 bg-purple-100 rounded-full opacity-0"
                             >
                                 {user?.user_metadata?.user_name || user?.user_metadata?.preferred_username || user?.email?.split('@')[0]}
                             </span>
                             <button
                                 ref={signoutRef}
                                 onClick={() => signOut()}
-                                className="px-4 py-2 text-sm font-medium text-red-600 bg-red-100/60 hover:bg-red-200/80 transition-colors rounded-full"
+                                className="px-4 py-2 text-sm font-medium text-red-600 bg-red-100/60 hover:bg-red-200/80 transition-colors rounded-full opacity-0"
                             >
                                 Sign out
                             </button>
@@ -340,17 +563,14 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                             <Link
                                 href="/login"
                                 ref={loginRef}
-                                className="px-6 py-2.5 text-sm font-medium text-gray-700 bg-white/40 hover:bg-white/80 hover:text-gray-900 transition-all rounded-full backdrop-blur-sm border border-white/20 shadow-sm hover:shadow-md"
+                                className="px-6 py-2.5 text-sm font-medium text-gray-700 bg-white/40 hover:bg-white/80 hover:text-gray-900 transition-all rounded-full backdrop-blur-sm border border-white/20 shadow-sm hover:shadow-md opacity-0"
                             >
                                 Log in
                             </Link>
                             <Link
                                 href="/signup"
                                 ref={signupRef}
-                                className="px-6 py-2.5 text-sm font-medium text-white rounded-full transition-all hover:scale-105 hover:shadow-lg hover:shadow-blue-500/25 active:scale-95"
-                                style={{
-                                    background: 'linear-gradient(135deg, #1C54AF 0%, #1E85B3 50%, #3FDDDB 100%)',
-                                }}
+                                className="px-6 py-2.5 text-sm font-medium text-white rounded-full transition-all hover:scale-105 bg-purple-500 hover:bg-purple-600 shadow-lg shadow-purple-500/20 active:scale-95 opacity-0"
                             >
                                 Sign up
                             </Link>
@@ -364,7 +584,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                 {/* Headline */}
                 <h1
                     ref={headlineRef}
-                    className="text-5xl md:text-7xl font-bold text-gray-900 text-center mb-6 max-w-4xl"
+                    className="text-5xl md:text-7xl font-bold text-gray-900 text-center mb-6 max-w-4xl opacity-0"
                     style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
                 >
                     Build something Extraordinary
@@ -373,30 +593,20 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                 {/* Subline */}
                 <p
                     ref={sublineRef}
-                    className="text-lg md:text-xl text-gray-600 text-center mb-16 max-w-xl"
+                    className="text-lg md:text-xl text-gray-600 text-center mb-16 max-w-xl opacity-0"
                 >
                     Create apps and websites by chatting with AI
                 </p>
 
-                {/* Input Container */}
-                <div ref={inputRef} className="w-full max-w-3xl flex flex-col items-center">
-                    <form onSubmit={handleSubmit} className="w-full relative z-20">
+                <div ref={inputRef} className="w-full max-w-3xl flex flex-col items-center opacity-0">
+                    <form onSubmit={handleSubmit} className="w-full relative z-20 rounded-3xl">
                         <div
-                            className="relative rounded-3xl overflow-hidden bg-white shadow-2xl"
+                            className="relative rounded-3xl bg-white shadow-2xl"
                             style={{
                                 boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15)',
                             }}
                         >
-                            {/* Attach Button */}
-                            <div className="absolute left-5 top-1/2 -translate-y-1/2">
-                                <button
-                                    type="button"
-                                    className="p-2.5 text-gray-500 hover:text-gray-700 transition-colors rounded-lg hover:bg-gray-100"
-                                    onClick={() => {/* Handle attach */ }}
-                                >
-                                    <Paperclip className="w-5 h-5" />
-                                </button>
-                            </div>
+
 
                             {/* Input Field */}
                             <input
@@ -404,24 +614,31 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                 value={message}
                                 onChange={(e) => setMessage(e.target.value)}
                                 onKeyDown={handleKeyDown}
-                                placeholder="Ask AutoMate to create a landing..."
-                                className="w-full pl-16 pr-20 py-6 text-base text-gray-900 placeholder-gray-400 bg-transparent outline-none"
+                                placeholder={placeholderText}
+                                className="w-full pl-8 pr-32 pt-6 pb-24 text-base text-gray-900 placeholder-gray-400 bg-transparent outline-none rounded-3xl"
                                 style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
                                 disabled={isLoading || isSubmitting}
                             />
 
-                            {/* Send Button */}
-                            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                            {/* Action Buttons (Right) */}
+                            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    className="p-2.5 text-gray-400 hover:text-gray-600 transition-colors rounded-full hover:bg-gray-100/50"
+                                    onClick={() => {/* Handle attach */ }}
+                                >
+                                    <Paperclip className="w-5 h-5" />
+                                </button>
+
                                 <button
                                     type="submit"
                                     disabled={!message.trim() || isLoading || isSubmitting}
-                                    className="p-3.5 rounded-full text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105"
-                                    style={{
-                                        background: message.trim()
-                                            ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-                                            : 'rgba(156, 163, 175, 0.3)',
-                                        boxShadow: message.trim() ? '0 4px 15px rgba(102, 126, 234, 0.4)' : 'none',
-                                    }}
+                                    className={cn(
+                                        "p-3.5 rounded-full text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105",
+                                        message.trim()
+                                            ? "bg-purple-500 hover:bg-purple-600 shadow-lg shadow-purple-500/20"
+                                            : "bg-gray-300"
+                                    )}
                                 >
                                     {isLoading || isSubmitting ? (
                                         <Loader2 className="w-5 h-5 animate-spin" />
@@ -430,23 +647,119 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                     )}
                                 </button>
                             </div>
+
+                            {/* Mode Selector Dropdown (Bottom Left) */}
+                            {onModeChange && (
+                                <div className="absolute left-5 bottom-4 z-30" ref={dropdownRef}>
+                                    <button
+                                        ref={modeBtnRef}
+                                        type="button"
+                                        onClick={() => setIsModeDropdownOpen(!isModeDropdownOpen)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-900 hover:bg-gray-100/50 transition-all"
+                                    >
+                                        {executorMode === 'thinking' ? (
+                                            <>
+                                                <Brain className="w-3.5 h-3.5 text-purple-600" />
+                                                <span className="text-gray-700">Thinking</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                                                <span className="text-gray-700">Fast</span>
+                                            </>
+                                        )}
+                                        <ChevronDown className={cn("w-3 h-3 text-gray-400 transition-transform", isModeDropdownOpen && "rotate-180")} />
+                                    </button>
+
+                                    {/* Dropdown Menu */}
+                                    {isModeDropdownOpen && (
+                                        <div ref={dropdownMenuRef} className="absolute top-full left-0 mt-2 w-40 bg-white/95 backdrop-blur-md rounded-xl border border-gray-100 shadow-xl origin-top-left z-50">
+                                            <div className="p-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        onModeChange('thinking');
+                                                        setIsModeDropdownOpen(false);
+                                                    }}
+                                                    className={cn(
+                                                        "w-full flex items-center justify-between px-3 py-2 rounded-lg text-left text-xs transition-colors",
+                                                        executorMode === 'thinking' ? "bg-purple-50 text-purple-900" : "hover:bg-gray-50 text-gray-700"
+                                                    )}
+                                                >
+                                                    <div>
+                                                        <div className="font-medium">Thinking</div>
+                                                        <div className="text-[10px] opacity-70">Deep reasoning</div>
+                                                    </div>
+                                                    {executorMode === 'thinking' && (
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                                                    )}
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        onModeChange('fast');
+                                                        setIsModeDropdownOpen(false);
+                                                    }}
+                                                    className={cn(
+                                                        "w-full flex items-center justify-between px-3 py-2 rounded-lg text-left text-xs transition-colors",
+                                                        executorMode === 'fast' ? "bg-amber-50 text-amber-900" : "hover:bg-gray-50 text-gray-700"
+                                                    )}
+                                                >
+                                                    <div>
+                                                        <div className="font-medium">Fast</div>
+                                                        <div className="text-[10px] opacity-70">Quick edits</div>
+                                                    </div>
+                                                    {executorMode === 'fast' && (
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Add Images Toggle */}
+                            <button
+                                type="button"
+                                onClick={() => setAddImages(!addImages)}
+                                className={cn(
+                                    "absolute left-44 bottom-4 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                                    addImages
+                                        ? "bg-pink-100 text-pink-700 hover:bg-pink-200"
+                                        : "text-gray-500 hover:text-gray-900 hover:bg-gray-100/50"
+                                )}
+                                title="AI will generate and include images in your website"
+                            >
+                                <ImagePlus className={cn("w-3.5 h-3.5", addImages ? "text-pink-600" : "")} />
+                                <span>AI Images</span>
+                                {addImages && <div className="w-1.5 h-1.5 rounded-full bg-pink-500" />}
+                            </button>
+
+                            {/* Import GitHub Button (Bottom Right) */}
+                            <button
+                                ref={importBtnRef}
+                                type="button"
+                                onClick={handleImportClick}
+                                className="absolute right-5 bottom-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-900 hover:bg-gray-100/50 transition-all opacity-0"
+                            >
+                                <Github className="w-3.5 h-3.5" />
+                                <span>Import</span>
+                            </button>
                         </div>
                     </form>
 
-                    {/* Import GitHub Repo Button */}
-                    <button
-                        type="button"
-                        onClick={handleImportClick}
-                        className="mt-6 flex items-center gap-2 px-6 py-3 text-sm font-medium text-gray-700 bg-white/60 hover:bg-white/90 transition-all rounded-full backdrop-blur-sm border border-white/30 shadow-sm hover:shadow-md"
-                    >
-                        <Github className="w-5 h-5" />
-                        Import GitHub Repo
-                    </button>
+
+
+
 
                     {/* Recent Projects */}
-                    {onOpenPreview && (
-                        <RecentProjectsCard onOpen={onOpenPreview} />
-                    )}
+                    <div ref={recentProjectsRef} className="opacity-0">
+                        {onOpenPreview && (
+                            <RecentProjectsCard onOpen={onOpenPreview} />
+                        )}
+                    </div>
                 </div>
 
                 {/* Repo Selector Modal */}

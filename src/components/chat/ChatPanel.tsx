@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { MessageBubble } from './MessageBubble';
-import { MessageInput } from './MessageInput';
+import { MessageInput, type ExecutorMode } from './MessageInput';
 import { ThinkingSteps, type ThinkingStep } from './ThinkingSteps';
 import { Bot, Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -23,6 +23,8 @@ interface ChatPanelProps {
     thinkingSteps?: ThinkingStep[];
     agentThinking?: string[];
     sessionTitle?: string;
+    executorMode?: ExecutorMode;
+    onModeChange?: (mode: ExecutorMode) => void;
 }
 
 export function ChatPanel({
@@ -38,14 +40,17 @@ export function ChatPanel({
     isStreaming = false,
     thinkingSteps = [],
     agentThinking = [],
+    executorMode = 'auto',
+    onModeChange,
 }: ChatPanelProps) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const [isTransitioning, setIsTransitioning] = useState(false);
     const [displayedMessages, setDisplayedMessages] = useState<Message[]>([]);
 
-    // Handle message transitions
+    // Handle message transitions - only clear when actually switching sessions
     useEffect(() => {
-        if (isLoadingMessages) {
+        if (isLoadingMessages && messages.length === 0) {
+            // Only show skeleton when messages are empty
             setIsTransitioning(true);
             setDisplayedMessages([]);
         } else {
@@ -83,7 +88,7 @@ export function ChatPanel({
             <div className="chat-scrollbar flex-1 overflow-y-auto overflow-x-hidden">
                 {isTransitioning || isLoadingMessages ? (
                     <MessagesSkeleton />
-                ) : displayedMessages.length === 0 && thinkingSteps.length === 0 ? (
+                ) : displayedMessages.length === 0 && thinkingSteps.length === 0 && !isLoading ? (
                     <EmptyState />
                 ) : (
                     <div className="space-y-0">
@@ -142,7 +147,13 @@ export function ChatPanel({
             )}
 
             {/* Input */}
-            <MessageInput onSend={onSendMessage} onStop={onStop} isLoading={isLoading} />
+            <MessageInput
+                onSend={onSendMessage}
+                onStop={onStop}
+                isLoading={isLoading}
+                executorMode={executorMode}
+                onModeChange={onModeChange}
+            />
         </div>
     );
 }

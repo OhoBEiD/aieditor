@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ChatSelector } from '@/components/chat/ChatSelector';
 import { ChatPanel } from '@/components/chat/ChatPanel';
+import type { ExecutorMode } from '@/components/chat/MessageInput';
 import { PreviewPanel } from '@/components/editor/PreviewPanel';
 import { DeploymentSettings } from '@/components/settings/DeploymentSettings';
 import { supabase } from '@/lib/supabase/client';
@@ -246,6 +247,9 @@ export default function Home() {
     // Settings view toggle
     const [showSettings, setShowSettings] = useState(false);
 
+    // Executor mode - user selection for Fast vs Thinking
+    const [executorMode, setExecutorMode] = useState<ExecutorMode>('thinking');
+
     // Abort controller for canceling requests
     const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -272,7 +276,9 @@ export default function Home() {
         }
 
         setIsPreviewLoading(true);
-        setPreviewUrl(undefined);
+        // DON'T set preview URL here - wait for AI response to avoid showing 502 errors
+        // The URL will be set by handleSendMessage after AI responds
+        console.log('[Preview] Starting preview server, waiting for orchestrator...');
 
         // Get GitHub token for detecting pages and orchestrator
         // Fallback to system token for email-only users
@@ -490,86 +496,47 @@ export default function Home() {
         };
     }, []);
 
-
-
-    // Auto-start preview effect removed to prevent infinite loops and respect manual start triggers
-    // The preview will be started explicitly by createNewProject or user interaction
-    /*
+    // Suppress preview iframe WebSocket HMR errors (these are harmless noise from the preview server)
     useEffect(() => {
-        if (isClient && showPreview && !previewUrl && !isPreviewLoading && activeProject) {
-            console.log('[Preview] Auto-starting preview on load...');
-            startPreview();
-        }
-    }, [isClient, showPreview, previewUrl, isPreviewLoading, startPreview, activeProject]);
-    */
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        const originalLog = console.log;
 
-    // Fix hydration + restore preferences + restore active project
-    useEffect(() => {
-        setIsClient(true);
-        // Restore preview mode from localStorage
-        const savedShowPreview = localStorage.getItem('showPreview');
-        if (savedShowPreview !== null) {
-            setShowPreview(savedShowPreview === 'true');
-        }
-        const savedPanelOpen = localStorage.getItem('isPanelOpen');
-        if (savedPanelOpen !== null) {
-            setIsPanelOpen(savedPanelOpen === 'true');
-        }
-        // Restore preview URL from localStorage
-        const savedPreviewUrl = localStorage.getItem('previewUrl');
-        if (savedPreviewUrl) {
-            setPreviewUrl(savedPreviewUrl);
-        }
+        const shouldSuppress = (message: string) => {
+            return message.includes('WebSocket connection') ||
+                message.includes('Invalid frame header') ||
+                message.includes('_next/webpack-hmr') ||
+                message.includes('[HMR] connected') ||
+                message.includes('failed: Invalid frame header');
+        };
 
-        // Restore active project
-        try {
-            const savedProject = localStorage.getItem('activeProject');
-            if (savedProject) {
-                const parsedProject = JSON.parse(savedProject);
-                console.log('[App] Restoring active project:', parsedProject);
-                setActiveProject(parsedProject);
-            }
-        } catch (e) {
-            console.error('Failed to restore active project:', e);
-        }
+        console.error = (...args: any[]) => {
+            const message = args[0]?.toString() || '';
+            if (shouldSuppress(message)) return;
+            originalError.apply(console, args);
+        };
+
+        console.warn = (...args: any[]) => {
+            const message = args[0]?.toString() || '';
+            if (shouldSuppress(message)) return;
+            originalWarn.apply(console, args);
+        };
+
+        console.log = (...args: any[]) => {
+            const message = args[0]?.toString() || '';
+            if (shouldSuppress(message)) return;
+            originalLog.apply(console, args);
+        };
+
+        return () => {
+            console.error = originalError;
+            console.warn = originalWarn;
+            console.log = originalLog;
+        };
     }, []);
 
-    // Load sessions on mount
-    useEffect(() => {
-        if (isClient) {
-            loadSessions();
-        }
-    }, [isClient]);
-
-    // Save preview preferences & active project to localStorage
-    useEffect(() => {
-        if (isClient) {
-            localStorage.setItem('showPreview', String(showPreview));
-            localStorage.setItem('isPanelOpen', String(isPanelOpen));
-            // Save preview URL when it changes
-            if (previewUrl) {
-                localStorage.setItem('previewUrl', previewUrl);
-            }
-
-            // Save active project (or clear if null/undefined? No, only save truthy to persist)
-            if (activeProject) {
-                console.log('[App] Saving active project:', activeProject);
-                localStorage.setItem('activeProject', JSON.stringify(activeProject));
-            }
-        }
-    }, [isClient, showPreview, isPanelOpen, previewUrl, activeProject]);
-
-    // Load messages when session changes + persist to localStorage
-    useEffect(() => {
-        if (isClient && activeSessionId) {
-            loadMessages(activeSessionId);
-            localStorage.setItem('lastActiveSessionId', activeSessionId);
-        } else {
-            setMessages([]);
-        }
-    }, [isClient, activeSessionId]);
-
-    const loadSessions = async () => {
+    // Define loadSessions function before useEffect hooks that use it
+    const loadSessions = useCallback(async () => {
         setIsLoadingSessions(true);
         try {
             const { data, error } = await supabase
@@ -599,7 +566,145 @@ export default function Home() {
         } finally {
             setIsLoadingSessions(false);
         }
-    };
+    }, [activeProjectId, activeSessionId]);
+
+    // Auto-start preview when showPreview is true
+    // Always start preview for active project to ensure server is running
+    useEffect(() => {
+        if (isClient && showPreview && !isPreviewLoading && activeProject && !previewUrl) {
+            // Start preview if we don't have a preview URL yet
+            // The server will be provisioned if needed
+            console.log('[Preview] Auto-starting preview on load...');
+            startPreview();
+        }
+    }, [isClient, showPreview, isPreviewLoading, activeProject?.id, previewUrl]);
+
+    // Fix hydration + restore preferences + restore active project
+    useEffect(() => {
+        setIsClient(true);
+
+        // Restore active project first
+        let hasActiveProject = false;
+        try {
+            const savedProject = localStorage.getItem('activeProject');
+            if (savedProject) {
+                const parsedProject = JSON.parse(savedProject);
+                console.log('[App] Restoring active project:', parsedProject);
+                setActiveProject(parsedProject);
+                hasActiveProject = true;
+            }
+        } catch (e) {
+            console.error('Failed to restore active project:', e);
+        }
+
+        // Only restore preview mode if there's an active project
+        const savedShowPreview = localStorage.getItem('showPreview');
+        if (savedShowPreview === 'true' && hasActiveProject) {
+            setShowPreview(true);
+        } else {
+            // Default to landing page for first-time visitors or when no project
+            setShowPreview(false);
+        }
+
+        const savedPanelOpen = localStorage.getItem('isPanelOpen');
+        if (savedPanelOpen !== null) {
+            setIsPanelOpen(savedPanelOpen === 'true');
+        }
+        // Restore preview URL from localStorage
+        const savedPreviewUrl = localStorage.getItem('previewUrl');
+        if (savedPreviewUrl) {
+            setPreviewUrl(savedPreviewUrl);
+        } else if (hasActiveProject) {
+            // Fallback: generate preview URL from active project siteKey
+            try {
+                const savedProject = localStorage.getItem('activeProject');
+                if (savedProject) {
+                    const parsedProject = JSON.parse(savedProject);
+                    const effectiveSiteKey = parsedProject.siteKey || parsedProject.id;
+                    if (effectiveSiteKey) {
+                        const fallbackUrl = `https://${effectiveSiteKey}.preview.automatelb.com`;
+                        console.log('[App] No saved preview URL, using fallback:', fallbackUrl);
+                        setPreviewUrl(fallbackUrl);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to generate fallback preview URL:', e);
+            }
+        }
+
+
+
+        // Restore active request state (for page refresh during AI thinking)
+        try {
+            const savedActiveRequest = localStorage.getItem('activeRequest');
+            if (savedActiveRequest) {
+                const parsed = JSON.parse(savedActiveRequest);
+                const startedAt = new Date(parsed.startedAt).getTime();
+                const now = Date.now();
+                const maxAge = 5 * 60 * 1000; // 5 minutes
+
+                if (now - startedAt < maxAge) {
+                    // Request is still fresh, restore state
+                    console.log('[App] Restoring active request:', parsed);
+                    setCurrentRequestId(parsed.requestId);
+                    setIsSending(true);
+                    setIsStreaming(true);
+                } else {
+                    // Request is stale, clear it
+                    console.log('[App] Clearing stale active request');
+                    localStorage.removeItem('activeRequest');
+                }
+            }
+        } catch (e) {
+            console.error('Failed to restore active request:', e);
+            localStorage.removeItem('activeRequest');
+        }
+    }, []);
+
+    // Load sessions on mount
+    useEffect(() => {
+        if (isClient) {
+            loadSessions();
+        }
+    }, [isClient, loadSessions]);
+
+    // Reload sessions when active project changes
+    useEffect(() => {
+        if (isClient && activeProject) {
+            console.log('[App] Active project changed, reloading sessions for:', activeProject.id);
+            loadSessions();
+        }
+    }, [isClient, activeProject?.id, loadSessions]);
+
+    // Save preview preferences & active project to localStorage
+    useEffect(() => {
+        if (isClient) {
+            localStorage.setItem('showPreview', String(showPreview));
+            localStorage.setItem('isPanelOpen', String(isPanelOpen));
+
+            // Save preview URL when it changes
+            if (previewUrl) {
+                localStorage.setItem('previewUrl', previewUrl);
+            }
+
+            // Save active project (or clear if null/undefined? No, only save truthy to persist)
+            if (activeProject) {
+                console.log('[App] Saving active project:', activeProject);
+                localStorage.setItem('activeProject', JSON.stringify(activeProject));
+            }
+        }
+    }, [isClient, showPreview, isPanelOpen, previewUrl, activeProject, executorMode]);
+
+    // Load messages when session changes + persist to localStorage
+    // Skip loading when actively sending to preserve optimistic UI
+    useEffect(() => {
+        if (isClient && activeSessionId && !isSending) {
+            loadMessages(activeSessionId);
+            localStorage.setItem('lastActiveSessionId', activeSessionId);
+        } else if (!activeSessionId && !isSending) {
+            setMessages([]);
+        }
+    }, [isClient, activeSessionId, isSending]);
 
     const loadMessages = async (sessionId: string) => {
         setIsLoadingMessages(true);
@@ -749,6 +854,7 @@ export default function Home() {
         setIsStreaming(false);
         setCurrentRequestId(null); // Clear thinking steps subscription
         setAgentThinking([]);
+        localStorage.removeItem('activeRequest'); // Clear saved request state
 
         console.log('Request stopped by user');
     }, [activeSessionId, addMessage]);
@@ -773,6 +879,22 @@ export default function Home() {
         // Use override if provided (during project creation), otherwise use current state
         const targetProject = projectOverride || activeProject;
         const targetSiteId = targetProject?.siteKey || DEFAULT_CLIENT_ID;
+
+        // Set isSending FIRST to prevent useEffect from clearing messages
+        setIsSending(true);
+        setIsStreaming(true);
+
+        // Optimistic UI: Add message immediate (fix for image latency)
+        const optimisticId = 'temp-' + Date.now();
+        const optimisticMsg: any = {
+            id: optimisticId,
+            session_id: activeSessionId || 'temp-session',
+            role: 'user',
+            content: content.trim() || 'Sent an image',
+            created_at: new Date().toISOString(),
+            metadata: image ? { image: URL.createObjectURL(image) } : undefined
+        };
+        addMessage(optimisticMsg);
 
         // Convert image to base64 if provided
         let imageData: string | undefined;
@@ -811,7 +933,7 @@ export default function Home() {
 
                 const newSession = data as ChatSession;
                 setSessions(prev => [newSession, ...prev]);
-                setActiveSessionId(newSession.id);
+                // setActiveSessionId(newSession.id); // Defer to avoid flicker
                 sessionId = newSession.id;
             } catch (err) {
                 console.error('Failed to create session:', err);
@@ -819,13 +941,17 @@ export default function Home() {
             }
         }
 
-        setIsSending(true);
-        setIsStreaming(true);
-
         // Generate requestId for this request
         const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
         setCurrentRequestId(requestId);
         currentRequestIdRef.current = requestId;
+
+        // Save active request to localStorage (survives page refresh)
+        localStorage.setItem('activeRequest', JSON.stringify({
+            requestId,
+            sessionId,
+            startedAt: new Date().toISOString(),
+        }));
 
         // Clear previous thinking steps
         setAgentThinking([]);
@@ -842,12 +968,18 @@ export default function Home() {
                     role: 'user',
                     content: content.trim() || 'Sent an image',
                     metadata: imageData ? { image: imageData } : undefined,
+                    executor_mode: executorMode, // Save the user-selected mode
                 })
                 .select()
                 .single();
 
             if (userError) throw userError;
-            addMessage(userMsg as Message);
+            // addMessage(userMsg as Message); // Optimistically added already
+
+            // Update active session (deferred)
+            if (!activeSessionId && sessionId) {
+                setActiveSessionId(sessionId);
+            }
 
             // Update session title if first message
             if (messages.length === 0) {
@@ -861,6 +993,9 @@ export default function Home() {
 
             // Call /api/chat endpoint (which routes to n8n)
             try {
+                // DEBUG: Log the executorMode value
+                console.log('🎯 Sending executorMode:', executorMode, 'Type:', typeof executorMode);
+
                 // Fetch real user ID for the request
                 const { data: { user } } = await supabase.auth.getUser();
                 const targetSiteId = targetProject?.siteKey || DEFAULT_CLIENT_ID;
@@ -875,6 +1010,7 @@ export default function Home() {
                         message: content.trim(),
                         image: imageData, // Pass image for AI vision analysis
                         requestId, // Pass requestId for live thinking
+                        executorMode, // Pass executor mode (auto, fast, thinking)
                     }),
                     signal: abortControllerRef.current.signal,
                 });
@@ -892,6 +1028,7 @@ export default function Home() {
                     setCurrentRequestId(null); // Stop live subscription
                     setAgentThinking([]);
                     setIsStreaming(false);
+                    localStorage.removeItem('activeRequest'); // Clear saved request state
                 }, 3000);
 
                 // Format and save AI response
@@ -911,6 +1048,7 @@ export default function Home() {
                             filesChanged: result.filesChanged,
                             warnings: result.warnings,
                         },
+                        executor_mode: executorMode, // Save the mode used for this response
                     })
                     .select()
                     .single();
@@ -927,20 +1065,25 @@ export default function Home() {
                     messageId: aiMsg.id,
                 }));
 
-                // Update preview and force reload
+                // Update preview - HMR will handle the refresh automatically
                 if (result.previewUrl) {
                     // Extract base URL without query params
                     const baseUrl = result.previewUrl.split('?')[0].split('#')[0];
                     console.log('Setting preview URL:', baseUrl);
                     setPreviewUrl(baseUrl);
-                    // CRITICAL: Wait for dev server to rebuild before refreshing preview
-                    // Next.js dev server needs ~2-3 seconds to rebuild after file changes
-                    setTimeout(() => {
-                        setPreviewRefreshKey(prev => prev + 1);
-                        console.log('Preview refresh triggered - dev server should be ready');
-                    }, 3000); // 3 second delay to allow rebuild
+
+                    // Always trigger preview start/refresh after AI responds
+                    console.log('[Preview] AI response received - ensuring preview is running...');
+                    startPreview();
+
+                    console.log('Changes pushed to preview server - HMR will update automatically');
                 } else {
                     console.warn('No preview URL in result:', result);
+                    // Still try to start preview using the active project
+                    if (activeProject) {
+                        console.log('[Preview] No previewUrl in result, starting with active project...');
+                        startPreview();
+                    }
                 }
             } catch (apiError) {
                 // Ignore abort errors
@@ -954,6 +1097,7 @@ export default function Home() {
                 // Stop streaming on error
                 setCurrentRequestId(null);
                 setIsStreaming(false);
+                localStorage.removeItem('activeRequest'); // Clear saved request state
 
                 // Save error message
                 const errorContent = `❌ **Error:** ${apiError instanceof Error ? apiError.message : 'Failed to process request'}`;
@@ -976,6 +1120,7 @@ export default function Home() {
             // Cleanup thinking on error
             setCurrentRequestId(null);
             setIsStreaming(false);
+            localStorage.removeItem('activeRequest'); // Clear saved request state
         } finally {
             setIsSending(false);
         }
@@ -1110,6 +1255,9 @@ export default function Home() {
             if (!response.ok) {
                 const errorData = await response.json();
                 console.error('[Project] Creation failed:', errorData);
+
+                // Show error message to user
+                alert(`Failed to create project: ${errorData.error || 'Unknown error'}. Please try again.`);
                 return;
             }
 
@@ -1118,24 +1266,33 @@ export default function Home() {
 
             // Set as active project and switch to preview view
             setActiveProject(data.project);
+            // Set preview URL immediately from project siteKey - ensures preview shows while orchestrator starts
+            const effectiveSiteKey = data.project.siteKey || data.project.id;
+            if (effectiveSiteKey) {
+                setPreviewUrl(`https://${effectiveSiteKey}.preview.automatelb.com`);
+                console.log('[Project] Set immediate preview URL:', effectiveSiteKey);
+            }
             setShowPreview(true); // Switch from LandingPage to Editor view
             setActiveSessionId(null); // Clear active session to force new chat for new project
-            setMessages([]); // Clear messages
+            setMessages([]); // Clear messages for fresh start
+            setSessions([]); // Clear sessions list for new project
+            setRequestContexts(new Map()); // Clear request contexts
 
             // Send the initial message to the AI IMMEDIATELY to show it in UI
             // handleSendMessage will manage isSending state
             // We don't await this because we want to start preview in parallel/after
             handleSendMessage(initialMessage, undefined, data.project);
 
-            // Wait a bit for GitHub to fully provision the new repo from template
-            // GitHub's template generation is asynchronous and may take a few seconds
-            console.log('[Project] Waiting for GitHub to provision repo...');
-            await new Promise(r => setTimeout(r, 3000));
-
-            // Start preview for the new project (in background) - BLOCKED per user request
-            // await startPreview(data.project);
+            // Show preview panel but DON'T set URL yet - wait for AI response
+            // This prevents showing 502 errors before the AI creates content
+            setShowPreview(true);
+            console.log('[Project] Preview panel visible, waiting for AI to respond before loading preview...');
         } catch (error) {
             console.error('[Project] Creation error:', error);
+
+            // Show error to user
+            const errorMessage = error instanceof Error ? error.message : 'Failed to create project';
+            alert(`Error creating project: ${errorMessage}. Please try again.`);
         }
     }, [startPreview, handleSendMessage]);
 
@@ -1372,6 +1529,8 @@ export default function Home() {
                                         isStreaming={isStreaming}
                                         thinkingSteps={liveThinkingSteps}
                                         agentThinking={agentThinking}
+                                        executorMode={executorMode}
+                                        onModeChange={setExecutorMode}
                                     />
                                 </div>
                             </>
@@ -1408,11 +1567,19 @@ export default function Home() {
                         // When opening a recent project, set it as active and switch to Editor view
                         if (project) {
                             setActiveProject(project);
+                            // Set preview URL immediately from project's siteKey
+                            const effectiveSiteKey = project.siteKey || project.id;
+                            if (effectiveSiteKey) {
+                                setPreviewUrl(`https://${effectiveSiteKey}.preview.automatelb.com`);
+                            }
                         }
                         setShowPreview(true);
+                        // Start the preview server in the background
                         startPreview(project);
                     }}
                     isLoading={isPreviewLoading || isSending}
+                    executorMode={executorMode}
+                    onModeChange={setExecutorMode}
                 />
             )}
         </div>

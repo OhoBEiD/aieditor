@@ -858,6 +858,9 @@ app.post('/execution/register', async (req: Request, res: Response) => {
     }
 });
 
+// Map to track stop requests (requestId -> shouldStop flag)
+const stopRequests: Map<string, boolean> = new Map();
+
 // POST /execution/stop - Stop a running n8n execution
 app.post('/execution/stop', async (req: Request, res: Response) => {
     try {
@@ -867,42 +870,70 @@ app.post('/execution/stop', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Missing requestId' });
         }
 
+        // Set stop flag for the workflow to check
+        stopRequests.set(requestId, true);
+        console.log(`🛑 Stop signal set for request ${requestId}`);
+
         const executionId = activeExecutions.get(requestId);
 
         if (!executionId) {
-            console.log(`No execution found for request ${requestId}`);
-            return res.json({ ok: true, message: 'No active execution found' });
+            console.log(`No execution found for request ${requestId}, but stop flag is set`);
+            return res.json({ ok: true, message: 'Stop signal set (execution may have completed)' });
         }
 
         if (!N8N_API_KEY) {
             console.error('N8N_API_KEY not configured');
-            return res.status(500).json({ error: 'N8N_API_KEY not configured' });
+            return res.json({ ok: true, message: 'Stop signal set (cannot call n8n API without key)' });
         }
 
-        // Call n8n API to stop the execution
-        console.log(`Stopping n8n execution ${executionId} for request ${requestId}...`);
+        // Call n8n API to stop the execution (best effort)
+        console.log(`Attempting to stop n8n execution ${executionId} for request ${requestId}...`);
 
-        const n8nResponse = await fetch(`${N8N_API_URL}/api/v1/executions/${executionId}`, {
-            method: 'DELETE',
-            headers: {
-                'X-N8N-API-KEY': N8N_API_KEY,
-                'Accept': 'application/json'
+        try {
+            const n8nResponse = await fetch(`${N8N_API_URL}/api/v1/executions/${executionId}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-N8N-API-KEY': N8N_API_KEY,
+                    'Accept': 'application/json'
+                },
+                signal: AbortSignal.timeout(5000) // 5 second timeout
+            });
+
+            if (n8nResponse.ok) {
+                console.log(`✅ Successfully stopped execution ${executionId}`);
+            } else {
+                const errorText = await n8nResponse.text();
+                console.log(`⚠️ Failed to stop execution via API: ${n8nResponse.status} - ${errorText}`);
             }
-        });
-
-        if (n8nResponse.ok) {
-            console.log(`Successfully stopped execution ${executionId}`);
-            activeExecutions.delete(requestId);
-            res.json({ ok: true, stopped: executionId });
-        } else {
-            const errorText = await n8nResponse.text();
-            console.error(`Failed to stop execution: ${n8nResponse.status} - ${errorText}`);
-            // Still remove from our tracking even if n8n fails (execution might have completed)
-            activeExecutions.delete(requestId);
-            res.json({ ok: true, message: 'Execution may have already completed', status: n8nResponse.status });
+        } catch (apiError) {
+            console.log(`⚠️ n8n API call failed (workflow will check stop flag):`, apiError);
         }
+
+        res.json({ ok: true, stopped: true, requestId });
     } catch (error) {
         console.error('Execution stop error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+
+// GET /execution/check/:requestId - Check if execution should stop
+app.get('/execution/check/:requestId', async (req: Request, res: Response) => {
+    try {
+        const { requestId } = req.params;
+
+        if (!requestId) {
+            return res.status(400).json({ error: 'Missing requestId' });
+        }
+
+        const shouldStop = stopRequests.get(requestId) === true;
+
+        res.json({
+            ok: true,
+            shouldStop,
+            requestId
+        });
+    } catch (error) {
+        console.error('Execution check error:', error);
         res.status(500).json({ error: String(error) });
     }
 });
@@ -917,7 +948,8 @@ app.post('/execution/cleanup', async (req: Request, res: Response) => {
         }
 
         activeExecutions.delete(requestId);
-        console.log(`Cleaned up execution tracking for request ${requestId}`);
+        stopRequests.delete(requestId); // Clean up stop flag
+        console.log(`Cleaned up execution tracking and stop flag for request ${requestId}`);
 
         res.json({ ok: true });
     } catch (error) {
@@ -1395,17 +1427,80 @@ app.post('/preview/replace', async (req: Request, res: Response) => {
             return res.status(404).json({ error: `File not found: ${filePath}` });
         }
 
-        // Check if search text exists
+        // Check if search text exists - try exact match first
+        let matchedSearch = search;
         if (!content.includes(search)) {
-            return res.status(400).json({
-                error: `Search text not found in file`,
-                searchText: search.substring(0, 100),
-                hint: 'Make sure the exact text exists in the file'
-            });
+            // Fallback: Try whitespace-flexible matching
+            // This handles cases where AI generates old_text without proper indentation
+            const searchLines = search.split('\n').map((l: string) => l.trim()).filter((l: string) => l);
+            const contentLines = content.split('\n');
+
+            let matchStart = -1;
+            let matchEnd = -1;
+            let originalLines: string[] = [];
+
+            // Find the first line of search in content (ignoring leading whitespace)
+            for (let i = 0; i < contentLines.length; i++) {
+                if (contentLines[i].trim() === searchLines[0]) {
+                    // Check if subsequent lines also match
+                    let allMatch = true;
+                    for (let j = 1; j < searchLines.length && i + j < contentLines.length; j++) {
+                        if (contentLines[i + j].trim() !== searchLines[j]) {
+                            allMatch = false;
+                            break;
+                        }
+                    }
+                    if (allMatch) {
+                        matchStart = i;
+                        matchEnd = i + searchLines.length;
+                        originalLines = contentLines.slice(matchStart, matchEnd);
+                        break;
+                    }
+                }
+            }
+
+            if (matchStart === -1) {
+                return res.status(400).json({
+                    error: `Search text not found in file`,
+                    searchText: search.substring(0, 100),
+                    hint: 'Make sure the exact text exists in the file (whitespace-flexible matching also failed)'
+                });
+            }
+
+            // Reconstruct the matched text with original whitespace
+            matchedSearch = originalLines.join('\n');
+            console.log(`[${siteId}] Whitespace-flexible match found for ${filePath}`);
         }
 
         // Perform replacement
-        const newContent = content.replace(search, replace || '');
+        // For whitespace-flexible replacement, preserve the original leading whitespace
+        let newContent: string;
+        if (matchedSearch !== search) {
+            // Get the leading whitespace from the first matched line
+            const firstMatchedLine = matchedSearch.split('\n')[0];
+            const leadingWhitespace = firstMatchedLine.match(/^(\s*)/)?.[1] || '';
+
+            // Apply the same leading whitespace to replacement lines
+            const replaceLines = (replace || '').split('\n');
+            const adjustedReplace = replaceLines.map((line: string, idx: number) => {
+                // For the first line, use the original indentation
+                // For subsequent lines, try to preserve relative indentation
+                if (idx === 0) {
+                    return leadingWhitespace + line.trim();
+                }
+                // For other lines, keep their relative indentation or use the base
+                const originalLine = matchedSearch.split('\n')[idx];
+                if (originalLine) {
+                    const origIndent = originalLine.match(/^(\s*)/)?.[1] || '';
+                    return origIndent + line.trim();
+                }
+                return leadingWhitespace + line.trim();
+            }).join('\n');
+
+            newContent = content.replace(matchedSearch, adjustedReplace);
+        } else {
+            newContent = content.replace(search, replace || '');
+        }
 
         // Write file back
         await fs.writeFile(fullPath, newContent, 'utf-8');
@@ -1494,6 +1589,122 @@ app.post('/preview/push', async (req: Request, res: Response) => {
     }
 });
 
+// POST /preview/save-image - Save a base64 image to the workspace
+app.post('/preview/save-image', async (req: Request, res: Response) => {
+    try {
+        const { siteId, imageData, fileName } = req.body;
+
+        if (!siteId || !imageData) {
+            return res.status(400).json({ error: 'Missing siteId or imageData' });
+        }
+
+        const preview = activePreviews.get(siteId);
+        if (!preview || preview.status !== 'running') {
+            return res.status(400).json({ error: 'Preview not running' });
+        }
+
+        const workspacePath = path.join(WORKSPACES_DIR, siteId);
+        const imagesDir = path.join(workspacePath, 'public', 'images');
+
+        // Ensure images directory exists
+        await fs.mkdir(imagesDir, { recursive: true });
+
+        // Generate filename if not provided
+        const finalFileName = fileName || `ai-generated-${Date.now()}.png`;
+        const fullPath = path.join(imagesDir, finalFileName);
+
+        // Remove data URL prefix if present
+        let base64Data = imageData;
+        if (imageData.includes(',')) {
+            base64Data = imageData.split(',')[1];
+        }
+
+        // Write the image file
+        await fs.writeFile(fullPath, Buffer.from(base64Data, 'base64'));
+
+        // Update activity
+        preview.lastActivity = new Date();
+
+        console.log(`[${siteId}] Saved image: ${finalFileName}`);
+
+        res.json({
+            ok: true,
+            file: `/images/${finalFileName}`,
+            fullPath: `public/images/${finalFileName}`,
+            url: `https://${siteId}.preview.automatelb.com/images/${finalFileName}`
+        });
+    } catch (error) {
+        console.error('Save image error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+
+// POST /preview/search - Search for files using grep or glob
+app.post('/preview/search', async (req: Request, res: Response) => {
+    try {
+        const { siteId, pattern, type = 'grep', path: searchPath = '.' } = req.body;
+
+        if (!siteId || !pattern) {
+            return res.status(400).json({ error: 'Missing siteId or pattern' });
+        }
+
+        const preview = activePreviews.get(siteId);
+        if (!preview || preview.status !== 'running') {
+            return res.status(400).json({ error: 'Preview not running' });
+        }
+
+        const workspacePath = path.join(WORKSPACES_DIR, siteId);
+
+        // Ensure workspace exists
+        try {
+            await fs.access(workspacePath);
+        } catch {
+            return res.status(404).json({ error: 'Workspace not found' });
+        }
+
+        let command = '';
+        // Basic sanitization
+        const safePattern = pattern.replace(/"/g, '\\"');
+
+        if (type === 'grep') {
+            // grep -rnI "pattern" . --include="*.{ts,tsx,js,jsx,css,html,json,md}"
+            // Recursive, line numbers, ignore binary
+            command = `grep -rnI "${safePattern}" . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next --exclude-dir=.turbo --exclude=package-lock.json`;
+        } else if (type === 'glob') {
+            // find . -name "pattern"
+            // Using wildcards needs quotes in find usually, but here checking name matches
+            command = `find . -name "${safePattern}" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/.next/*"`;
+        } else {
+            return res.status(400).json({ error: 'Invalid search type' });
+        }
+
+        try {
+            // Updated activity
+            preview.lastActivity = new Date();
+
+            const output = execSync(command, { cwd: workspacePath, encoding: 'utf-8', timeout: 5000, maxBuffer: 1024 * 1024 });
+            const matches = output.trim().split('\n').filter(Boolean);
+
+            // Limit results to avoid overwhelming tokens
+            const MAX_RESULTS = 100;
+            const truncated = matches.length > MAX_RESULTS;
+            const results = matches.slice(0, MAX_RESULTS);
+
+            res.json({ ok: true, matches: results, count: matches.length, truncated });
+        } catch (e: any) {
+            // grep returns exit code 1 if no matches found
+            if (e.status === 1) {
+                res.json({ ok: true, matches: [], count: 0 });
+            } else {
+                throw e;
+            }
+        }
+    } catch (error) {
+        console.error('Search error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+
 // Health check
 app.get('/health', (req: Request, res: Response) => {
     res.json({ ok: true, activePreviews: activePreviews.size });
@@ -1534,11 +1745,8 @@ server.on('upgrade', (req, socket, head) => {
                 });
 
                 // Handle WebSocket proxy errors gracefully
-                wsProxy.on('error', (err, _req, res) => {
+                wsProxy.on('error', (err) => {
                     console.error(`[WS Proxy Error] ${subdomain}:`, err.message);
-                    if (res && typeof (res as any).destroy === 'function') {
-                        (res as any).destroy();
-                    }
                 });
 
                 wsProxyCache.set(cacheKey, wsProxy);
@@ -1546,12 +1754,19 @@ server.on('upgrade', (req, socket, head) => {
             }
 
             try {
+                // Update last activity
+                preview.lastActivity = new Date();
+
+                // Proxy the WebSocket upgrade
                 wsProxy.ws(req, socket, head);
             } catch (err: any) {
-                console.error(`[WS] Upgrade error:`, err.message);
+                console.error(`[WS] Upgrade error for ${subdomain}:`, err.message);
                 socket.destroy();
             }
         } else {
+            // Preview not ready - send 503 and close gracefully
+            console.log(`[WS] Preview not ready for ${subdomain}, status: ${preview?.status || 'not found'}`);
+            socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
             socket.destroy();
         }
     } else {

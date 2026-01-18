@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
         // 1. Generate unique repo name
         const repoName = generateProjectName();
 
-        // 2. Create repo from template via GitHub API
+        // 2. Create repo from template via GitHub API (with 30s timeout)
         const createRepoResponse = await fetch(
             `https://api.github.com/repos/${githubOwner}/${templateRepo}/generate`,
             {
@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
                     private: true, // Private repos - user gets access when they link GitHub
                     include_all_branches: false,
                 }),
+                signal: AbortSignal.timeout(30000), // 30 second timeout
             }
         );
 
@@ -139,6 +140,29 @@ export async function POST(request: NextRequest) {
         });
     } catch (error) {
         console.error('[API] Create project error:', error);
+
+        // Handle timeout errors specifically
+        if (error instanceof Error) {
+            if (error.name === 'TimeoutError' || error.message.includes('timeout') || error.message.includes('Timeout')) {
+                return NextResponse.json(
+                    { error: 'GitHub API request timed out. Please try again.' },
+                    { status: 504 }
+                );
+            }
+
+            if (error.message.includes('fetch failed')) {
+                return NextResponse.json(
+                    { error: 'Failed to connect to GitHub. Please check your internet connection and try again.' },
+                    { status: 503 }
+                );
+            }
+
+            return NextResponse.json(
+                { error: error.message || 'Failed to create project' },
+                { status: 500 }
+            );
+        }
+
         return NextResponse.json(
             { error: 'Internal server error' },
             { status: 500 }

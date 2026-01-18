@@ -792,6 +792,8 @@ app.post('/execution/register', async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
+// Map to track stop requests (requestId -> shouldStop flag)
+const stopRequests = new Map();
 // POST /execution/stop - Stop a running n8n execution
 app.post('/execution/stop', async (req, res) => {
     try {
@@ -799,39 +801,63 @@ app.post('/execution/stop', async (req, res) => {
         if (!requestId) {
             return res.status(400).json({ error: 'Missing requestId' });
         }
+        // Set stop flag for the workflow to check
+        stopRequests.set(requestId, true);
+        console.log(`🛑 Stop signal set for request ${requestId}`);
         const executionId = activeExecutions.get(requestId);
         if (!executionId) {
-            console.log(`No execution found for request ${requestId}`);
-            return res.json({ ok: true, message: 'No active execution found' });
+            console.log(`No execution found for request ${requestId}, but stop flag is set`);
+            return res.json({ ok: true, message: 'Stop signal set (execution may have completed)' });
         }
         if (!N8N_API_KEY) {
             console.error('N8N_API_KEY not configured');
-            return res.status(500).json({ error: 'N8N_API_KEY not configured' });
+            return res.json({ ok: true, message: 'Stop signal set (cannot call n8n API without key)' });
         }
-        // Call n8n API to stop the execution
-        console.log(`Stopping n8n execution ${executionId} for request ${requestId}...`);
-        const n8nResponse = await fetch(`${N8N_API_URL}/api/v1/executions/${executionId}`, {
-            method: 'DELETE',
-            headers: {
-                'X-N8N-API-KEY': N8N_API_KEY,
-                'Accept': 'application/json'
+        // Call n8n API to stop the execution (best effort)
+        console.log(`Attempting to stop n8n execution ${executionId} for request ${requestId}...`);
+        try {
+            const n8nResponse = await fetch(`${N8N_API_URL}/api/v1/executions/${executionId}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-N8N-API-KEY': N8N_API_KEY,
+                    'Accept': 'application/json'
+                },
+                signal: AbortSignal.timeout(5000) // 5 second timeout
+            });
+            if (n8nResponse.ok) {
+                console.log(`✅ Successfully stopped execution ${executionId}`);
             }
-        });
-        if (n8nResponse.ok) {
-            console.log(`Successfully stopped execution ${executionId}`);
-            activeExecutions.delete(requestId);
-            res.json({ ok: true, stopped: executionId });
+            else {
+                const errorText = await n8nResponse.text();
+                console.log(`⚠️ Failed to stop execution via API: ${n8nResponse.status} - ${errorText}`);
+            }
         }
-        else {
-            const errorText = await n8nResponse.text();
-            console.error(`Failed to stop execution: ${n8nResponse.status} - ${errorText}`);
-            // Still remove from our tracking even if n8n fails (execution might have completed)
-            activeExecutions.delete(requestId);
-            res.json({ ok: true, message: 'Execution may have already completed', status: n8nResponse.status });
+        catch (apiError) {
+            console.log(`⚠️ n8n API call failed (workflow will check stop flag):`, apiError);
         }
+        res.json({ ok: true, stopped: true, requestId });
     }
     catch (error) {
         console.error('Execution stop error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+// GET /execution/check/:requestId - Check if execution should stop
+app.get('/execution/check/:requestId', async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        if (!requestId) {
+            return res.status(400).json({ error: 'Missing requestId' });
+        }
+        const shouldStop = stopRequests.get(requestId) === true;
+        res.json({
+            ok: true,
+            shouldStop,
+            requestId
+        });
+    }
+    catch (error) {
+        console.error('Execution check error:', error);
         res.status(500).json({ error: String(error) });
     }
 });
@@ -843,7 +869,8 @@ app.post('/execution/cleanup', async (req, res) => {
             return res.status(400).json({ error: 'Missing requestId' });
         }
         activeExecutions.delete(requestId);
-        console.log(`Cleaned up execution tracking for request ${requestId}`);
+        stopRequests.delete(requestId); // Clean up stop flag
+        console.log(`Cleaned up execution tracking and stop flag for request ${requestId}`);
         res.json({ ok: true });
     }
     catch (error) {
@@ -1387,24 +1414,27 @@ server.on('upgrade', (req, socket, head) => {
                     changeOrigin: true,
                 });
                 // Handle WebSocket proxy errors gracefully
-                wsProxy.on('error', (err, _req, res) => {
+                wsProxy.on('error', (err) => {
                     console.error(`[WS Proxy Error] ${subdomain}:`, err.message);
-                    if (res && typeof res.destroy === 'function') {
-                        res.destroy();
-                    }
                 });
                 wsProxyCache.set(cacheKey, wsProxy);
                 console.log(`[WS] Created WebSocket proxy for ${cacheKey}`);
             }
             try {
+                // Update last activity
+                preview.lastActivity = new Date();
+                // Proxy the WebSocket upgrade
                 wsProxy.ws(req, socket, head);
             }
             catch (err) {
-                console.error(`[WS] Upgrade error:`, err.message);
+                console.error(`[WS] Upgrade error for ${subdomain}:`, err.message);
                 socket.destroy();
             }
         }
         else {
+            // Preview not ready - send 503 and close gracefully
+            console.log(`[WS] Preview not ready for ${subdomain}, status: ${preview?.status || 'not found'}`);
+            socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
             socket.destroy();
         }
     }
