@@ -1299,16 +1299,74 @@ app.post('/preview/replace', async (req, res) => {
         catch (e) {
             return res.status(404).json({ error: `File not found: ${filePath}` });
         }
-        // Check if search text exists
+        // Check if search text exists - try exact match first
+        let matchedSearch = search;
         if (!content.includes(search)) {
-            return res.status(400).json({
-                error: `Search text not found in file`,
-                searchText: search.substring(0, 100),
-                hint: 'Make sure the exact text exists in the file'
-            });
+            // Fallback: Try whitespace-flexible matching
+            // This handles cases where AI generates old_text without proper indentation
+            const searchLines = search.split('\n').map((l) => l.trim()).filter((l) => l);
+            const contentLines = content.split('\n');
+            let matchStart = -1;
+            let matchEnd = -1;
+            let originalLines = [];
+            // Find the first line of search in content (ignoring leading whitespace)
+            for (let i = 0; i < contentLines.length; i++) {
+                if (contentLines[i].trim() === searchLines[0]) {
+                    // Check if subsequent lines also match
+                    let allMatch = true;
+                    for (let j = 1; j < searchLines.length && i + j < contentLines.length; j++) {
+                        if (contentLines[i + j].trim() !== searchLines[j]) {
+                            allMatch = false;
+                            break;
+                        }
+                    }
+                    if (allMatch) {
+                        matchStart = i;
+                        matchEnd = i + searchLines.length;
+                        originalLines = contentLines.slice(matchStart, matchEnd);
+                        break;
+                    }
+                }
+            }
+            if (matchStart === -1) {
+                return res.status(400).json({
+                    error: `Search text not found in file`,
+                    searchText: search.substring(0, 100),
+                    hint: 'Make sure the exact text exists in the file (whitespace-flexible matching also failed)'
+                });
+            }
+            // Reconstruct the matched text with original whitespace
+            matchedSearch = originalLines.join('\n');
+            console.log(`[${siteId}] Whitespace-flexible match found for ${filePath}`);
         }
         // Perform replacement
-        const newContent = content.replace(search, replace || '');
+        // For whitespace-flexible replacement, preserve the original leading whitespace
+        let newContent;
+        if (matchedSearch !== search) {
+            // Get the leading whitespace from the first matched line
+            const firstMatchedLine = matchedSearch.split('\n')[0];
+            const leadingWhitespace = firstMatchedLine.match(/^(\s*)/)?.[1] || '';
+            // Apply the same leading whitespace to replacement lines
+            const replaceLines = (replace || '').split('\n');
+            const adjustedReplace = replaceLines.map((line, idx) => {
+                // For the first line, use the original indentation
+                // For subsequent lines, try to preserve relative indentation
+                if (idx === 0) {
+                    return leadingWhitespace + line.trim();
+                }
+                // For other lines, keep their relative indentation or use the base
+                const originalLine = matchedSearch.split('\n')[idx];
+                if (originalLine) {
+                    const origIndent = originalLine.match(/^(\s*)/)?.[1] || '';
+                    return origIndent + line.trim();
+                }
+                return leadingWhitespace + line.trim();
+            }).join('\n');
+            newContent = content.replace(matchedSearch, adjustedReplace);
+        }
+        else {
+            newContent = content.replace(search, replace || '');
+        }
         // Write file back
         await fs_1.promises.writeFile(fullPath, newContent, 'utf-8');
         // Update activity
@@ -1343,7 +1401,9 @@ app.post('/preview/push', async (req, res) => {
         // Configure git user identity for commit
         (0, child_process_1.execSync)('git config user.email "ai-editor@automate.dev"', { cwd: workspacePath, stdio: 'pipe' });
         (0, child_process_1.execSync)('git config user.name "AI Editor"', { cwd: workspacePath, stdio: 'pipe' });
-        // Check if there are any changes to commit
+        // CRITICAL FIX: Stage all changes FIRST (includes untracked files created by /preview/write)
+        (0, child_process_1.execSync)('git add -A', { cwd: workspacePath, stdio: 'pipe' });
+        // Then check if there are any changes to commit
         const statusOutput = (0, child_process_1.execSync)('git status --porcelain', { cwd: workspacePath, encoding: 'utf-8' });
         if (!statusOutput.trim()) {
             return res.json({
@@ -1354,8 +1414,6 @@ app.post('/preview/push', async (req, res) => {
         }
         console.log(`[${siteId}] Changes detected, committing and pushing...`);
         console.log(`[${siteId}] Status:\n${statusOutput}`);
-        // Stage all changes
-        (0, child_process_1.execSync)('git add -A', { cwd: workspacePath, stdio: 'pipe' });
         // Commit changes
         const commitMsg = message.replace(/"/g, '\\"'); // Escape quotes
         (0, child_process_1.execSync)(`git commit -m "${commitMsg}"`, { cwd: workspacePath, stdio: 'pipe' });
@@ -1379,6 +1437,107 @@ app.post('/preview/push', async (req, res) => {
             stderr: error.stderr?.toString() || '',
             stdout: error.stdout?.toString() || ''
         });
+    }
+});
+// POST /preview/save-image - Save a base64 image to the workspace
+app.post('/preview/save-image', async (req, res) => {
+    try {
+        const { siteId, imageData, fileName } = req.body;
+        if (!siteId || !imageData) {
+            return res.status(400).json({ error: 'Missing siteId or imageData' });
+        }
+        const preview = activePreviews.get(siteId);
+        if (!preview || preview.status !== 'running') {
+            return res.status(400).json({ error: 'Preview not running' });
+        }
+        const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
+        const imagesDir = path_1.default.join(workspacePath, 'public', 'images');
+        // Ensure images directory exists
+        await fs_1.promises.mkdir(imagesDir, { recursive: true });
+        // Generate filename if not provided
+        const finalFileName = fileName || `ai-generated-${Date.now()}.png`;
+        const fullPath = path_1.default.join(imagesDir, finalFileName);
+        // Remove data URL prefix if present
+        let base64Data = imageData;
+        if (imageData.includes(',')) {
+            base64Data = imageData.split(',')[1];
+        }
+        // Write the image file
+        await fs_1.promises.writeFile(fullPath, Buffer.from(base64Data, 'base64'));
+        // Update activity
+        preview.lastActivity = new Date();
+        console.log(`[${siteId}] Saved image: ${finalFileName}`);
+        res.json({
+            ok: true,
+            file: `/images/${finalFileName}`,
+            fullPath: `public/images/${finalFileName}`,
+            url: `https://${siteId}.preview.automatelb.com/images/${finalFileName}`
+        });
+    }
+    catch (error) {
+        console.error('Save image error:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
+// POST /preview/search - Search for files using grep or glob
+app.post('/preview/search', async (req, res) => {
+    try {
+        const { siteId, pattern, type = 'grep', path: searchPath = '.' } = req.body;
+        if (!siteId || !pattern) {
+            return res.status(400).json({ error: 'Missing siteId or pattern' });
+        }
+        const preview = activePreviews.get(siteId);
+        if (!preview || preview.status !== 'running') {
+            return res.status(400).json({ error: 'Preview not running' });
+        }
+        const workspacePath = path_1.default.join(WORKSPACES_DIR, siteId);
+        // Ensure workspace exists
+        try {
+            await fs_1.promises.access(workspacePath);
+        }
+        catch {
+            return res.status(404).json({ error: 'Workspace not found' });
+        }
+        let command = '';
+        // Basic sanitization
+        const safePattern = pattern.replace(/"/g, '\\"');
+        if (type === 'grep') {
+            // grep -rnI "pattern" . --include="*.{ts,tsx,js,jsx,css,html,json,md}"
+            // Recursive, line numbers, ignore binary
+            command = `grep -rnI "${safePattern}" . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next --exclude-dir=.turbo --exclude=package-lock.json`;
+        }
+        else if (type === 'glob') {
+            // find . -name "pattern"
+            // Using wildcards needs quotes in find usually, but here checking name matches
+            command = `find . -name "${safePattern}" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/.next/*"`;
+        }
+        else {
+            return res.status(400).json({ error: 'Invalid search type' });
+        }
+        try {
+            // Updated activity
+            preview.lastActivity = new Date();
+            const output = (0, child_process_1.execSync)(command, { cwd: workspacePath, encoding: 'utf-8', timeout: 5000, maxBuffer: 1024 * 1024 });
+            const matches = output.trim().split('\n').filter(Boolean);
+            // Limit results to avoid overwhelming tokens
+            const MAX_RESULTS = 100;
+            const truncated = matches.length > MAX_RESULTS;
+            const results = matches.slice(0, MAX_RESULTS);
+            res.json({ ok: true, matches: results, count: matches.length, truncated });
+        }
+        catch (e) {
+            // grep returns exit code 1 if no matches found
+            if (e.status === 1) {
+                res.json({ ok: true, matches: [], count: 0 });
+            }
+            else {
+                throw e;
+            }
+        }
+    }
+    catch (error) {
+        console.error('Search error:', error);
+        res.status(500).json({ error: String(error) });
     }
 });
 // Health check

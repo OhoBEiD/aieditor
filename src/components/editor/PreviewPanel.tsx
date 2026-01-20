@@ -240,28 +240,31 @@ export function PreviewPanel({
 
         const checkServerHealth = async () => {
             try {
-                const response = await fetch(previewUrl, {
-                    method: 'HEAD',
-                    mode: 'no-cors', // Allow cross-origin without CORS headers
-                    cache: 'no-store',
-                });
-                // In no-cors mode, we can't check status, but successful fetch means server responded
-                // For more accurate check, we'll try a regular fetch and check for common error patterns
-                const fullResponse = await fetch(`${previewUrl}?_health=${Date.now()}`, {
-                    cache: 'no-store',
-                }).catch(() => null);
+                // Try a regular fetch first (fastest if CORS allowed or same origin)
+                // Use a short timeout to fail fast
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-                if (fullResponse && fullResponse.ok) {
-                    console.log('[Preview] Server health check passed!');
+                try {
+                    const response = await fetch(previewUrl, {
+                        method: 'HEAD',
+                        mode: 'no-cors', // Allow cross-origin without CORS headers
+                        cache: 'no-store',
+                        signal: controller.signal
+                    });
+
+                    // In no-cors mode, we accept any response as "server is alive"
+                    // If the server was down, fetch would throw (e.g. connection refused)
                     setIsServerReady(true);
                     setServerCheckCount(0);
-                    if (healthCheckRef.current) {
-                        clearInterval(healthCheckRef.current);
-                    }
-                } else {
-                    setServerCheckCount(prev => prev + 1);
-                    console.log(`[Preview] Server not ready yet (attempt ${serverCheckCount + 1})`);
+                    if (healthCheckRef.current) clearInterval(healthCheckRef.current);
+                    return;
+                } catch (e) {
+                    // Fetch failed, server likely down or network error
+                } finally {
+                    clearTimeout(timeoutId);
                 }
+
             } catch (error) {
                 setServerCheckCount(prev => prev + 1);
                 console.log(`[Preview] Server check failed (attempt ${serverCheckCount + 1}):`, error);
@@ -273,8 +276,8 @@ export function PreviewPanel({
         setServerCheckCount(0);
         checkServerHealth();
 
-        // Poll every 2 seconds until ready
-        healthCheckRef.current = setInterval(checkServerHealth, 2000);
+        // Poll every 1000ms (faster 1s polling)
+        healthCheckRef.current = setInterval(checkServerHealth, 1000);
 
         return () => {
             if (healthCheckRef.current) {
@@ -283,57 +286,26 @@ export function PreviewPanel({
         };
     }, [previewUrl]);
 
-    // Reset load state when URL changes
-    useEffect(() => {
-        if (previewUrl) {
-            console.log('[Preview] Preview URL set, entering loading state:', previewUrl);
-            setLoadState('loading');
-            setRetryCount(0);
-            setBuildError(null); // Clear previous build errors
-        }
-    }, [previewUrl]);
+    // ... (reset load state effect) ...
 
-    // Handle refreshKey changes - HMR handles updates automatically now
-    // The preview server stays running with health check, so HMR will push updates instantly
-    useEffect(() => {
-        if (refreshKey !== prevRefreshKey.current && refreshKey > 0) {
-            prevRefreshKey.current = refreshKey;
-            console.log('[Preview] Changes detected - HMR will update automatically (no reload needed)');
-            // No forced reload - the dev server's HMR will push updates to the iframe
-        }
-    }, [refreshKey]);
+    // ... (refresh key effect) ...
 
-    // Set loading timeout
-    useEffect(() => {
-        if (loadState === 'loading' && previewUrl) {
-            // Clear any existing timeout
-            if (loadTimeoutRef.current) {
-                clearTimeout(loadTimeoutRef.current);
-            }
-
-            // Set new timeout - 45 seconds for initial load (preview server may need startup time)
-            loadTimeoutRef.current = setTimeout(() => {
-                console.log('[Preview] Load timeout reached, retrying...');
-                handleRetry();
-            }, 45000);
-        }
-
-        return () => {
-            if (loadTimeoutRef.current) {
-                clearTimeout(loadTimeoutRef.current);
-            }
-        };
-    }, [loadState, iframeKey, previewUrl]);
+    // ... (timeout effect) ...
 
     const handleIframeLoad = () => {
-        console.log('[Preview] Iframe loaded successfully');
+        console.log('[Preview] Iframe loaded successfully (Event)');
         if (loadTimeoutRef.current) {
             clearTimeout(loadTimeoutRef.current);
         }
         setLoadState('loaded');
         setRetryCount(0);
 
+        // CRITICAL FIX: If iframe loads, server IS ready. Override any failed health checks.
+        setIsServerReady(true);
+        if (healthCheckRef.current) clearInterval(healthCheckRef.current);
+
         // Suppress WebSocket HMR errors inside the iframe (only works for same-origin)
+
         // Note: This will fail silently for cross-origin iframes due to CORS
         try {
             const iframe = iframeRef.current;

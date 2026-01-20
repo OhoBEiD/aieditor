@@ -1543,7 +1543,10 @@ app.post('/preview/push', async (req: Request, res: Response) => {
         execSync('git config user.email "ai-editor@automate.dev"', { cwd: workspacePath, stdio: 'pipe' });
         execSync('git config user.name "AI Editor"', { cwd: workspacePath, stdio: 'pipe' });
 
-        // Check if there are any changes to commit
+        // CRITICAL FIX: Stage all changes FIRST (includes untracked files created by /preview/write)
+        execSync('git add -A', { cwd: workspacePath, stdio: 'pipe' });
+
+        // Then check if there are any changes to commit
         const statusOutput = execSync('git status --porcelain', { cwd: workspacePath, encoding: 'utf-8' });
 
         if (!statusOutput.trim()) {
@@ -1556,9 +1559,6 @@ app.post('/preview/push', async (req: Request, res: Response) => {
 
         console.log(`[${siteId}] Changes detected, committing and pushing...`);
         console.log(`[${siteId}] Status:\n${statusOutput}`);
-
-        // Stage all changes
-        execSync('git add -A', { cwd: workspacePath, stdio: 'pipe' });
 
         // Commit changes
         const commitMsg = message.replace(/"/g, '\\"'); // Escape quotes
