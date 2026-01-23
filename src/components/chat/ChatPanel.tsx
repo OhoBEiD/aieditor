@@ -48,6 +48,7 @@ export function ChatPanel({
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const [isTransitioning, setIsTransitioning] = useState(false);
     const [displayedMessages, setDisplayedMessages] = useState<Message[]>([]);
+    const chatPanelRef = useRef<HTMLDivElement>(null);
 
     // Handle message transitions - only clear when actually switching sessions
     useEffect(() => {
@@ -69,8 +70,48 @@ export function ChatPanel({
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [displayedMessages, thinkingSteps]);
 
+    // Focus input when panel becomes visible (e.g., when returning to homepage)
+    useEffect(() => {
+        // Use Intersection Observer to detect when panel becomes visible
+        if (!chatPanelRef.current) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting && !isLoading && !isStreaming) {
+                        // Focus the textarea after a short delay
+                        setTimeout(() => {
+                            const textarea = chatPanelRef.current?.querySelector('textarea');
+                            if (textarea && document.activeElement !== textarea) {
+                                textarea.focus();
+                            }
+                        }, 200);
+                    }
+                });
+            },
+            { threshold: 0.1 }
+        );
+
+        observer.observe(chatPanelRef.current);
+
+        return () => observer.disconnect();
+    }, [isLoading, isStreaming]);
+
+    // Also focus when component mounts and is not loading
+    useEffect(() => {
+        if (!isLoading && !isStreaming) {
+            const timer = setTimeout(() => {
+                const textarea = chatPanelRef.current?.querySelector('textarea');
+                if (textarea) {
+                    textarea.focus();
+                }
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+    }, [isLoading, isStreaming]);
+
     return (
-        <div className="flex flex-col h-full overflow-hidden">
+        <div ref={chatPanelRef} className="flex flex-col h-full overflow-hidden">
             {/* Messages Area - with forced white scrollbar */}
             <style jsx global>{`
                 .chat-scrollbar::-webkit-scrollbar {

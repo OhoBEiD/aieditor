@@ -593,7 +593,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                 </p>
 
                 <div ref={inputRef} className="w-full max-w-3xl flex flex-col items-center opacity-0">
-                    <form onSubmit={handleSubmit} className="w-full relative z-20 rounded-3xl">
+                    <form onSubmit={handleSubmit} className="w-full relative z-50 rounded-3xl">
                         <div
                             className="relative rounded-3xl bg-white shadow-2xl"
                             style={{

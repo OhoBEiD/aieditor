@@ -18,16 +18,52 @@ interface UseWebContainerOptions {
     onError?: (error: string) => void;
 }
 
+function normalizeVirtualFsPath(rawPath: string): string {
+    let path = (rawPath || '').trim().replace(/\\/g, '/');
+    // Strip any accidental URL/query fragments
+    path = path.replace(/[?#].*$/, '');
+    path = path.replace(/^\.\/+/, '');
+    path = path.replace(/^\/+/, '');
+    path = path.replace(/\/+/g, '/');
+    if (!path) return '';
+
+    const parts = path.split('/');
+    const normalizedParts: string[] = [];
+    for (const part of parts) {
+        if (!part || part === '.') continue;
+        if (part === '..') {
+            normalizedParts.pop();
+            continue;
+        }
+        normalizedParts.push(part);
+    }
+    return normalizedParts.join('/');
+}
+
+async function pathExists(wc: WebContainer, rawPath: string): Promise<boolean> {
+    const normalizedPath = normalizeVirtualFsPath(rawPath);
+    if (!normalizedPath) return false;
+    try {
+        await wc.fs.readdir(`/${normalizedPath}`);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 // ... helper to save to supabase
 async function saveFileToSupabase(projectId: string, path: string, content: string) {
     if (!projectId) return;
     try {
+        const normalizedPath = normalizeVirtualFsPath(path);
+        if (!normalizedPath) return;
+
         // Use upsert with ignoreDuplicates to handle conflicts gracefully
         const { error } = await supabase
             .from('project_files')
             .upsert({
                 site_id: projectId,
-                path,
+                path: normalizedPath,
                 content,
                 updated_at: new Date().toISOString()
             }, { 
@@ -50,11 +86,14 @@ async function saveFileToSupabase(projectId: string, path: string, content: stri
 async function deleteFileFromSupabase(projectId: string, path: string) {
     if (!projectId) return;
     try {
+        const normalizedPath = normalizeVirtualFsPath(path);
+        if (!normalizedPath) return;
+
         await supabase
             .from('project_files')
             .delete()
             .eq('site_id', projectId)
-            .eq('path', path);
+            .eq('path', normalizedPath);
     } catch (e) {
         console.error('Failed to delete file from persistence:', path, e);
     }
@@ -71,6 +110,9 @@ const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes of inactivity before killi
 
 export function useWebContainer(options: UseWebContainerOptions = {}) {
     const { repoUrl, githubToken, projectId, onReady, onError } = options;
+    const projectIdRef = useRef<string | undefined>(projectId);
+    projectIdRef.current = projectId;
+    const projectLayoutRef = useRef<{ usesSrcDir: boolean | null }>({ usesSrcDir: null });
 
     const [state, setState] = useState<WebContainerState>({
         status: 'idle',
@@ -86,32 +128,87 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
     const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const isTabHiddenRef = useRef<boolean>(false);
 
+    const detectProjectLayout = useCallback(async (wc: WebContainer) => {
+        const hasSrcApp = await pathExists(wc, 'src/app');
+        const hasSrcPages = await pathExists(wc, 'src/pages');
+        const hasRootApp = await pathExists(wc, 'app');
+        const hasRootPages = await pathExists(wc, 'pages');
+
+        if (hasSrcApp || hasSrcPages) {
+            projectLayoutRef.current.usesSrcDir = true;
+        } else if (hasRootApp || hasRootPages) {
+            projectLayoutRef.current.usesSrcDir = false;
+        } else {
+            projectLayoutRef.current.usesSrcDir = null;
+        }
+
+        console.log('[WebContainer] Project layout detected:', projectLayoutRef.current.usesSrcDir === null ? 'unknown' : (projectLayoutRef.current.usesSrcDir ? 'src/' : 'root'));
+    }, []);
+
+    const mapToProjectPath = useCallback((rawPath: string): string => {
+        const normalizedPath = normalizeVirtualFsPath(rawPath);
+        if (!normalizedPath) return '';
+
+        const usesSrcDir = projectLayoutRef.current.usesSrcDir;
+        if (usesSrcDir === false && normalizedPath.startsWith('src/')) {
+            return normalizedPath.slice(4);
+        }
+        if (usesSrcDir === true && !normalizedPath.startsWith('src/')) {
+            const srcScopedPrefixes = [
+                'app/',
+                'pages/',
+                'components/',
+                'lib/',
+                'styles/',
+                'hooks/',
+                'context/',
+                'types/',
+                'utils/',
+            ];
+            if (srcScopedPrefixes.some(prefix => normalizedPath.startsWith(prefix))) {
+                return `src/${normalizedPath}`;
+            }
+        }
+        return normalizedPath;
+    }, []);
+
     // Restore files from Supabase
     const restoreFilesFromSupabase = useCallback(async (wc: WebContainer) => {
-        if (!projectId) {
+        const effectiveProjectId = projectIdRef.current;
+        if (!effectiveProjectId) {
             console.log('⚠️ No projectId, skipping file restoration');
             return;
         }
 
-        console.log('🔄 Restoring files from Supabase for project:', projectId);
+        console.log('🔄 Restoring files from Supabase for project:', effectiveProjectId);
         try {
             const { data, error } = await supabase
                 .from('project_files')
-                .select('path, content')
-                .eq('site_id', projectId);
+                .select('path, content, updated_at')
+                .eq('site_id', effectiveProjectId);
 
             if (error) {
                 console.error('❌ Supabase query error:', error);
                 throw error;
             }
 
-            console.log(`📊 Query returned ${data?.length || 0} files for site_id: ${projectId}`);
+            console.log(`📊 Query returned ${data?.length || 0} files for site_id: ${effectiveProjectId}`);
 
             if (data && data.length > 0) {
-                console.log(`📦 Restoring ${data.length} files from Supabase...`);
-                for (const file of data) {
-                    const path = file.path;
-                    const content = file.content;
+                // Dedupe on normalized path (handles historical leading-slash vs no-slash records)
+                const latestByPath = new Map<string, { content: string; updatedAt: number | null }>();
+                for (const file of data as Array<{ path: string; content: string; updated_at?: string | null }>) {
+                    const normalizedPath = mapToProjectPath(file.path);
+                    if (!normalizedPath) continue;
+                    const updatedAt = file.updated_at ? Date.parse(file.updated_at) : null;
+                    const existing = latestByPath.get(normalizedPath);
+                    if (!existing || (updatedAt !== null && (existing.updatedAt === null || updatedAt > existing.updatedAt))) {
+                        latestByPath.set(normalizedPath, { content: file.content, updatedAt });
+                    }
+                }
+
+                console.log(`📦 Restoring ${latestByPath.size} files from Supabase...`);
+                for (const [path, { content }] of latestByPath.entries()) {
 
                     // Ensure directory exists
                     const dir = path.substring(0, path.lastIndexOf('/'));
@@ -129,7 +226,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
         } catch (e) {
             console.error('Failed to restore files:', e);
         }
-    }, [projectId]);
+    }, []);
 
     // Boot WebContainer (singleton pattern)
     const boot = useCallback(async () => {
@@ -168,7 +265,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
             console.log('🚀 WebContainer booted');
 
             // Restore persistent files if projectId exists
-            if (projectId) {
+            if (projectIdRef.current) {
                 await restoreFilesFromSupabase(webcontainerInstance);
             }
 
@@ -193,7 +290,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
             onError?.(errorMsg);
             throw error;
         }
-    }, [onError, projectId, restoreFilesFromSupabase]);
+    }, [onError, restoreFilesFromSupabase]);
 
     // Re-restore files when projectId changes (handles localStorage restore timing)
     const previousProjectIdRef = useRef<string | undefined>(projectId);
@@ -220,31 +317,36 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
 
     // Write a single file
     const writeFile = useCallback(async (path: string, content: string) => {
+        const mappedPath = mapToProjectPath(path);
+        if (!mappedPath) return false;
         const wc = await boot();
 
         // Ensure directory exists
-        const dir = path.substring(0, path.lastIndexOf('/'));
+        const dir = mappedPath.substring(0, mappedPath.lastIndexOf('/'));
         if (dir) {
             await wc.fs.mkdir(dir, { recursive: true });
         }
 
-        await wc.fs.writeFile(path, content);
-        console.log('✏️ Wrote file:', path);
+        await wc.fs.writeFile(mappedPath, content);
+        console.log('✏️ Wrote file:', mappedPath);
 
         // Auto-save to Supabase
-        if (projectId) {
-            saveFileToSupabase(projectId, path, content);
+        const effectiveProjectId = projectIdRef.current;
+        if (effectiveProjectId) {
+            saveFileToSupabase(effectiveProjectId, mappedPath, content);
         }
 
         return true;
-    }, [boot, projectId]);
+    }, [boot, mapToProjectPath]);
 
     // Read a file
     const readFile = useCallback(async (path: string): Promise<string> => {
+        const mappedPath = mapToProjectPath(path);
+        if (!mappedPath) return '';
         const wc = await boot();
-        const content = await wc.fs.readFile(path, 'utf-8');
+        const content = await wc.fs.readFile(mappedPath, 'utf-8');
         return content;
-    }, [boot]);
+    }, [boot, mapToProjectPath]);
 
     // Run a command in the container
     const runCommand = useCallback(async (command: string, args: string[] = []) => {
@@ -391,21 +493,24 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
 
     // Delete a file
     const deleteFile = useCallback(async (path: string): Promise<boolean> => {
+        const mappedPath = mapToProjectPath(path);
+        if (!mappedPath) return false;
         const wc = await boot();
         try {
-            await wc.fs.rm(path);
-            console.log('🗑️ Deleted file:', path);
+            await wc.fs.rm(mappedPath);
+            console.log('🗑️ Deleted file:', mappedPath);
 
             // Auto-delete from Supabase
-            if (projectId) {
-                deleteFileFromSupabase(projectId, path);
+            const effectiveProjectId = projectIdRef.current;
+            if (effectiveProjectId) {
+                deleteFileFromSupabase(effectiveProjectId, mappedPath);
             }
             return true;
         } catch (e) {
-            console.error('Failed to delete file:', path, e);
+            console.error('Failed to delete file:', mappedPath, e);
             return false;
         }
-    }, [boot, projectId]);
+    }, [boot, mapToProjectPath]);
 
     // Apply file operations from AI response (batch operation)
     interface FileOperation {
@@ -423,61 +528,66 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
         const wc = await boot();
         const errors: string[] = [];
         let applied = 0;
+        const effectiveProjectId = projectIdRef.current;
 
         for (let i = 0; i < operations.length; i++) {
             const op = operations[i];
             onProgress?.(i + 1, operations.length, `Applying: ${op.path}`);
+            const mappedPath = mapToProjectPath(op.path);
 
             try {
-                if (op.type === 'write' && op.content !== undefined) {
+                if (!mappedPath) {
+                    errors.push(`${op.path}: Invalid path`);
+                }
+                else if (op.type === 'write' && op.content !== undefined) {
                     // Create directory if needed
-                    const dir = op.path.substring(0, op.path.lastIndexOf('/'));
+                    const dir = mappedPath.substring(0, mappedPath.lastIndexOf('/'));
                     if (dir) {
                         await wc.fs.mkdir(dir, { recursive: true });
                     }
-                    await wc.fs.writeFile(op.path, op.content);
-                    console.log('✏️ Wrote:', op.path);
+                    await wc.fs.writeFile(mappedPath, op.content);
+                    console.log('✏️ Wrote:', mappedPath);
 
                     // Auto-save to Supabase
-                    if (projectId) {
-                        saveFileToSupabase(projectId, op.path, op.content);
+                    if (effectiveProjectId) {
+                        saveFileToSupabase(effectiveProjectId, mappedPath, op.content);
                     }
                     applied++;
                 }
                 else if (op.type === 'delete') {
-                    await wc.fs.rm(op.path);
-                    console.log('🗑️ Deleted:', op.path);
+                    await wc.fs.rm(mappedPath);
+                    console.log('🗑️ Deleted:', mappedPath);
 
                     // Auto-delete from Supabase
-                    if (projectId) {
-                        deleteFileFromSupabase(projectId, op.path);
+                    if (effectiveProjectId) {
+                        deleteFileFromSupabase(effectiveProjectId, mappedPath);
                     }
                     applied++;
                 }
                 else if (op.type === 'modify' && op.oldText && op.newText) {
                     // Read, replace, write
-                    const content = await wc.fs.readFile(op.path, 'utf-8');
+                    const content = await wc.fs.readFile(mappedPath, 'utf-8');
                     if (content.includes(op.oldText)) {
                         const newContent = content.replace(op.oldText, op.newText);
-                        await wc.fs.writeFile(op.path, newContent);
-                        console.log('🔄 Modified:', op.path);
+                        await wc.fs.writeFile(mappedPath, newContent);
+                        console.log('🔄 Modified:', mappedPath);
 
                         // Auto-save to Supabase
-                        if (projectId) {
-                            saveFileToSupabase(projectId, op.path, newContent);
+                        if (effectiveProjectId) {
+                            saveFileToSupabase(effectiveProjectId, mappedPath, newContent);
                         }
                         applied++;
                     } else {
-                        errors.push(`Text not found in ${op.path}`);
+                        errors.push(`Text not found in ${mappedPath}`);
                     }
                 }
             } catch (e: any) {
-                errors.push(`${op.path}: ${e.message}`);
+                errors.push(`${mappedPath || op.path}: ${e.message}`);
             }
         }
 
         return { success: errors.length === 0, applied, errors };
-    }, [boot, projectId]);
+    }, [boot, mapToProjectPath]);
 
     // Install dependencies
     const installDependencies = useCallback(async () => {
@@ -526,8 +636,10 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                 const { STARTER_TEMPLATE } = await import('@/lib/webcontainer/starterTemplate');
                 await mountFiles(STARTER_TEMPLATE);
 
+                await detectProjectLayout(wc);
+
                 // Restore persisted files
-                if (projectId && wc) {
+                if (projectIdRef.current && wc) {
                     console.log('🔄 Restoring persisted files on top of starter template...');
                     await restoreFilesFromSupabase(wc);
                 }
@@ -572,8 +684,10 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                     const { STARTER_TEMPLATE } = await import('@/lib/webcontainer/starterTemplate');
                     await mountFiles(STARTER_TEMPLATE);
 
+                    await detectProjectLayout(wc);
+
                     // CRITICAL: Restore any persisted files from Supabase AFTER mounting template
-                    if (projectId && wc) {
+                    if (projectIdRef.current && wc) {
                         console.log('🔄 Restoring persisted files on top of starter template...');
                         await restoreFilesFromSupabase(wc);
                     }
@@ -639,6 +753,15 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
             console.log('📁 Mounting files to WebContainer...');
             await mountFiles(files);
 
+            await detectProjectLayout(wc);
+
+            // CRITICAL: Re-apply persisted edits on top of the GitHub snapshot
+            // This preserves AI/manual edits that haven't been synced back to GitHub yet.
+            if (projectIdRef.current && wc) {
+                console.log('🔄 Restoring persisted files on top of GitHub project...');
+                await restoreFilesFromSupabase(wc);
+            }
+
             setState(s => ({ ...s, status: 'installing' }));
             console.log('📦 Installing dependencies...');
             await installDependencies();
@@ -655,7 +778,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
             onError?.(errorMsg);
             throw error;
         }
-    }, [boot, mountFiles, installDependencies, startDevServer, onError]);
+    }, [boot, mountFiles, installDependencies, startDevServer, onError, restoreFilesFromSupabase, detectProjectLayout]);
 
     // SANDBOX_KILL: Handle tab visibility changes
     useEffect(() => {
@@ -732,6 +855,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
     const applyFileOperations = useCallback(async (operations: any[]) => {
         const wc = await boot();
         let appliedCount = 0;
+        const effectiveProjectId = projectIdRef.current;
 
         console.log(`🔧 Applying ${operations.length} file operations to WebContainer...`);
 
@@ -774,11 +898,13 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                     }
                 } else if (op.type === 'delete') {
                     try {
-                        await wc.fs.rm(op.path, { recursive: true, force: true });
+                        const mappedPath = mapToProjectPath(op.path);
+                        if (!mappedPath) continue;
+                        await wc.fs.rm(mappedPath, { recursive: true, force: true });
                         console.log(`🗑️ Deleted file: ${op.path}`);
                         // Delete from Supabase
-                        if (projectId) {
-                            deleteFileFromSupabase(projectId, op.path);
+                        if (effectiveProjectId) {
+                            deleteFileFromSupabase(effectiveProjectId, mappedPath);
                         }
                         appliedCount++;
                     } catch (rmErr) {
@@ -794,7 +920,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
         
         // Return success status for caller to know when to refresh
         return { success: appliedCount > 0, applied: appliedCount, total: operations.length };
-    }, [boot, writeFile, readFile, projectId]);
+    }, [boot, writeFile, readFile, mapToProjectPath]);
 
     return {
         ...state,

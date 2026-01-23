@@ -37,6 +37,28 @@ export function MessageInput({
     const dropdownRef = useRef<HTMLDivElement>(null);
     const dropdownMenuRef = useRef<HTMLDivElement>(null);
     const modeBtnRef = useRef<HTMLButtonElement>(null);
+    const formRef = useRef<HTMLFormElement>(null);
+
+    // Auto-focus textarea on mount and when component becomes visible
+    useEffect(() => {
+        // Focus after a short delay to ensure component is fully rendered
+        const focusTimer = setTimeout(() => {
+            if (textareaRef.current && !isLoading) {
+                textareaRef.current.focus();
+            }
+        }, 100);
+
+        return () => clearTimeout(focusTimer);
+    }, [isLoading]);
+
+    // Focus textarea when clicking anywhere on the form (except buttons)
+    const handleFormClick = (e: React.MouseEvent<HTMLFormElement>) => {
+        // Only focus if clicking on the form container, not on buttons or inputs
+        if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.focus-input-on-click')) {
+            e.preventDefault();
+            textareaRef.current?.focus();
+        }
+    };
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -214,7 +236,7 @@ export function MessageInput({
     }, [message]);
 
     return (
-        <div className="flex-shrink-0 p-4">
+        <div className="flex-shrink-0 p-4 relative z-50">
             {/* Image Preview */}
             {imagePreview && (
                 <div className="mb-3 relative inline-block">
@@ -232,7 +254,12 @@ export function MessageInput({
                 </div>
             )}
 
-            <form onSubmit={handleSubmit} className="flex items-center gap-3">
+            <form 
+                ref={formRef}
+                onSubmit={handleSubmit} 
+                onClick={handleFormClick}
+                className="flex items-center gap-3 focus-input-on-click cursor-text"
+            >
                 <input
                     ref={fileInputRef}
                     type="file"
@@ -253,9 +280,14 @@ export function MessageInput({
                         }
                     }}
                     onPaste={handlePaste}
+                    onClick={(e) => {
+                        // Stop propagation to prevent form click handler from interfering
+                        e.stopPropagation();
+                    }}
                     placeholder={placeholder}
                     disabled={isLoading}
                     rows={1}
+                    autoFocus
                     className={cn(
                         'flex-1 px-3 py-1.5 rounded-2xl text-xs resize-none',
                         'bg-white/50 backdrop-blur-sm border border-white/20',

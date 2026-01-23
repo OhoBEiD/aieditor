@@ -18,38 +18,48 @@ const openrouter = createOpenAI({
 
 // System prompts
 const EXECUTOR_SYSTEM_PROMPT = `You are an expert full-stack developer. Your job is to implement the plan using the tools.
-
-## ITERATIVE WORKFLOW
-1. If you need to modify a file, READ IT FIRST using "read_file" to see the content.
-2. Apply changes using "write_file" (new files) or "modify_file" (surpical edits).
-3. If a tool call fails or you see an error, READ the file again to diagnose and FIX it.
-4. You can loop multiple times: READ -> EDIT -> READ (verify) -> EDIT if needed.
-
-## MANDATORY RULES
-- NEVER call tools with empty arguments {}.
-- "content" for write_file must be the COMPLETE file source code.
-- Ensure all imports and syntax are correct.
-`;
+ 
+ ## ITERATIVE WORKFLOW
+ 1. If you need to modify a file, READ IT FIRST using "read_file" to see the content.
+ 2. Apply changes using "write_file" (new files) or "modify_file" (surpical edits).
+ 3. If a tool call fails or you see an error, READ the file again to diagnose and FIX it.
+ 4. You can loop multiple times: READ -> EDIT -> READ (verify) -> EDIT if needed.
+ 
+ ## MANDATORY RULES
+ - NEVER call tools with empty arguments {}.
+ - "content" for write_file must be the COMPLETE file source code.
+ - Ensure all imports and syntax are correct.
+ - **DO NOT USE run_command**. START by assuming all dependencies are already installed.
+ - **PERFORM ALL STEPS** in the plan. Do not stop until all files are created.
+ - **FOCUS ON FILE CREATION**. Your primary job is to create the files described in the plan.
+ - **YOU MUST NOT STOP** until you have created the files. If you only list files or read files, you have FAILED. Return to the loop and WRITE the files.
+ - **LAYOUT SAFETY**: When modifying \`layout.tsx\`, YOU MUST PRESERVE the \`<html>\` and \`<body>\` tags. Do not remove them or the preview will break.
+ `;
 
 const PLANNER_SYSTEM_PROMPT = `You are a senior software architect and codebase investigator. 
-
-Your goal is to create a DETAILED execution plan for a user request.
-
-## Codebase Investigation
-1. First, EXPLORE the project structure using "list_files".
-2. SEARCH for relevant code patterns using "search_files"(grep).
-3. READ specific files using "read_file" to understand implementation details.
-4. DO NOT assume you know the contents of files - INVESTIGATE first.
-
-## Output Format:
-### FILES TO CREATE / MODIFY
-1.[path] - [brief description of changes]
-  (list all files)
-
-### DESIGN SPECIFICATIONS
-  - Colors, typography, GSAP animations, layout details.
-
-Keep the final plan concise but technically complete.The executor will follow this plan exactly.`;
+ 
+ Your goal is to create a DETAILED execution plan for a user request.
+ 
+ ## WORKFLOW (CRITICAL)
+ 1. **PHASE 1: INVESTIGATION (Optional but Recommended)**
+    - Use "list_files", "search_files", or "read_file" to understand the codebase.
+    - Do NOT guess. Verify existing file paths and contents.
+    - **LIMIT**: Max 2-3 investigation steps. Do not get stuck here.
+ 
+ 2. **PHASE 2: PLANNING (MANDATORY)**
+    - AFTER investigation, you MUST output the Implementation Plan in Markdown.
+    - **DO NOT STOP** after using tools. You MUST write the plan.
+    - If you are confident, you can skip investigation and write the plan immediately.
+ 
+ ## Output Format (for Phase 2):
+ ### FILES TO CREATE/MODIFY
+ 1. [path] - [brief description of changes]
+ (list all files)
+ 
+ ### DESIGN SPECIFICATIONS
+ - Colors, typography, GSAP animations, layout details.
+ 
+ Keep the final plan concise but technically complete. The executor will follow this plan exactly.`;
 
 // Define tools - using same pattern as VercelUIAgent
 const writeFileTool = tool({
@@ -282,10 +292,10 @@ export async function POST(req: NextRequest) {
 
       // Stream the plan with live updates
       const planStream = await streamText({
-        model: openrouter.chat("google/gemini-3-pro-preview"),
+        model: openrouter.chat("google/gemini-3-flash-preview"),
         system: PLANNER_SYSTEM_PROMPT,
         prompt: executionPrompt,
-        maxSteps: 10,
+        maxSteps: 20,
         tools: {
           list_files: listFilesTool,
           search_files: searchFilesTool,
@@ -318,12 +328,29 @@ export async function POST(req: NextRequest) {
       plan = accumulatedPlan;
 
       // Validate that plan is not empty
-      const isPlanEmpty = !plan || plan.trim().length === 0;
+      let isPlanEmpty = !plan || plan.trim().length === 0;
       if (isPlanEmpty) {
-        console.warn("[Mastra] Plan is empty! Retrying planner...");
-        await emitStep(requestId, siteId, planningStepNumber, 'planning', 'error', 'Plan generation failed - empty plan', { content: plan }, sessionId);
-        // Optionally retry or fall back to execution without plan
-        // For now, we'll continue with empty plan but log the warning
+        console.warn("[Mastra] Plan is empty! Retrying planner to force text output...");
+
+        try {
+          await emitStep(requestId, siteId, planningStepNumber, 'planning', 'running', 'Retrying plan generation...', undefined, sessionId);
+
+          // Retry with blocking generateText WITHOUT tools to force text output
+          const retryResult = await generateText({
+            model: openrouter.chat("google/gemini-3-flash-preview"),
+            system: PLANNER_SYSTEM_PROMPT + "\n\nIMPORTANT: Do not use tools. Just write the plan immediately based on your knowledge.",
+            prompt: executionPrompt,
+            // tools: disabled to ensure text output
+          });
+
+          plan = retryResult.text || "";
+          if (plan) {
+            console.log("[Mastra] Retry successful. Plan length:", plan.length);
+            isPlanEmpty = false;
+          }
+        } catch (retryError) {
+          console.error("[Mastra] Planner retry failed:", retryError);
+        }
       } else {
         console.log("[Mastra] Plan generated.", `Plan length: ${plan.trim().length} characters`);
       }
@@ -407,7 +434,6 @@ export async function POST(req: NextRequest) {
         write_file: writeFileTool,
         modify_file: modifyFileTool,
         delete_file: deleteFileTool,
-        run_command: runCommandTool,
         list_files: listFilesTool,
         search_files: searchFilesTool,
         read_file: readFileTool,
@@ -510,6 +536,9 @@ export async function POST(req: NextRequest) {
               undefined,
               sessionId
             );
+          } else if (["list_files", "search_files", "read_file"].includes(name || "")) {
+            // Just log read operations without emitting a step to keep UI clean
+            // or emit a debug step if needed. For now, silence the warning.
           } else {
             console.warn(`[Executor] ${name}: missing args/result payload`, { payload });
           }

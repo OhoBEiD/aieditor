@@ -275,10 +275,6 @@ export default function Home() {
         status: wcStatus,
         previewUrl: wcPreviewUrl,
         applyFileChanges,
-        boot: bootWebContainer,
-        mountFiles,
-        installDependencies,
-        startDevServer,
         initFromGitHub,
         getFileContext,
         applyFileOperations,
@@ -535,21 +531,12 @@ export default function Home() {
         (async () => {
             try {
                 // If project has a GitHub repo, pull from it
-                if (activeProject.repoUrl) {
-                    console.log('[Preview] Loading project from GitHub:', activeProject.repoUrl);
-                    // Get GitHub token from localStorage
-                    const githubToken = localStorage.getItem('github_token') || undefined;
-                    await initFromGitHub(activeProject.repoUrl, githubToken, activeProject.branch || 'main');
-                    console.log('[Preview] Project loaded from GitHub successfully');
-                } else {
-                    // No repo URL - use starter template for new projects
-                    console.log('[Preview] No repo URL, using starter template');
-                    await bootWebContainer();
-                    const { STARTER_TEMPLATE } = await import('@/lib/webcontainer/starterTemplate');
-                    await mountFiles(STARTER_TEMPLATE);
-                    await installDependencies();
-                    await startDevServer();
-                }
+                const repoUrl = activeProject.repoUrl || '';
+                console.log('[Preview] Loading project into WebContainer:', repoUrl ? repoUrl : '(local starter template)');
+                // Get GitHub token from localStorage (optional)
+                const githubToken = localStorage.getItem('github_token') || undefined;
+                await initFromGitHub(repoUrl, githubToken, activeProject.branch || 'main');
+                console.log('[Preview] WebContainer project loaded successfully');
                 console.log('[Preview] WebContainer started successfully');
                 wcInitializedForProjectRef.current = activeProject.id;
             } catch (err: any) {
