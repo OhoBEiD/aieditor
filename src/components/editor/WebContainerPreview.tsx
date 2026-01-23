@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { Monitor, Smartphone, RefreshCw, Loader2, ExternalLink, AlertCircle, Terminal, FolderOpen } from 'lucide-react';
+import { Monitor, Smartphone, RefreshCw, Loader2, ExternalLink, AlertCircle, Terminal as TerminalIcon, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useWebContainer } from '@/hooks/useWebContainer';
+import { Terminal } from './Terminal';
 
 type DeviceMode = 'desktop' | 'mobile';
 
@@ -37,6 +38,7 @@ export function WebContainerPreview({
         initFromGitHub,
         writeFile,
         terminalOutput,
+        spawn,
     } = useWebContainer({
         repoUrl,
         githubToken,
@@ -78,9 +80,9 @@ export function WebContainerPreview({
         const config = statusConfig[status];
 
         return (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-900/80 rounded-lg">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 shadow-sm rounded-lg">
                 <div className={cn('w-2 h-2 rounded-full', config.color)} />
-                <span className="text-xs text-gray-300">{config.text}</span>
+                <span className="text-xs text-gray-700">{config.text}</span>
             </div>
         );
     }, [status, error]);
@@ -91,9 +93,9 @@ export function WebContainerPreview({
         : { width: '390px', height: '844px' };
 
     return (
-        <div className={cn('flex flex-col h-full bg-gray-950', className)}>
+        <div className={cn('flex flex-col h-full bg-gray-50', className)}>
             {/* Toolbar */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200">
                 <div className="flex items-center gap-2">
                     {StatusIndicator}
                 </div>
@@ -104,7 +106,7 @@ export function WebContainerPreview({
                         variant="ghost"
                         size="sm"
                         onClick={() => setDeviceMode('desktop')}
-                        className={cn(deviceMode === 'desktop' && 'bg-gray-800')}
+                        className={cn(deviceMode === 'desktop' && 'bg-gray-200 text-gray-900')}
                     >
                         <Monitor className="h-4 w-4" />
                     </Button>
@@ -112,7 +114,7 @@ export function WebContainerPreview({
                         variant="ghost"
                         size="sm"
                         onClick={() => setDeviceMode('mobile')}
-                        className={cn(deviceMode === 'mobile' && 'bg-gray-800')}
+                        className={cn(deviceMode === 'mobile' && 'bg-gray-200 text-gray-900')}
                     >
                         <Smartphone className="h-4 w-4" />
                     </Button>
@@ -122,9 +124,9 @@ export function WebContainerPreview({
                         variant="ghost"
                         size="sm"
                         onClick={() => setShowTerminal(!showTerminal)}
-                        className={cn(showTerminal && 'bg-gray-800')}
+                        className={cn(showTerminal && 'bg-gray-200 text-gray-900')}
                     >
-                        <Terminal className="h-4 w-4" />
+                        <TerminalIcon className="h-4 w-4" />
                     </Button>
 
                     {/* Open in new tab */}
@@ -141,21 +143,18 @@ export function WebContainerPreview({
             </div>
 
             {/* Main content */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Preview area */}
-                <div className={cn(
-                    'flex-1 flex items-center justify-center overflow-hidden',
-                    showTerminal && 'flex-[2]'
-                )}>
+            <div className="flex-1 relative flex flex-col overflow-hidden">
+                {/* Preview area - always takes full height now, terminal overlays it */}
+                <div className="w-full h-full flex items-center justify-center bg-gray-100 overflow-hidden">
                     {status === 'error' ? (
-                        <div className="flex flex-col items-center justify-center gap-4 text-red-400">
+                        <div className="flex flex-col items-center justify-center gap-4 text-red-500">
                             <AlertCircle className="h-12 w-12" />
                             <div className="text-center">
                                 <p className="font-medium">Failed to start preview</p>
-                                <p className="text-sm text-gray-400 mt-1">{error}</p>
+                                <p className="text-sm text-gray-500 mt-1">{error}</p>
                             </div>
                             <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
                                 onClick={() => repoUrl && initFromGitHub(repoUrl, githubToken)}
                             >
@@ -165,12 +164,12 @@ export function WebContainerPreview({
                         </div>
                     ) : status === 'booting' || status === 'installing' ? (
                         <div className="flex flex-col items-center justify-center gap-4">
-                            <Loader2 className="h-12 w-12 animate-spin text-blue-400" />
+                            <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
                             <div className="text-center">
-                                <p className="font-medium text-white">
+                                <p className="font-medium text-gray-900">
                                     {status === 'booting' ? 'Starting WebContainer...' : 'Installing dependencies...'}
                                 </p>
-                                <p className="text-sm text-gray-400 mt-1">
+                                <p className="text-sm text-gray-500 mt-1">
                                     {status === 'booting'
                                         ? 'Booting Node.js in your browser'
                                         : 'Running npm install'
@@ -180,7 +179,7 @@ export function WebContainerPreview({
                         </div>
                     ) : previewUrl ? (
                         <div
-                            className="relative bg-white rounded-lg overflow-hidden shadow-2xl"
+                            className="relative bg-white rounded-lg overflow-hidden shadow-2xl transition-all duration-300 ease-out"
                             style={deviceMode === 'mobile' ? dimensions : { width: '100%', height: '100%' }}
                         >
                             <iframe
@@ -199,18 +198,42 @@ export function WebContainerPreview({
                     )}
                 </div>
 
-                {/* Terminal panel */}
+                {/* Terminal Drawer - Fixed at bottom */}
                 {showTerminal && (
-                    <div className="flex-1 border-t border-gray-800 bg-black/50 overflow-hidden">
-                        <div className="h-full overflow-auto p-3 font-mono text-xs text-green-400">
-                            {terminalOutput.length === 0 ? (
-                                <span className="text-gray-500">Terminal output will appear here...</span>
-                            ) : (
-                                terminalOutput.map((line, i) => (
-                                    <div key={i} className="whitespace-pre-wrap">{line}</div>
-                                ))
-                            )}
-                        </div>
+                    <div className="absolute bottom-0 left-0 right-0 h-72 z-20 border-t border-gray-200 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] animate-in slide-in-from-bottom duration-300">
+                        <Terminal
+                            onTerminalReady={async (term: any) => {
+                                try {
+                                    const shell = await spawn('jsh', [], {
+                                        env: {
+                                            TERMINAL: 'xterm-256color',
+                                        },
+                                    });
+
+                                    // Pipe shell output to process
+                                    shell.output.pipeTo(
+                                        new WritableStream({
+                                            write(data) {
+                                                term.write(data);
+                                            },
+                                        })
+                                    );
+
+                                    // Pipe terminal input to shell
+                                    const input = shell.input.getWriter();
+                                    term.onData((data: string) => {
+                                        input.write(data);
+                                    });
+
+                                    // Start with a clean prompt
+                                    // term.write('\r\nWelcome to WebContainer Shell\r\n\r\n');
+
+                                } catch (e) {
+                                    console.error('Failed to spawn shell:', e);
+                                    term.write('\r\nFailed to spawn shell\r\n');
+                                }
+                            }}
+                        />
                     </div>
                 )}
             </div>

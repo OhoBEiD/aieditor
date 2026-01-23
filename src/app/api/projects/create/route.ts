@@ -31,58 +31,20 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 1. Generate unique repo name
+        // 1. Generate unique project details
         const repoName = generateProjectName();
-
-        // 2. Create repo from template via GitHub API (with 30s timeout)
-        const createRepoResponse = await fetch(
-            `https://api.github.com/repos/${githubOwner}/${templateRepo}/generate`,
-            {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${githubToken}`,
-                    'Accept': 'application/vnd.github+json',
-                    'X-GitHub-Api-Version': '2022-11-28',
-                },
-                body: JSON.stringify({
-                    owner: githubOwner,
-                    name: repoName,
-                    description: `AutoMate project: ${initialMessage.substring(0, 100)}`,
-                    private: true, // Private repos - user gets access when they link GitHub
-                    include_all_branches: false,
-                }),
-                signal: AbortSignal.timeout(30000), // 30 second timeout
-            }
-        );
-
-        if (!createRepoResponse.ok) {
-            const errorData = await createRepoResponse.json();
-            console.error('[API] GitHub repo creation failed:', errorData);
-            return NextResponse.json(
-                { error: 'Failed to create GitHub repository', details: errorData },
-                { status: 500 }
-            );
-        }
-
-        const newRepo = await createRepoResponse.json();
-        console.log('[API] Created repo:', newRepo.html_url);
-
-        // Wait for GitHub to fully initialize the repository and default branch
-        // This prevents "Remote branch main not found" errors when cloning immediately
-        console.log('[API] ⏳ Waiting 3s for GitHub to initialize repository...');
-        await new Promise(resolve => setTimeout(resolve, 3000));
-
-        // 3. Generate site key and subdomain
         const siteKey = generateSiteKey();
         const previewSubdomain = repoName.toLowerCase().replace(/[^a-z0-9-]/g, '-');
 
-        // 4. Insert into sites table
+        console.log('[API] Creating new local project:', repoName);
+
+        // 2. Insert into sites table (Local project, no GitHub repo yet)
         const { data: site, error: dbError } = await supabase
             .from('sites')
             .insert({
                 name: repoName,
-                repo_url: newRepo.html_url,
-                default_branch: newRepo.default_branch || 'main',
+                repo_url: "", // Empty string indicates local project not yet synced
+                default_branch: 'main',
                 stack: 'nextjs',
                 site_key: siteKey,
                 preview_subdomain: previewSubdomain,
@@ -101,28 +63,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        console.log('[API] Project created:', site.id);
-
-        // 5. Initialize preview workspace (Async / Fire-and-Forget)
-        // We trigger the start but don't wait for it, ensuring fast response.
-        console.log(`[API] 🚀 Triggering background preview start for ${site.site_key}...`);
-
-        // NO AWAIT here - intentional fire-and-forget
-        fetch('https://preview-orchestrator.fly.dev/preview/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                siteId: site.site_key,
-                repoUrl: newRepo.clone_url,
-                branch: newRepo.default_branch || 'main'
-            }),
-            // Short timeout to ensure we don't hang if the network is weird, 
-            // but we aren't awaiting the full process anyway.
-            // signal: AbortSignal.timeout(5000) // REMOVED: Don't abort, let it run in background!
-        }).catch(err => {
-            // Log as info since this is detached
-            console.log(`[API] ℹ️ Background preview trigger detached (expected for speed):`, err.message);
-        });
+        console.log('[API] Project created locally:', site.id);
 
         return NextResponse.json({
             success: true,
@@ -132,37 +73,12 @@ export async function POST(request: NextRequest) {
                 name: site.name,
                 repoUrl: site.repo_url,
                 previewSubdomain: site.preview_subdomain,
-                previewUrl: `https://${site.site_key}.preview.automatelb.com`,
-                // We return false because it's not ready YET, but it will be soon.
                 previewReady: false,
                 previewError: undefined,
             },
         });
     } catch (error) {
         console.error('[API] Create project error:', error);
-
-        // Handle timeout errors specifically
-        if (error instanceof Error) {
-            if (error.name === 'TimeoutError' || error.message.includes('timeout') || error.message.includes('Timeout')) {
-                return NextResponse.json(
-                    { error: 'GitHub API request timed out. Please try again.' },
-                    { status: 504 }
-                );
-            }
-
-            if (error.message.includes('fetch failed')) {
-                return NextResponse.json(
-                    { error: 'Failed to connect to GitHub. Please check your internet connection and try again.' },
-                    { status: 503 }
-                );
-            }
-
-            return NextResponse.json(
-                { error: error.message || 'Failed to create project' },
-                { status: 500 }
-            );
-        }
-
         return NextResponse.json(
             { error: 'Internal server error' },
             { status: 500 }

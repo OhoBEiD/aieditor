@@ -1,0 +1,792 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agent/edit-ui",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "3762de4b-203f-48e6-84c7-e4a88ca1b18d",
+      "name": "Webhook Edit UI",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        1968
+      ],
+      "webhookId": "edit-ui"
+    },
+    {
+      "parameters": {
+        "jsCode": "// VALIDATE INPUT\nconst b = $input.first().json.body || $input.first().json;\nif (!b.siteId) throw new Error('Missing siteId');\nif (!b.message) throw new Error('Missing message');\n\nreturn [{\n  json: {\n    siteId: b.siteId,\n    conversationId: b.conversationId || null,\n    userId: b.userId || 'anon',\n    message: b.message.trim(),\n    requestId: 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),\n    executionId: $execution.id,\n    images: b.images || (b.image ? [b.image] : []),\n    executorMode: b.executorMode || 'auto'\n  }\n}];"
+      },
+      "id": "f012e0f8-36c2-4728-a968-705606615c8d",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        1968
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/rpc/get_site_with_token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "p_site_key",
+              "value": "={{$json.siteId}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "08c639ef-5dc4-4b98-95d9-b9f6350540e8",
+      "name": "Load Site",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1504,
+        1968
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// BUILD CONTEXT\nconst inp = $('Validate Input').item.json;\nconst rawSite = $input.first().json;\nlet site = Array.isArray(rawSite) ? rawSite[0] : (rawSite?.id ? rawSite : rawSite?.data?.[0]);\nif (!site?.id) throw new Error('Site not found');\n\nconst SYSTEM_GITHUB_TOKEN = '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';\nlet githubToken = (site.access_token && site.access_token.trim()) || SYSTEM_GITHUB_TOKEN;\n\nconst repoMatch = (site.repo_url || '').match(/github\\.com\\/([^/]+)\\/([^/]+)/);\nif (!repoMatch) throw new Error('Invalid GitHub repo URL');\n\nreturn [{\n  json: {\n    ...inp,\n    site: { id: site.site_key || inp.siteId, uuid: site.id, name: site.name, repo_url: site.repo_url, branch: site.default_branch || 'main' },\n    owner: repoMatch[1],\n    repo: repoMatch[2].replace(/\\.git$/, ''),\n    branch: site.default_branch || 'main',\n    previewUrl: 'https://' + (site.site_key || inp.siteId) + '.preview.automatelb.com',\n    githubToken\n  }\n}];"
+      },
+      "id": "c26a56f8-652f-45d7-9dec-e59693b79bc2",
+      "name": "Build Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        1968
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ENSURE WORKSPACE EXISTS\nconst ctx = $input.item.json;\nconst siteId = ctx.site?.id;\nconst githubToken = ctx.githubToken;\nconst repoUrl = ctx.site?.repo_url;\n\nif (!siteId) {\n  console.log('⚠️ No siteId, skipping workspace setup');\n  return [{ json: ctx }];\n}\n\ntry {\n  // Check if workspace exists\n  const status = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://preview-orchestrator.fly.dev/preview/status/' + siteId,\n    timeout: 3000,\n    json: true,\n    ignoreHttpStatusErrors: true\n  });\n  \n  // If not running, start it (this clones the repo)\n  if (!status || status.status !== 'running') {\n    console.log('🔧 Workspace not found, cloning repo...');\n    await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://preview-orchestrator.fly.dev/preview/start',\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({ siteId, repoUrl, gitToken: githubToken }),\n      timeout: 30000,\n      ignoreHttpStatusErrors: true\n    });\n    await new Promise(r => setTimeout(r, 2000)); // Wait for clone\n    console.log('✅ Workspace ready');\n  } else {\n    console.log('✅ Workspace already running');\n  }\n} catch (e) {\n  console.error('⚠️ Workspace setup error:', e.message);\n}\n\nreturn [{ json: ctx }];"
+      },
+      "id": "548379f8-64f8-4010-a78f-c859d3f140a0",
+      "name": "Ensure Workspace Exists",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        1776
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// AGENT 1: INTENT CLASSIFIER (OpenRouter Gemini)\nconst ctx = $input.item.json;\nconst msg = ctx.message || '';\nconst msgLower = (msg || '').toLowerCase();\n\n// FAST PATH: Regex-based classification\nconst SIMPLE_EDIT = [\n  /^(change|update|set|fix|replace|modify)\\s+(the\\s+)?(title|text|heading|name|color|background|font|size|padding|margin)/i,\n  /^make\\s+(it|the|this)\\s+(bigger|smaller|larger|bolder|darker|lighter|centered)/i,\n  /^(remove|delete|hide)\\s+(the\\s+)?\\w{2,20}$/i,\n  /^(add|put|insert)\\s+(a\\s+)?(comma|period|space|word)/i\n];\n\nconst QUESTIONS = [\n  /^(what|why|how|can you|could you|should|is it|explain|describe|tell me|where|when|who)/i,\n  /^(do you|does it|have you|will it)/i,\n  /\\?\\s*$/\n];\n\nconst COMPLEX_KEYWORDS = ['implement', 'create', 'build', 'add feature', 'new page', 'new component', 'integrate', 'api', 'database', 'authentication', 'form with', 'multiple'];\n\nconst isSimple = SIMPLE_EDIT.some(p => p.test(msg));\nconst isQuestion = QUESTIONS.some(p => p.test(msg));\nconst hasComplexKeyword = COMPLEX_KEYWORDS.some(k => msgLower.includes(k));\n\nif (isQuestion && !hasComplexKeyword) {\n  return [{ json: { ...ctx, intent: { type: 'question', confidence: 0.9, needsPlanner: false, source: 'regex' } } }];\n}\nif (isSimple && !hasComplexKeyword) {\n  return [{ json: { ...ctx, intent: { type: 'simple_edit', confidence: 0.9, needsPlanner: false, source: 'regex' } } }];\n}\nif (hasComplexKeyword) {\n  return [{ json: { ...ctx, intent: { type: 'complex_feature', confidence: 0.85, needsPlanner: true, source: 'regex' } } }];\n}\n\n// SLOW PATH: API Method (OpenRouter)\nconsole.log('🤔 Ambiguous request, calling Gemini via OpenRouter...');\nconst OPENROUTER_KEY = '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';\n\ntry {\n  const r = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://openrouter.ai/api/v1/chat/completions',\n    headers: { \n      'Authorization': 'Bearer ' + OPENROUTER_KEY,\n      'HTTP-Referer': 'https://n8n.io',\n      'Content-Type': 'application/json'\n    },\n    body: JSON.stringify({\n      model: 'google/gemini-3-flash-preview',\n      messages: [{ role: 'user', content: 'Classify this request: \"' + msg.substring(0, 300) + '\"\\n\\nRespond ONLY with JSON: {\\\"type\\\":\\\"simple_edit|complex_feature|question|clarification\\\",\\\"confidence\\\":0.X}' }],\n      response_format: { type: 'json_object' }\n    }),\n    timeout: 10000,\n    json: true\n  });\n\n  const text = r.choices?.[0]?.message?.content || '{}';\n  const intent = JSON.parse(text.match(/\\{[^}]+\\}/)?.[0] || '{\\\"type\\\":\\\"simple_edit\\\",\\\"confidence\\\":0.5}');\n  intent.needsPlanner = intent.type === 'complex_feature' || intent.confidence < 0.7;\n  intent.source = 'gemini-openrouter';\n  \n  return [{ json: { ...ctx, intent } }];\n} catch (e) {\n  console.error('Gemini error:', e.message);\n  return [{ json: { ...ctx, intent: { type: 'simple_edit', confidence: 0.5, needsPlanner: true, source: 'fallback' } } }];\n}"
+      },
+      "id": "389f5518-3c98-49a1-abda-b719d9f622d3",
+      "name": "Agent 1: Intent Classifier",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        1968
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent.type }}",
+                    "rightValue": "question",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Question"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent.type }}",
+                    "rightValue": "clarification",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Clarification"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent.needsPlanner }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Complex"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "a6b71e51-399f-4986-a437-25e475ed9f4e",
+      "name": "Intent Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2096,
+        1968
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// FETCH MEMORY - Query messages table for conversation history\nconst ctx = $input.item.json;\nconst siteId = ctx.site?.uuid;\nconst requestId = ctx.requestId || 'unknown';\nconst conversationId = ctx.conversationId || null;\n\n// Insert initial thinking step\ntry {\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/thinking_steps',\n    headers: {\n      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Content-Type': 'application/json',\n      'Prefer': 'return=minimal'\n    },\n    body: JSON.stringify({\n      request_id: requestId,\n      site_id: siteId,\n      conversation_id: conversationId,\n      step_number: 1,\n      tool_name: 'analyze',\n      status: 'running',\n      message: 'Analyzing request...',\n      details: { message: ctx.message?.substring(0, 100) }\n    }),\n    timeout: 5000\n  });\n} catch (e) { console.log('Initial thinking step error:', e.message); }\n\n// If no conversationId, return empty context\nif (!conversationId) {\n  console.log('📝 No conversationId, starting fresh');\n  return [{ json: { ...ctx, memoryContext: 'First request - no conversation history.' } }];\n}\n\ntry {\n  // Query messages table directly using session_id (conversationId)\n  const messagesUrl = 'https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/messages?session_id=eq.' + conversationId + '&order=created_at.desc&limit=10';\n\n  const response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: messagesUrl,\n    headers: {\n      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4'\n    },\n    timeout: 10000\n  });\n\n  let memoryContext = 'First request in session.';\n  if (Array.isArray(response) && response.length > 0) {\n    // Reverse to get chronological order (oldest first)\n    const messages = response.reverse();\n    memoryContext = 'Recent conversation:\\n' + messages.map(m => {\n      const role = m.role === 'user' ? 'User' : 'Assistant';\n      const content = (m.content || '').slice(0, 150);\n      const meta = m.metadata || {};\n      const files = (meta.filesModified || meta.filesCreated || meta.filesChanged || []).map(f => f.split('/').pop()).join(', ');\n      if (files) {\n        return '- ' + role + ': ' + content + ' [Files: ' + files + ']';\n      }\n      return '- ' + role + ': ' + content;\n    }).join('\\n');\n  }\n\n  console.log('📝 Memory loaded from messages:', response.length || 0, 'messages');\n  return [{ json: { ...ctx, memoryContext } }];\n} catch (e) {\n  console.error('Memory fetch error:', e.message);\n  return [{ json: { ...ctx, memoryContext: 'First request.' } }];\n}"
+      },
+      "id": "3296d0c2-ba25-460d-86c8-928d4afe1407",
+      "name": "Fetch Memory",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        1584
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// QUESTION RESPONDER (OpenRouter - Gemini)\nconst ctx = $input.item.json;\nconst OPENROUTER_KEY = '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';\nconst siteId = ctx.site?.id;\nconst memoryContext = ctx.memoryContext || 'No prior context.';\nconst MODEL = 'google/gemini-3-flash-preview';\n\nconst TOOLS = [\n  { type: 'function', function: { name: 'list_files', description: 'List files matching a glob pattern', parameters: { type: 'object', properties: { pattern: { type: 'string' } }, required: ['pattern'] } } },\n  { type: 'function', function: { name: 'grep_search', description: 'Search for text inside files', parameters: { type: 'object', properties: { pattern: { type: 'string' } }, required: ['pattern'] } } },\n  { type: 'function', function: { name: 'read_file', description: 'Read file content', parameters: { type: 'object', properties: { path: { type: 'string' }, required: ['path'] } } } }\n];\n\nconst runTool = async (name, input) => {\n  if (!siteId) return 'No project selected';\n  const headers = { 'Content-Type': 'application/json' };\n  const opts = { json: true, ignoreHttpStatusErrors: true };\n  try {\n    if (name === 'list_files') {\n      const r = await this.helpers.httpRequest({ method: 'POST', url: 'https://preview-orchestrator.fly.dev/preview/search', headers, body: JSON.stringify({ siteId, pattern: input.pattern || '**/*', type: 'glob' }), ...opts });\n      return (r?.matches || []).slice(0, 30).join('\\n') || 'No files found';\n    }\n    if (name === 'grep_search') {\n      const r = await this.helpers.httpRequest({ method: 'POST', url: 'https://preview-orchestrator.fly.dev/preview/search', headers, body: JSON.stringify({ siteId, pattern: input.pattern, type: 'grep' }), ...opts });\n      return (r?.matches || []).slice(0, 20).join('\\n') || 'No matches found';\n    }\n    if (name === 'read_file') {\n      const r = await this.helpers.httpRequest({ method: 'POST', url: 'https://preview-orchestrator.fly.dev/preview/read', headers, body: JSON.stringify({ siteId, filePath: input.path }), ...opts });\n      return r?.content ? r.content.slice(0, 4000) : 'File not found';\n    }\n  } catch (e) { return 'Error: ' + e.message; }\n  return 'Unknown tool';\n};\n\ntry {\n  let messages = [\n    { role: 'system', content: 'You are a helpful web development assistant with access to the project codebase.' },\n    { role: 'user', content: `Conversation history:\\n${memoryContext}\\n\\nQuestion: ${ctx.message}` }\n  ];\n  let output = '';\n  \n  for (let i = 0; i < 4; i++) {\n    const r = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://openrouter.ai/api/v1/chat/completions',\n      headers: { 'Authorization': 'Bearer ' + OPENROUTER_KEY, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://n8n.io' },\n      body: JSON.stringify({ model: MODEL, messages, tools: siteId ? TOOLS : undefined, temperature: 0.7 }),\n      timeout: 30000, json: true\n    });\n    \n    // httpRequest with json:true returns body directly\n    const choice = r.choices?.[0];\n    const message = choice?.message;\n    if (!message) break;\n    \n    messages.push(message);\n\n    if (message.tool_calls && message.tool_calls.length > 0) {\n      for (const tc of message.tool_calls) {\n        let args = {};\n        try { args = JSON.parse(tc.function.arguments); } catch(e) {}\n        const res = await runTool(tc.function.name, args);\n        messages.push({ role: 'tool', tool_call_id: tc.id, content: res });\n      }\n    } else {\n      output = message.content || 'Done';\n      break;\n    }\n  }\n  \n  console.log('💬 Question answered');\n  return [{ json: { ...ctx, output, isDirectResponse: true, filesModified: [], iterations: 0 } }];\n} catch (e) {\n  console.error('Question error:', e.message);\n  return [{ json: { ...ctx, output: 'Error: ' + e.message, isDirectResponse: true, iterations: 0 } }];\n}"
+      },
+      "id": "25dac01b-0cb1-4695-8edf-10b52c235116",
+      "name": "Question Responder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        1760
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// CLARIFICATION RESPONDER\nconst ctx = $input.item.json;\nreturn [{ json: { ...ctx, output: 'Could you be more specific? Example: \"Change the title to X\" or \"Add a button that does Y\".', isDirectResponse: true, filesModified: [], filesCreated: [], filesDeleted: [], toolsUsed: [], iterations: 0 } }];"
+      },
+      "id": "3da45773-57c0-4c70-a1ec-cee6cd12fcf3",
+      "name": "Clarification Responder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        1920
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent.needsPlanner }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Use Planner"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "eab25480-90d3-4180-80be-cbaf7c08ff8a",
+      "name": "Planner Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2496,
+        2064
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// AGENT 2: PLANNER - OPTIMIZED (Claude Sonnet 4.5)\n// Groups files into logical batches instead of individual tasks\nconst ctx = $input.item.json;\nconst ANTHROPIC_KEY = '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';\nconst MODEL = 'claude-sonnet-4-5-20250929';\n\nconsole.log('🧠 Planner (Optimized) active for:', ctx.message);\n\nconst TOOLS = [\n  { name: 'list_files_glob', description: 'List files matching a glob pattern', input_schema: { type: 'object', properties: { pattern: { type: 'string' } }, required: ['pattern'] } },\n  { name: 'read_file', description: 'Read file content', input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },\n  { name: 'finish_plan', description: 'Output the final execution plan with GROUPED tasks', input_schema: { \n    type: 'object', \n    properties: { \n      summary: { type: 'string', description: 'Human-readable summary of what will be built' }, \n      tasks: { \n        type: 'array', \n        description: 'Array of GROUPED tasks - group related files together, max 5 tasks total', \n        items: { \n          type: 'object', \n          properties: { \n            id: { type: 'number' }, \n            type: { type: 'string', enum: ['create_batch', 'modify_batch'], description: 'Task type - use batch operations' }, \n            files: { type: 'array', items: { type: 'string' }, description: 'List of files in this batch' },\n            description: { type: 'string', description: 'What to do for all files in the batch' }\n          }, \n          required: ['id', 'type', 'files', 'description'] \n        } \n      }, \n      complexity: { type: 'string', enum: ['low', 'medium', 'high'] } \n    }, \n    required: ['summary', 'tasks', 'complexity'] \n  }}\n];\n\nconst runTool = async (name, args) => {\n  // For WebContainer mode, we don't need to read files - just return guidance\n  if (name === 'list_files_glob') {\n    return 'No files yet - this is a new project in WebContainer.';\n  }\n  if (name === 'read_file') {\n    return 'File does not exist - create it with the executor.';\n  }\n  return 'Unknown tool';\n};\n\nconst SYSTEM = `You are a Senior Dev Planner. Create a CONCISE execution plan with GROUPED tasks.\n\nIMPORTANT RULES:\n1. Group related files into BATCH tasks (max 5 tasks total)\n2. For new projects, use this grouping:\n   - Task 1: Config files (package.json, tsconfig.json, next.config.js, tailwind.config.ts, postcss.config.js)\n   - Task 2: Base layout (app/layout.tsx, app/globals.css, app/page.tsx)  \n   - Task 3: Main components (Header, Hero, main sections)\n   - Task 4: Secondary components (Footer, additional sections)\n   - Task 5: Data/types files if needed\n3. Keep it simple - the Executor will handle the details\n4. Use create_batch for new files, modify_batch for edits\n\nOutput format:\n{\n  \"summary\": \"Brief human-readable summary\",\n  \"tasks\": [\n    { \"id\": 1, \"type\": \"create_batch\", \"files\": [\"file1.ts\", \"file2.ts\"], \"description\": \"Create these files\" }\n  ],\n  \"complexity\": \"low|medium|high\"\n}`;\n\nconst userMsg = 'Request: ' + ctx.message + '\\n\\nExisting files: None (new WebContainer project)';\nlet plan = null;\nlet messages = [{ role: 'user', content: userMsg }];\n\n// Single iteration - fast planning\ntry {\n  const r = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.anthropic.com/v1/messages',\n    headers: {\n      'x-api-key': ANTHROPIC_KEY,\n      'anthropic-version': '2023-06-01',\n      'content-type': 'application/json'\n    },\n    body: JSON.stringify({ model: MODEL, max_tokens: 4096, system: SYSTEM, tools: TOOLS, messages }),\n    timeout: 30000, json: true\n  });\n\n  if (r.content) {\n    for (const block of r.content) {\n      if (block.type === 'tool_use' && block.name === 'finish_plan') {\n        plan = block.input;\n        break;\n      }\n    }\n  }\n} catch (e) { \n  console.error('Planner error:', e.message); \n}\n\n// Fallback plan with grouped tasks\nif (!plan) {\n  plan = { \n    summary: 'Create: ' + ctx.message, \n    tasks: [\n      { id: 1, type: 'create_batch', files: ['package.json', 'tsconfig.json', 'next.config.js', 'tailwind.config.ts'], description: 'Create config files' },\n      { id: 2, type: 'create_batch', files: ['app/layout.tsx', 'app/globals.css', 'app/page.tsx'], description: 'Create base app structure' }\n    ], \n    complexity: 'medium',\n    fallback: true \n  };\n}\n\nconsole.log('📋 Plan created with', plan.tasks?.length || 0, 'batched tasks');\nreturn [{ json: { ...ctx, plan, usedPlanner: true, fileContents: {} } }];"
+      },
+      "id": "b61485d0-7e90-4d21-b30c-798d88abc877",
+      "name": "Agent 2: Planner",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2704,
+        2160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// SIMPLE PLAN - Skip planner for simple edits\nconst ctx = $input.item.json;\nconst plan = {\n  summary: ctx.message,\n  tasks: [{ id: 1, type: 'modify', file: Object.keys(ctx.fileContents || {})[0] || 'src/app/page.tsx', description: ctx.message }],\n  complexity: 'low'\n};\nconsole.log('⚡ Skipping planner - simple edit');\nreturn [{ json: { ...ctx, plan, usedPlanner: false } }];"
+      },
+      "id": "98f60fb5-86c0-4c9e-b562-88340b18bfe7",
+      "name": "Simple Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2704,
+        2000
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// AGENT 3: EXECUTOR (OpenRouter - Gemini 3 Flash) - WEBCONTAINER MODE\n// Returns file operations as JSON for frontend to apply via WebContainers\nconst ctx = $input.item.json;\nconst requestId = ctx.requestId;\nconst siteUuid = ctx.site?.uuid || 'unknown';\nconst OPENROUTER_KEY = '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';\nconst MODEL = 'google/gemini-3-flash-preview';\nlet stepCounter = 10;\n\n// Collect file operations for frontend to apply\nlet fileOperations = [];\n\n// Thinking step helper (still writes to Supabase for real-time updates)\nconst emitStep = async (toolName, status, message, details = {}) => {\n  try {\n    await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/thinking_steps',\n      headers: {\n        'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n        'Content-Type': 'application/json',\n        'Prefer': 'return=minimal'\n      },\n      body: JSON.stringify({\n        request_id: requestId,\n        site_id: siteUuid,\n        step_number: stepCounter++,\n        tool_name: toolName,\n        status: status,\n        message: message.substring(0, 200),\n        details: details\n      }),\n      timeout: 3000\n    });\n  } catch(e) {}\n};\n\nawait emitStep('planning', 'running', 'Creating execution plan...', { tasks: ctx.plan?.tasks?.length || 0 });\n\n// Tools that return operations instead of executing them\nconst TOOLS = [\n  { type: 'function', function: { name: 'list_files', description: 'List files in the project (reads from provided context)', parameters: { type: 'object', properties: { pattern: { type: 'string' } }, required: ['pattern'] } } },\n  { type: 'function', function: { name: 'view_lines', description: 'View file content (reads from provided context)', parameters: { type: 'object', properties: { file: { type: 'string' }, startLine: { type: 'number' }, endLine: { type: 'number' } }, required: ['file'] } } },\n  { type: 'function', function: { name: 'write_file', description: 'Create or replace entire file', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } } },\n  { type: 'function', function: { name: 'str_replace', description: 'Replace exact text in file', parameters: { type: 'object', properties: { file: { type: 'string' }, old_text: { type: 'string' }, new_text: { type: 'string' } }, required: ['file', 'old_text', 'new_text'] } } },\n  { type: 'function', function: { name: 'delete_file', description: 'Delete a file', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },\n  { type: 'function', function: { name: 'generate_image', description: 'Generate AI image', parameters: { type: 'object', properties: { prompt: { type: 'string' }, fileName: { type: 'string' } }, required: ['prompt'] } } }\n];\n\n// Tool execution - returns JSON and collects operations\nconst runTool = async (name, input) => {\n  // Read operations use context (from Planner's file reading)\n  if (name === 'list_files') {\n    await emitStep('list_files', 'running', 'Listing files: ' + (input.pattern || '*'));\n    const files = Object.keys(ctx.fileContents || {});\n    await emitStep('list_files', 'complete', 'Found ' + files.length + ' files in context');\n    return files.length > 0 ? files.join('\\n') : 'No files in context. This is a new project - create files with write_file.';\n  }\n  \n  if (name === 'view_lines') {\n    await emitStep('read_file', 'running', 'Reading: ' + input.file);\n    const content = ctx.fileContents?.[input.file];\n    if (content) {\n      await emitStep('read_file', 'complete', 'Read ' + input.file);\n      const lines = content.split('\\n');\n      const start = Math.max(0, (input.startLine || 1) - 1);\n      const end = Math.min(lines.length, input.endLine || lines.length);\n      return lines.slice(start, end).map((l, i) => (start + i + 1) + ': ' + l).join('\\n').slice(0, 3000);\n    }\n    await emitStep('read_file', 'complete', 'File not in context - will be created');\n    return 'File not in context. Use write_file to create it.';\n  }\n  \n  // Write operations - collect for frontend\n  if (name === 'write_file') {\n    await emitStep('write_file', 'running', 'Creating: ' + input.path);\n    fileOperations.push({\n      type: 'write',\n      path: input.path,\n      content: input.content\n    });\n    await emitStep('write_file', 'complete', 'Queued: ' + input.path);\n    return JSON.stringify({ success: true, file: input.path, action: 'queued_for_write' });\n  }\n  \n  if (name === 'str_replace') {\n    await emitStep('str_replace', 'running', 'Modifying: ' + input.file);\n    fileOperations.push({\n      type: 'modify',\n      path: input.file,\n      oldText: input.old_text,\n      newText: input.new_text\n    });\n    await emitStep('str_replace', 'complete', 'Queued modification: ' + input.file);\n    return JSON.stringify({ success: true, file: input.file, action: 'queued_for_modify' });\n  }\n  \n  if (name === 'delete_file') {\n    await emitStep('delete_file', 'running', 'Deleting: ' + input.path);\n    fileOperations.push({\n      type: 'delete',\n      path: input.path\n    });\n    await emitStep('delete_file', 'complete', 'Queued deletion: ' + input.path);\n    return JSON.stringify({ success: true, file: input.path, action: 'queued_for_delete' });\n  }\n  \n  if (name === 'generate_image') {\n    await emitStep('generate_image', 'running', 'Finding image: ' + input.prompt?.substring(0, 50));\n    \n    // Use high-quality Unsplash images based on keywords\n    const prompt = (input.prompt || 'furniture').toLowerCase();\n    let imageUrl = '';\n    \n    // Map common keywords to Unsplash search terms\n    const keywords = [];\n    if (prompt.includes('hero') || prompt.includes('banner')) keywords.push('modern-interior');\n    if (prompt.includes('chair')) keywords.push('chair,furniture');\n    if (prompt.includes('desk') || prompt.includes('table')) keywords.push('desk,office');\n    if (prompt.includes('bed') || prompt.includes('bedroom')) keywords.push('bedroom,bed');\n    if (prompt.includes('sofa') || prompt.includes('couch')) keywords.push('sofa,living-room');\n    if (prompt.includes('furniture')) keywords.push('furniture,interior-design');\n    if (prompt.includes('kitchen')) keywords.push('kitchen,modern');\n    if (prompt.includes('living')) keywords.push('living-room,interior');\n    if (prompt.includes('office')) keywords.push('office,workspace');\n    if (keywords.length === 0) keywords.push('furniture,home');\n    \n    const searchTerm = keywords[0];\n    const randomSeed = Math.floor(Math.random() * 1000);\n    \n    // Use Unsplash Source for high-quality images (free, no API key needed)\n    imageUrl = 'https://source.unsplash.com/800x600/?' + encodeURIComponent(searchTerm) + '&sig=' + randomSeed;\n    \n    await emitStep('generate_image', 'complete', 'Found image for: ' + searchTerm);\n    return JSON.stringify({ imageUrl: imageUrl, success: true, source: 'unsplash' });\n  }\n  \n  return JSON.stringify({ error: 'Unknown tool' });\n};\n\n// Build prompt\nconst plan = ctx.plan || {};\nconst tasks = plan.tasks || [];\nconst preloadedFiles = Object.entries(ctx.fileContents || {}).map(([f, c]) => '=== ' + f + ' ===\\n' + c.slice(0, 1500)).join('\\n').slice(0, 4000);\nlet prompt = 'Expert Next.js dev. Rules: Use write_file for new files, str_replace for edits. Create beautiful modern UIs with Tailwind.\\nUSER REQUEST: ' + ctx.message + '\\n';\nif (tasks.length === 0) prompt += 'NEW PROJECT: Create files starting with src/app/page.tsx\\n';\nelse { prompt += 'PLAN:\\n'; tasks.forEach((t, i) => prompt += (i+1) + '. ' + t.type + ' ' + t.file + ': ' + t.description + '\\n'); }\nif (preloadedFiles) prompt += '\\nEXISTING FILES:\\n' + preloadedFiles + '\\n';\n\nlet messages = [{ role: 'user', content: prompt }], output = '', steps = [], errors = 0;\n\nfor (let i = 0; i < 6; i++) {\n  if (errors >= 2) { output = 'Too many errors'; break; }\n  try {\n    const r = await this.helpers.httpRequest({ \n      method: 'POST', \n      url: 'https://openrouter.ai/api/v1/chat/completions', \n      headers: { \n        'Authorization': 'Bearer ' + OPENROUTER_KEY, \n        'HTTP-Referer': 'https://n8n.io',\n        'Content-Type': 'application/json' \n      }, \n      body: JSON.stringify({ model: MODEL, messages, tools: TOOLS, temperature: 0.2 }), \n      timeout: 60000, \n      json: true,\n      ignoreHttpStatusErrors: true,\n      returnFullResponse: true\n    });\n    \n    if (r.statusCode >= 400) {\n      output = 'API Error: ' + (r.body?.error?.message || JSON.stringify(r.body));\n      break;\n    }\n    \n    const msg = r.body?.choices?.[0]?.message;\n    if (!msg) { output = 'No response'; break; }\n    messages.push(msg);\n    \n    if (msg.tool_calls) {\n      let iterErrors = 0;\n      for (const tc of msg.tool_calls) {\n        let args = {}; try { args = JSON.parse(tc.function.arguments); } catch(e) {}\n        const res = await runTool(tc.function.name, args);\n        steps.push({ tool: tc.function.name, input: args, result: res.slice(0, 200) });\n        messages.push({ role: 'tool', tool_call_id: tc.id, content: res });\n        if (res.includes('error')) iterErrors++;\n      }\n      errors = iterErrors > 0 ? errors + 1 : 0;\n    } else { \n      output = msg.content || 'Done'; \n      break; \n    }\n  } catch (e) {\n    output = 'Fatal error: ' + e.message;\n    break;\n  }\n}\n\nawait emitStep('complete', 'complete', 'Completed with ' + fileOperations.length + ' file operations');\n\n// Return file operations for frontend to apply via WebContainers\nreturn [{ \n  json: { \n    ...ctx, \n    output, \n    fileOperations,\n    filesCreated: fileOperations.filter(o => o.type === 'write').map(o => o.path),\n    filesModified: fileOperations.filter(o => o.type === 'modify').map(o => o.path),\n    filesDeleted: fileOperations.filter(o => o.type === 'delete').map(o => o.path),\n    intermediateSteps: steps, \n    iterations: steps.length,\n    useWebContainer: true\n  } \n}];"
+      },
+      "id": "93b48e24-6ea6-400c-9454-a399ac46573d",
+      "name": "Agent 3: Executor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3104,
+        2064
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// AGENT 4: VALIDATOR (Fast check, no API call)\nconst ctx = $input.item.json;\nconst steps = ctx.intermediateSteps || [];\n\nconst errors = steps.filter(s => s.result?.includes('ERROR'));\nconst successes = steps.filter(s => s.result?.includes('success'));\n\nconst validation = {\n  valid: errors.length === 0 && successes.length > 0,\n  successes: successes.length,\n  errors: errors.length,\n  issues: errors.map(e => e.result)\n};\n\nif (!validation.valid && errors.length > 0) {\n  ctx.output = (ctx.output || '') + '\\n⚠️ Issues: ' + validation.issues.join('; ');\n}\n\nconsole.log('✅ Validation:', validation.valid ? 'PASS' : 'FAIL');\nreturn [{ json: { ...ctx, validation } }];"
+      },
+      "id": "91d43b14-60a7-4304-a3b5-c0e2996ecda2",
+      "name": "Agent 4: Validator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3296,
+        2064
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "f9195d5c-db81-4655-9bcc-ca9a2280325f",
+      "name": "Merge All Paths",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        3504,
+        1968
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// PARSE RESULTS with thinking step completion\nconst ctx = $input.item.json;\nconst requestId = ctx.requestId || 'unknown';\nconst siteId = ctx.site?.uuid || ctx.site?.id || 'unknown';\n\nif (ctx.isDirectResponse) {\n  // Insert completion thinking step for direct response\n  try {\n    await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/thinking_steps',\n      headers: {\n        'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n        'Content-Type': 'application/json',\n        'Prefer': 'return=minimal'\n      },\n      body: JSON.stringify({\n        request_id: requestId,\n        site_id: siteId,\n        step_number: 999999,\n        tool_name: 'complete',\n        status: 'complete',\n        message: ctx.output?.substring(0, 100) || 'Response sent',\n        details: { type: 'direct_response' }\n      }),\n      timeout: 3000\n    });\n  } catch(e) {}\n  \n  return [{ json: { ...ctx, plan: { humanSummary: ctx.output, warnings: [] }, filesModified: [], filesCreated: [], filesDeleted: [], toolsUsed: [], iterations: 0 } }];\n}\n\nconst steps = ctx.intermediateSteps || [];\nconst modified = new Set(), created = new Set(), deleted = new Set(), tools = [];\n\nsteps.forEach(s => {\n  if (s.tool) tools.push(s.tool);\n  try {\n    const r = typeof s.result === 'string' ? JSON.parse(s.result.match(/\\{.*\\}/s)?.[0] || '{}') : s.result;\n    if (r.success && r.file) {\n      if (r.action === 'created') created.add(r.file);\n      else if (r.action === 'replaced') modified.add(r.file);\n    }\n  } catch {}\n});\n\n// Insert completion thinking step\ntry {\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/thinking_steps',\n    headers: {\n      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4',\n      'Content-Type': 'application/json',\n      'Prefer': 'return=minimal'\n    },\n    body: JSON.stringify({\n      request_id: requestId,\n      site_id: siteId,\n      step_number: 999999,\n      tool_name: 'complete',\n      status: 'complete',\n      message: ctx.output?.substring(0, 150) || 'Execution completed',\n      details: { filesModified: [...modified], filesCreated: [...created], filesDeleted: [...deleted], toolsUsed: [...new Set(tools)], iterations: steps.length }\n    }),\n    timeout: 3000\n  });\n} catch(e) {}\n\nreturn [{ json: {\n  ...ctx,\n  plan: { humanSummary: ctx.output || ctx.plan?.summary || 'Done', warnings: ctx.validation?.issues || [] },\n  filesModified: [...modified],\n  filesCreated: [...created],\n  filesDeleted: [...deleted],\n  iterations: steps.length,\n  toolsUsed: [...new Set(tools)]\n} }];"
+      },
+      "id": "03dea4b8-6163-4498-8cb9-4343c296ce8d",
+      "name": "Parse Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3696,
+        1968
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://jjrbnjubjiswvxeradzw.supabase.co/rest/v1/code_versions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcmJuanViamlzd3Z4ZXJhZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjIzMzg1OSwiZXhwIjoyMDgxODA5ODU5fQ.DDff_1lJpQo4vdnKm84-1H8QYD0diD-n7pK7VIliNe4"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ site_id: $json.site?.uuid, request_id: $json.requestId, instruction: $json.message, plan_json: $json.plan, status: 'preview_ready', preview_url: $json.previewUrl, files_modified: $json.filesModified, files_created: $json.filesCreated, files_deleted: $json.filesDeleted }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "e9309cb9-00a9-4536-a7ee-f9b4f2e8bd15",
+      "name": "Save Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4304,
+        1968
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ requestId: $json.requestId, status: $json.isDirectResponse ? 'response' : 'preview_ready', summary: $json.plan?.humanSummary || $json.output, previewUrl: $json.previewUrl, filesModified: $json.filesModified || [], filesCreated: $json.filesCreated || [], filesDeleted: $json.filesDeleted || [], fileOperations: $json.fileOperations || [], useWebContainer: $json.useWebContainer || false, warnings: $json.plan?.warnings || [], iterations: $json.iterations || 0, toolsUsed: $json.toolsUsed || [], usedPlanner: $json.usedPlanner || false, tokens: { executor: $json.executorTokens, intentSource: $json.intent?.source } }) }}",
+        "options": {}
+      },
+      "id": "ddacfa46-e55f-44cb-81dd-6702b0e4f0a5",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        4496,
+        1968
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Direct Response - Format for questions/clarifications\nreturn $input.all().map(item => {\n  const ctx = item.json;\n  return { json: { ...ctx, plan: { humanSummary: ctx.output, warnings: [] } } };\n});"
+      },
+      "id": "37056c1d-b373-42a9-a1e2-5f7fa612b26a",
+      "name": "Direct Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2912,
+        1840
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.executorMode }}",
+                    "rightValue": "fast",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Fast"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "8eb21cb9-c0e5-4cd4-9acf-04ef2dfea842",
+      "name": "Mode Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2368,
+        2272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// FAST EXECUTOR - WEBCONTAINER MODE\nconst ctx = $input.item.json;\nconst OPENROUTER_KEY = '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';\nconst MODEL = 'google/gemini-3-flash-preview';\nlet fileOperations = [];\n\nconst TOOLS = [\n  { type: 'function', function: { name: 'write_file', description: 'Create/replace file', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } } },\n  { type: 'function', function: { name: 'str_replace', description: 'Replace text in file', parameters: { type: 'object', properties: { file: { type: 'string' }, old_text: { type: 'string' }, new_text: { type: 'string' } }, required: ['file', 'old_text', 'new_text'] } } }\n];\n\nconst runTool = (name, input) => {\n  if (name === 'write_file') {\n    fileOperations.push({ type: 'write', path: input.path, content: input.content });\n    return JSON.stringify({ success: true, action: 'queued' });\n  }\n  if (name === 'str_replace') {\n    fileOperations.push({ type: 'modify', path: input.file, oldText: input.old_text, newText: input.new_text });\n    return JSON.stringify({ success: true, action: 'queued' });\n  }\n  return '{}';\n};\n\nconst files = Object.entries(ctx.fileContents || {}).map(([f, c]) => '=== ' + f + ' ===\\n' + c.slice(0, 2000)).join('\\n');\nlet messages = [{ role: 'user', content: 'Expert Next.js dev. Make this change: ' + ctx.message + '\\n\\nFILES:\\n' + files }];\nlet output = '', steps = [];\n\nfor (let i = 0; i < 5; i++) {\n  const r = await this.helpers.httpRequest({ \n    method: 'POST', \n    url: 'https://openrouter.ai/api/v1/chat/completions', \n    headers: { 'Authorization': 'Bearer ' + OPENROUTER_KEY, 'HTTP-Referer': 'https://n8n.io', 'Content-Type': 'application/json' }, \n    body: JSON.stringify({ model: MODEL, messages, tools: TOOLS, temperature: 0.2 }), \n    timeout: 60000, json: true \n  });\n  const msg = r.choices?.[0]?.message;\n  if (!msg) break;\n  messages.push(msg);\n  if (msg.tool_calls) {\n    for (const tc of msg.tool_calls) {\n      let args = {}; try { args = JSON.parse(tc.function.arguments); } catch(e) {}\n      const res = runTool(tc.function.name, args);\n      steps.push({ tool: tc.function.name, input: args });\n      messages.push({ role: 'tool', tool_call_id: tc.id, content: res });\n    }\n  } else { output = msg.content || 'Done'; break; }\n}\n\nreturn [{ json: { ...ctx, output, fileOperations, filesCreated: fileOperations.filter(o => o.type === 'write').map(o => o.path), filesModified: fileOperations.filter(o => o.type === 'modify').map(o => o.path), intermediateSteps: steps, useWebContainer: true } }];"
+      },
+      "id": "71c895c7-ab35-4f8a-890c-58068f0df64e",
+      "name": "Fast Executor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2688,
+        2432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// GIT PUSH - Commit and push file changes to GitHub\n// Handles empty repos (creates initial commit) and always passes through fileOperations\nconst ctx = $input.item.json;\nconst fileOperations = ctx.fileOperations || [];\nconst owner = ctx.owner;\nconst repo = ctx.repo;\nconst branch = ctx.branch || 'main';\nconst githubToken = ctx.githubToken || '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';\n\n// Always pass through context - wrap push in try/catch\ntry {\n    // Skip if no file operations\n    if (!fileOperations.length) {\n        console.log('📝 No file operations to push');\n        return [{ json: ctx }];\n    }\n\n    console.log('📤 Pushing', fileOperations.length, 'files to GitHub...');\n\n    const headers = {\n        'Authorization': 'Bearer ' + githubToken,\n        'Accept': 'application/vnd.github.v3+json',\n        'Content-Type': 'application/json'\n    };\n\n    // Create blobs for each file first (this works even for empty repos)\n    const treeItems = [];\n    for (const op of fileOperations) {\n        if (op.type === 'write' && op.content) {\n            const blobRes = await this.helpers.httpRequest({\n                method: 'POST',\n                url: 'https://api.github.com/repos/' + owner + '/' + repo + '/git/blobs',\n                headers,\n                body: JSON.stringify({\n                    content: op.content,\n                    encoding: 'utf-8'\n                }),\n                timeout: 10000,\n                json: true\n            });\n\n            treeItems.push({\n                path: op.path.startsWith('/') ? op.path.slice(1) : op.path,\n                mode: '100644',\n                type: 'blob',\n                sha: blobRes.sha\n            });\n        } else if (op.type === 'delete') {\n            treeItems.push({\n                path: op.path.startsWith('/') ? op.path.slice(1) : op.path,\n                mode: '100644',\n                type: 'blob',\n                sha: null\n            });\n        }\n    }\n\n    if (treeItems.length === 0) {\n        console.log('📝 No valid file operations');\n        return [{ json: ctx }];\n    }\n\n    // Try to get the current branch ref (may fail for empty repos)\n    let baseSha = null;\n    let baseTreeSha = null;\n    let isEmptyRepo = false;\n\n    try {\n        const branchRes = await this.helpers.httpRequest({\n            method: 'GET',\n            url: 'https://api.github.com/repos/' + owner + '/' + repo + '/git/ref/heads/' + branch,\n            headers,\n            timeout: 10000,\n            json: true,\n            ignoreHttpStatusErrors: true\n        });\n\n        if (branchRes && branchRes.object && branchRes.object.sha) {\n            baseSha = branchRes.object.sha;\n\n            // Get the current tree\n            const commitRes = await this.helpers.httpRequest({\n                method: 'GET',\n                url: 'https://api.github.com/repos/' + owner + '/' + repo + '/git/commits/' + baseSha,\n                headers,\n                timeout: 10000,\n                json: true\n            });\n            baseTreeSha = commitRes.tree.sha;\n        } else {\n            isEmptyRepo = true;\n            console.log('📂 Repo appears empty, will create initial commit');\n        }\n    } catch (e) {\n        isEmptyRepo = true;\n        console.log('📂 Repo is empty (no commits yet), creating initial commit');\n    }\n\n    // Create new tree\n    const treeBody = isEmptyRepo ? { tree: treeItems } : { base_tree: baseTreeSha, tree: treeItems };\n    const newTreeRes = await this.helpers.httpRequest({\n        method: 'POST',\n        url: 'https://api.github.com/repos/' + owner + '/' + repo + '/git/trees',\n        headers,\n        body: JSON.stringify(treeBody),\n        timeout: 10000,\n        json: true\n    });\n\n    // Create commit\n    const commitMessage = 'AutoMate: ' + (ctx.message || 'Update files').substring(0, 50);\n    const commitBody = {\n        message: commitMessage,\n        tree: newTreeRes.sha,\n        parents: isEmptyRepo ? [] : [baseSha]\n    };\n    const newCommitRes = await this.helpers.httpRequest({\n        method: 'POST',\n        url: 'https://api.github.com/repos/' + owner + '/' + repo + '/git/commits',\n        headers,\n        body: JSON.stringify(commitBody),\n        timeout: 10000,\n        json: true\n    });\n\n    // Update or create branch reference\n    if (isEmptyRepo) {\n        // Create the branch ref\n        await this.helpers.httpRequest({\n            method: 'POST',\n            url: 'https://api.github.com/repos/' + owner + '/' + repo + '/git/refs',\n            headers,\n            body: JSON.stringify({\n                ref: 'refs/heads/' + branch,\n                sha: newCommitRes.sha\n            }),\n            timeout: 10000,\n            json: true\n        });\n    } else {\n        // Update existing branch ref\n        await this.helpers.httpRequest({\n            method: 'PATCH',\n            url: 'https://api.github.com/repos/' + owner + '/' + repo + '/git/refs/heads/' + branch,\n            headers,\n            body: JSON.stringify({\n                sha: newCommitRes.sha,\n                force: false\n            }),\n            timeout: 10000,\n            json: true\n        });\n    }\n\n    console.log('✅ Pushed to GitHub:', newCommitRes.sha.substring(0, 7));\n    return [{ json: { ...ctx, commitSha: newCommitRes.sha, gitPushSuccess: true } }];\n\n} catch (e) {\n    // IMPORTANT: Always pass through context with fileOperations even if push fails\n    console.error('⚠️ Git push failed (will retry on next request):', e.message);\n    return [{ json: { ...ctx, gitPushError: e.message, gitPushSuccess: false } }];\n}"
+      },
+      "id": "git-push-node-1768983169372",
+      "name": "Git Push",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3900,
+        1968
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Edit UI": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Load Site",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Site": {
+      "main": [
+        [
+          {
+            "node": "Build Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Context": {
+      "main": [
+        [
+          {
+            "node": "Ensure Workspace Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Workspace Exists": {
+      "main": [
+        [
+          {
+            "node": "Fetch Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent 1: Intent Classifier": {
+      "main": [
+        [
+          {
+            "node": "Intent Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Intent Router": {
+      "main": [
+        [
+          {
+            "node": "Question Responder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clarification Responder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mode Router",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mode Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Memory": {
+      "main": [
+        [
+          {
+            "node": "Agent 1: Intent Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Question Responder": {
+      "main": [
+        [
+          {
+            "node": "Direct Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clarification Responder": {
+      "main": [
+        [
+          {
+            "node": "Direct Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planner Router": {
+      "main": [
+        [
+          {
+            "node": "Agent 2: Planner",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Simple Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent 2: Planner": {
+      "main": [
+        [
+          {
+            "node": "Agent 3: Executor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Plan": {
+      "main": [
+        [
+          {
+            "node": "Agent 3: Executor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent 3: Executor": {
+      "main": [
+        [
+          {
+            "node": "Agent 4: Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent 4: Validator": {
+      "main": [
+        [
+          {
+            "node": "Merge All Paths",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge All Paths": {
+      "main": [
+        [
+          {
+            "node": "Parse Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Results": {
+      "main": [
+        [
+          {
+            "node": "Git Push",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Direct Response": {
+      "main": [
+        [
+          {
+            "node": "Save Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mode Router": {
+      "main": [
+        [
+          {
+            "node": "Fast Executor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Planner Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fast Executor": {
+      "main": [
+        [
+          {
+            "node": "Agent 4: Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Git Push": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8278f0fbb558df00ecd79690c89f9c1e0fbf89bbd188221ebac4a3ae271261b8"
+  }
+}

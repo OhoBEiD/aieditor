@@ -70,7 +70,14 @@ export async function POST(request: NextRequest) {
         for (const project of projects) {
             try {
                 // Extract repo name from URL (e.g., https://github.com/OhoBEiD/repo-name)
-                const repoName = project.repo_url.split('/').pop();
+                const repoUrl = typeof project.repo_url === 'string' ? project.repo_url.trim() : '';
+
+                if (!repoUrl) {
+                    errors.push(`Missing repo URL for project ${project.id}`);
+                    continue;
+                }
+
+                const repoName = repoUrl.split('/').filter(Boolean).pop();
 
                 if (!repoName) {
                     errors.push(`Invalid repo URL for project ${project.id}`);

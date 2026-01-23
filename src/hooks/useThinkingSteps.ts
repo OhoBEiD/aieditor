@@ -19,9 +19,10 @@ interface UseThinkingStepsReturn {
   steps: ThinkingStep[];
   isSubscribed: boolean;
   clearSteps: () => void;
+  refresh: (overrideRequestId?: string) => Promise<void>;
 }
 
-export function useThinkingSteps(requestId: string | null): UseThinkingStepsReturn {
+export function useThinkingSteps(requestId: string | null, sessionId?: string | null): UseThinkingStepsReturn {
   const [steps, setSteps] = useState<ThinkingStep[]>([]);
   const [isSubscribed, setIsSubscribed] = useState(false);
 
@@ -29,46 +30,67 @@ export function useThinkingSteps(requestId: string | null): UseThinkingStepsRetu
     setSteps([]);
   }, []);
 
-  useEffect(() => {
-    if (!requestId) {
+  const refresh = useCallback(async (overrideRequestId?: string) => {
+    // We need at least one of these to fetch anything (check override first)
+    const targetRequestId = overrideRequestId || requestId;
+
+    if (!targetRequestId && !sessionId) {
       setSteps([]);
+      return;
+    }
+
+    let query = supabase
+      .from('thinking_steps')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (targetRequestId) {
+      query = query.eq('request_id', targetRequestId);
+    } else if (sessionId) {
+      query = query.eq('conversation_id', sessionId);
+    }
+
+    const { data, error } = await query;
+
+    console.log('[useThinkingSteps] Refreshing for:', targetRequestId, 'Found:', data?.length);
+
+    if (error) {
+      console.error('Error fetching thinking steps:', error);
+      return;
+    }
+
+    if (data) {
+      setSteps(data);
+    }
+  }, [requestId, sessionId]);
+
+  useEffect(() => {
+    refresh();
+
+    if (!requestId && !sessionId) {
       setIsSubscribed(false);
       return;
     }
 
-    // Fetch existing steps for this request
-    const fetchExistingSteps = async () => {
-      const { data, error } = await supabase
-        .from('thinking_steps')
-        .select('*')
-        .eq('request_id', requestId)
-        .order('created_at', { ascending: true });
+    const filter = requestId
+      ? `request_id=eq.${requestId}`
+      : sessionId
+        ? `conversation_id=eq.${sessionId}`
+        : '';
 
-      if (error) {
-        console.error('Error fetching thinking steps:', error);
-        return;
-      }
+    if (!filter) return;
 
-      if (data) {
-        setSteps(data);
-      }
-    };
-
-    fetchExistingSteps();
-
-    // Subscribe to new thinking steps for this request
     const channel = supabase
-      .channel(`thinking-steps-${requestId}`)
+      .channel(`thinking-steps-${requestId || sessionId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'thinking_steps',
-          filter: `request_id=eq.${requestId}`,
+          filter,
         },
         (payload) => {
-          console.log('New thinking step:', payload.new);
           setSteps((prev) => [...prev, payload.new as ThinkingStep]);
         }
       )
@@ -78,10 +100,9 @@ export function useThinkingSteps(requestId: string | null): UseThinkingStepsRetu
           event: 'UPDATE',
           schema: 'public',
           table: 'thinking_steps',
-          filter: `request_id=eq.${requestId}`,
+          filter,
         },
         (payload) => {
-          console.log('Updated thinking step:', payload.new);
           setSteps((prev) =>
             prev.map((step) =>
               step.id === payload.new.id ? (payload.new as ThinkingStep) : step
@@ -90,17 +111,14 @@ export function useThinkingSteps(requestId: string | null): UseThinkingStepsRetu
         }
       )
       .subscribe((status) => {
-        console.log('Thinking steps subscription status:', status);
         setIsSubscribed(status === 'SUBSCRIBED');
       });
 
-    // Cleanup subscription on unmount or when requestId changes
     return () => {
-      console.log('Unsubscribing from thinking steps');
       supabase.removeChannel(channel);
       setIsSubscribed(false);
     };
-  }, [requestId]);
+  }, [requestId, sessionId, refresh]);
 
-  return { steps, isSubscribed, clearSteps };
+  return { steps, isSubscribed, clearSteps, refresh };
 }

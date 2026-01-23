@@ -2,10 +2,25 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import { Monitor, Smartphone, RefreshCw, X, Loader2, ExternalLink, AlertCircle, Download, Github } from 'lucide-react';
+import { Monitor, Smartphone, RefreshCw, X, Loader2, ExternalLink, AlertCircle, Download, Github, Terminal as TerminalIcon, Code, Eye } from 'lucide-react';
 import { Button } from '@/components/ui';
 import Image from 'next/image';
 import { gsap } from 'gsap';
+import dynamic from 'next/dynamic';
+import { useWebContainer } from '@/hooks/useWebContainer';
+import { supabase } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
+
+// Dynamic imports for SSR safety
+const Terminal = dynamic(() => import('./Terminal').then(mod => mod.Terminal), {
+    ssr: false,
+    loading: () => <div className="w-full h-full flex items-center justify-center text-gray-400">Loading terminal...</div>
+});
+
+const CodeView = dynamic(() => import('./CodeView').then(mod => mod.CodeView), {
+    ssr: false,
+    loading: () => <div className="w-full h-full flex items-center justify-center bg-[#1e1e1e] text-gray-400">Loading editor...</div>
+});
 
 type DeviceMode = 'desktop' | 'mobile';
 
@@ -21,6 +36,9 @@ interface PreviewPanelProps {
     refreshKey?: number;
     availablePages?: string[];
     repoUrl?: string;
+    projectId?: string;
+    // External file selection (from chat panel clicking on file names)
+    externalSelectedFile?: string | null;
 }
 
 export function PreviewPanel({
@@ -34,8 +52,63 @@ export function PreviewPanel({
     isLoading = false,
     refreshKey = 0,
     availablePages = [],
-    repoUrl
+    repoUrl,
+    externalSelectedFile,
+    projectId
 }: PreviewPanelProps) {
+    const router = useRouter();
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    const handleSyncToGithub = async () => {
+        if (!projectId) return;
+        try {
+            setIsSyncing(true);
+            const { data: { session } } = await supabase.auth.getSession();
+            let token = session?.provider_token;
+
+            // If no provider token in session, check if we have one in DB (optional fallback)
+            // For now, rely on session or prompt
+            if (!token) {
+                // Simple prompt for MVP as requested "user later syncs"
+                // Ideally we'd trigger OAuth flow, but keeping it simple/robust
+                const promptToken = window.prompt("To sync, please enter a GitHub Personal Access Token (repo scope):");
+                if (!promptToken) {
+                    setIsSyncing(false);
+                    return;
+                }
+                token = promptToken;
+            }
+
+            const response = await fetch('/api/projects/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    projectId,
+                    githubToken: token,
+                    repoName: `automate-project-${Date.now()}` // Default name, user can rename later
+                })
+            });
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Sync failed');
+            }
+
+            const data = await response.json();
+            console.log('Sync success:', data.repoUrl);
+
+            // Refresh to update UI with new repoUrl
+            router.refresh();
+            // Force reload active project from DB? The parent component should handle this via router refresh
+            window.location.reload();
+
+        } catch (error: any) {
+            console.error('Sync error:', error);
+            alert(`Failed to sync: ${error.message}`);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
     const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
     const [iframeKey, setIframeKey] = useState(0);
     const [loadState, setLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
@@ -47,6 +120,15 @@ export function PreviewPanel({
     const [isServerReady, setIsServerReady] = useState(false);
     const [serverCheckCount, setServerCheckCount] = useState(0);
     const [showGithubDropdown, setShowGithubDropdown] = useState(false);
+    const [showTerminal, setShowTerminal] = useState(false);
+    const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
+
+    // Auto-switch to code view when a file is selected from chat
+    useEffect(() => {
+        if (externalSelectedFile) {
+            setViewMode('code');
+        }
+    }, [externalSelectedFile]);
 
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const iframeContainerRef = useRef<HTMLDivElement>(null);
@@ -55,30 +137,13 @@ export function PreviewPanel({
     const healthCheckRef = useRef<NodeJS.Timeout | null>(null);
     const MAX_RETRIES = 3;
 
+    // Get spawn, listFiles, readFile from WebContainer for terminal and code view
+    const { spawn, listFiles, readFile, writeFile } = useWebContainer();
+
     // Desktop iframe target resolution
     const DESKTOP_WIDTH = 1920;
     const DESKTOP_HEIGHT = 1080;
 
-    // Suppress WebSocket errors in the iframe console (HMR connection errors)
-    useEffect(() => {
-        const originalError = console.error;
-        console.error = (...args) => {
-            // Filter out WebSocket HMR errors
-            const message = args[0]?.toString() || '';
-            if (
-                message.includes('WebSocket connection') ||
-                message.includes('Invalid frame header') ||
-                message.includes('_next/webpack-hmr')
-            ) {
-                return; // Suppress these errors
-            }
-            originalError.apply(console, args);
-        };
-
-        return () => {
-            console.error = originalError;
-        };
-    }, []);
 
     // Mobile iframe target resolution
     const MOBILE_WIDTH = 390;
@@ -226,7 +291,8 @@ export function PreviewPanel({
         return `${baseUrl}${currentPage}?_v=${iframeKey}&_t=${Date.now()}`;
     }, [previewUrl, currentPage, iframeKey]);
 
-    // Health check polling - ping preview URL until it responds with 200
+    // With WebContainers, server runs in browser - no health check needed
+    // Just set ready immediately when we have a URL
     useEffect(() => {
         if (!previewUrl) {
             setIsServerReady(false);
@@ -236,61 +302,38 @@ export function PreviewPanel({
         // Clear any existing health check
         if (healthCheckRef.current) {
             clearInterval(healthCheckRef.current);
+            healthCheckRef.current = null;
         }
 
-        const checkServerHealth = async () => {
-            try {
-                // Try a regular fetch first (fastest if CORS allowed or same origin)
-                // Use a short timeout to fail fast
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-                try {
-                    const response = await fetch(previewUrl, {
-                        method: 'HEAD',
-                        mode: 'no-cors', // Allow cross-origin without CORS headers
-                        cache: 'no-store',
-                        signal: controller.signal
-                    });
-
-                    // In no-cors mode, we accept any response as "server is alive"
-                    // If the server was down, fetch would throw (e.g. connection refused)
-                    setIsServerReady(true);
-                    setServerCheckCount(0);
-                    if (healthCheckRef.current) clearInterval(healthCheckRef.current);
-                    return;
-                } catch (e) {
-                    // Fetch failed, server likely down or network error
-                } finally {
-                    clearTimeout(timeoutId);
-                }
-
-            } catch (error) {
-                setServerCheckCount(prev => prev + 1);
-                console.log(`[Preview] Server check failed (attempt ${serverCheckCount + 1}):`, error);
-            }
-        };
-
-        // Initial check
-        setIsServerReady(false);
+        // For WebContainers (or any URL after fly.io removal), set ready immediately
+        console.log('[Preview] Setting server ready for:', previewUrl);
+        setIsServerReady(true);
         setServerCheckCount(0);
-        checkServerHealth();
-
-        // Poll every 1000ms (faster 1s polling)
-        healthCheckRef.current = setInterval(checkServerHealth, 1000);
-
-        return () => {
-            if (healthCheckRef.current) {
-                clearInterval(healthCheckRef.current);
-            }
-        };
     }, [previewUrl]);
 
-    // ... (reset load state effect) ...
+    // Health check removed - using WebContainers now
 
-    // ... (refresh key effect) ...
+    // Refresh iframe when refreshKey changes (triggered after AI file operations)
+    useEffect(() => {
+        if (refreshKey !== prevRefreshKey.current && refreshKey > 0) {
+            console.log('[Preview] RefreshKey changed, triggering iframe refresh:', refreshKey);
+            prevRefreshKey.current = refreshKey;
+            // Small delay to allow HMR to process file changes
+            setTimeout(() => {
+                setLoadState('loading');
+                setIframeKey(prev => prev + 1);
+            }, 300);
+        }
+    }, [refreshKey]);
 
-    // ... (timeout effect) ...
+    // Also refresh when previewUrl changes (with cache buster)
+    useEffect(() => {
+        if (previewUrl && previewUrl.includes('_refresh=')) {
+            console.log('[Preview] URL has refresh param, triggering iframe refresh');
+            setLoadState('loading');
+            setIframeKey(prev => prev + 1);
+        }
+    }, [previewUrl]);
 
     const handleIframeLoad = () => {
         console.log('[Preview] Iframe loaded successfully (Event)');
@@ -507,22 +550,52 @@ export function PreviewPanel({
         <div className={cn('flex flex-col h-full', className)}>
             {/* Toolbar - Floating Transparent Glass */}
             <div className="relative z-[9999] flex items-center justify-between px-4 py-3 backdrop-blur-xl bg-white/30 border border-white/20 rounded-2xl mx-6 mt-6 mb-4 shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] active:scale-[0.99] transition-all duration-300">
-                {/* Left - Exit Preview */}
-                <div className="flex items-center">
+                {/* Left - Exit & View Toggle */}
+                <div className="flex items-center gap-3">
                     {onExitPreview && (
                         <button
                             onClick={onExitPreview}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-gray-700 bg-white/40 border border-white/20 hover:bg-white/60 hover:text-gray-900 transition-all shadow-sm"
+                            className="flex items-center justify-center p-2 rounded-xl text-gray-700 bg-white/40 border border-white/20 hover:bg-white/60 hover:text-gray-900 transition-all shadow-sm"
+                            title="Exit Preview"
                         >
                             <X className="w-4 h-4" />
-                            Exit Preview
                         </button>
                     )}
+
+                    {/* View Mode Toggle - Preview / Code (Moved to left) */}
+                    <div className="flex items-center p-1 rounded-xl bg-white/40 border border-white/20 shadow-sm">
+                        <button
+                            onClick={() => setViewMode('preview')}
+                            className={cn(
+                                'flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all text-sm',
+                                viewMode === 'preview'
+                                    ? 'bg-white text-purple-600 shadow-sm font-medium'
+                                    : 'text-gray-500 hover:text-gray-900'
+                            )}
+                            title="Preview"
+                        >
+                            <Eye className="w-4 h-4" />
+                            <span className="hidden sm:inline">Preview</span>
+                        </button>
+                        <button
+                            onClick={() => setViewMode('code')}
+                            className={cn(
+                                'flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all text-sm',
+                                viewMode === 'code'
+                                    ? 'bg-white text-purple-600 shadow-sm font-medium'
+                                    : 'text-gray-500 hover:text-gray-900'
+                            )}
+                            title="Code"
+                        >
+                            <Code className="w-4 h-4" />
+                            <span className="hidden sm:inline">Code</span>
+                        </button>
+                    </div>
                 </div>
 
                 {/* Center - Page Selector, Device Toggle & Refresh */}
                 <div className="flex items-center gap-3">
-                    {/* Page Selector - Show if we have any pages */}
+                    {/* Page Selector */}
                     {availablePages.length > 0 && (
                         <div className="relative">
                             <button
@@ -563,11 +636,12 @@ export function PreviewPanel({
                             onClick={() => setDeviceMode('desktop')}
                             className={cn(
                                 'p-1.5 rounded-lg transition-all',
-                                deviceMode === 'desktop'
+                                deviceMode === 'desktop' && viewMode === 'preview'
                                     ? 'bg-white text-purple-600 shadow-sm'
                                     : 'text-gray-500 hover:text-gray-900'
                             )}
                             title="Desktop"
+                            disabled={viewMode === 'code'}
                         >
                             <Monitor className="w-4 h-4" />
                         </button>
@@ -575,18 +649,19 @@ export function PreviewPanel({
                             onClick={() => setDeviceMode('mobile')}
                             className={cn(
                                 'p-1.5 rounded-lg transition-all',
-                                deviceMode === 'mobile'
+                                deviceMode === 'mobile' && viewMode === 'preview'
                                     ? 'bg-white text-purple-600 shadow-sm'
                                     : 'text-gray-500 hover:text-gray-900'
                             )}
                             title="Mobile"
+                            disabled={viewMode === 'code'}
                         >
                             <Smartphone className="w-4 h-4" />
                         </button>
                     </div>
 
                     <div className="flex items-center gap-1 bg-white/40 border border-white/20 rounded-xl p-1 shadow-sm">
-                        {/* Fix Error Button - Only show when a build error is detected */}
+                        {/* Fix Error Button */}
                         {onFixError && buildError && (
                             <button
                                 onClick={() => onFixError(`Please fix the following build error:\n\n${buildError}`)}
@@ -607,24 +682,26 @@ export function PreviewPanel({
                             <RefreshCw className={cn("w-4 h-4", loadState === 'loading' && "animate-spin")} />
                         </button>
 
-                        {previewUrl && (
-                            <a
-                                href={previewUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-white transition-all"
-                                title="Open in new tab"
-                            >
-                                <ExternalLink className="w-4 h-4" />
-                            </a>
-                        )}
+                        {/* Terminal Toggle */}
+                        <button
+                            onClick={() => setShowTerminal(!showTerminal)}
+                            className={cn(
+                                "p-1.5 rounded-lg transition-all",
+                                showTerminal
+                                    ? "text-purple-600 bg-purple-100 hover:bg-purple-200"
+                                    : "text-gray-600 hover:text-gray-900 hover:bg-white"
+                            )}
+                            title={showTerminal ? "Hide Terminal" : "Show Terminal"}
+                        >
+                            <TerminalIcon className="w-4 h-4" />
+                        </button>
                     </div>
                 </div>
 
                 {/* Right - GitHub & Deploy */}
                 <div className="flex items-center gap-2">
-                    {/* GitHub Dropdown */}
-                    {repoUrl && (
+                    {/* GitHub Dropdown OR Sync Button */}
+                    {repoUrl ? (
                         <div className="relative" ref={dropdownRef}>
                             <button
                                 onClick={() => setShowGithubDropdown(!showGithubDropdown)}
@@ -684,6 +761,20 @@ export function PreviewPanel({
                                 </div>
                             )}
                         </div>
+                    ) : (
+                        <button
+                            onClick={handleSyncToGithub}
+                            disabled={isSyncing}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium shadow-sm disabled:opacity-50"
+                            title="Sync to GitHub"
+                        >
+                            {isSyncing ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Github className="w-4 h-4" />
+                            )}
+                            {isSyncing ? 'Syncing...' : 'Sync to GitHub'}
+                        </button>
                     )}
 
                     {/* Deploy Button */}
@@ -707,174 +798,222 @@ export function PreviewPanel({
 
             {/* Preview Content */}
             <div className="flex-1 flex items-center justify-center overflow-hidden relative">
-                <div
-                    ref={iframeContainerRef}
-                    className={cn(
-                        'overflow-hidden transition-all duration-500 ease-out w-full h-full',
-                        (isLoading || loadState === 'loading' || loadState === 'error')
-                            ? 'bg-transparent'
-                            : ''
-                    )}
-                >
-                    {/* Loading overlay - Show while waiting for AI OR while server is starting up */}
-                    {(isLoading || (previewUrl && (!isServerReady || loadState === 'loading'))) && (
-                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-transparent">
-                            <div ref={logoRef} className="mb-6">
-                                <Image
-                                    src="/automatelogo.png"
-                                    alt="AutoMate"
-                                    width={80}
-                                    height={80}
-                                    className="drop-shadow-2xl object-contain"
-                                />
+                {/* Code View */}
+                {viewMode === 'code' ? (
+                    <CodeView
+                        listFiles={listFiles}
+                        readFile={readFile}
+                        writeFile={async (path, content) => { await writeFile(path, content); }}
+                        className="w-full h-full"
+                        externalSelectedFile={externalSelectedFile}
+                    />
+                ) : (
+                    /* Preview View */
+                    <div
+                        ref={iframeContainerRef}
+                        className={cn(
+                            'overflow-hidden transition-all duration-500 ease-out w-full h-full',
+                            (isLoading || loadState === 'loading' || loadState === 'error')
+                                ? 'bg-transparent'
+                                : ''
+                        )}
+                    >
+                        {/* Loading overlay - Show while waiting for AI OR while server is starting up */}
+                        {(isLoading || (previewUrl && (!isServerReady || loadState === 'loading'))) && (
+                            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-transparent">
+                                <div ref={logoRef} className="mb-6">
+                                    <Image
+                                        src="/automatelogo.png"
+                                        alt="AutoMate"
+                                        width={80}
+                                        height={80}
+                                        className="drop-shadow-2xl object-contain"
+                                    />
+                                </div>
+                                <p className="text-gray-900 text-sm font-medium drop-shadow-sm">
+                                    {!previewUrl ? 'Waiting for AI...' : (!isServerReady ? 'Building your site...' : 'Loading preview...')}
+                                </p>
+                                {!previewUrl && (
+                                    <p className="text-gray-600 text-xs mt-2 drop-shadow-sm">
+                                        AI is creating your content
+                                    </p>
+                                )}
+                                {previewUrl && !isServerReady && (
+                                    <p className="text-gray-600 text-xs mt-2 drop-shadow-sm">
+                                        Starting preview server...
+                                    </p>
+                                )}
+                                {previewUrl && isServerReady && retryCount > 0 && (
+                                    <p className="text-gray-700 text-xs mt-2 drop-shadow-sm">
+                                        Retry {retryCount}/{MAX_RETRIES}
+                                    </p>
+                                )}
+                                {/* Progress bar - only show when building */}
+                                {previewUrl && !isServerReady && (
+                                    <div className="mt-4 w-48 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full animate-pulse"
+                                            style={{
+                                                width: `${Math.min((serverCheckCount / 15) * 100, 95)}%`,
+                                                transition: 'width 0.5s ease-out'
+                                            }}
+                                        />
+                                    </div>
+                                )}
                             </div>
-                            <p className="text-gray-900 text-sm font-medium drop-shadow-sm">
-                                {!previewUrl ? 'Waiting for AI...' : (!isServerReady ? 'Building your site...' : 'Loading preview...')}
-                            </p>
-                            {!previewUrl && (
-                                <p className="text-gray-600 text-xs mt-2 drop-shadow-sm">
-                                    AI is creating your content
+                        )}
+
+                        {/* Error state - Only show on error */}
+                        {loadState === 'error' && previewUrl && (
+                            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/95 backdrop-blur-sm">
+                                <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
+                                <p className="text-gray-900 font-semibold mb-2">Preview Server Not Ready</p>
+                                <p className="text-gray-600 text-sm mb-2 text-center px-8 max-w-md">
+                                    The preview server is still starting up or stopped.
                                 </p>
-                            )}
-                            {previewUrl && !isServerReady && (
-                                <p className="text-gray-600 text-xs mt-2 drop-shadow-sm">
-                                    Starting preview server...
+                                <p className="text-gray-500 text-xs mb-6 text-center px-8 max-w-md">
+                                    Send a message to the AI to trigger changes, or manually refresh after a few seconds.
                                 </p>
-                            )}
-                            {previewUrl && isServerReady && retryCount > 0 && (
-                                <p className="text-gray-700 text-xs mt-2 drop-shadow-sm">
-                                    Retry {retryCount}/{MAX_RETRIES}
-                                </p>
-                            )}
-                            {/* Progress bar - only show when building */}
-                            {previewUrl && !isServerReady && (
-                                <div className="mt-4 w-48 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                <button
+                                    onClick={handleManualRefresh}
+                                    className="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 shadow-md"
+                                >
+                                    <RefreshCw className="w-4 h-4" />
+                                    Retry Preview
+                                </button>
+                            </div>
+                        )}
+
+                        {previewUrl ? (
+                            <div className={cn(
+                                "relative w-full h-full flex items-center justify-center",
+                                (!isServerReady || loadState === 'loading' || loadState === 'error') && "invisible"
+                            )}>
+                                {/* Desktop View */}
+                                <div
+                                    className="absolute inset-0 flex items-center justify-center p-4"
+                                    style={{
+                                        opacity: deviceMode === 'desktop' ? 1 : 0,
+                                        transform: deviceMode === 'desktop' ? 'scale(1)' : 'scale(0.98)',
+                                        pointerEvents: deviceMode === 'desktop' ? 'auto' : 'none',
+                                        overflow: 'hidden',
+                                        transition: 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        willChange: 'opacity, transform',
+                                    }}
+                                >
                                     <div
-                                        className="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full animate-pulse"
                                         style={{
-                                            width: `${Math.min((serverCheckCount / 15) * 100, 95)}%`,
-                                            transition: 'width 0.5s ease-out'
+                                            width: '100%',
+                                            height: '100%',
+                                            borderRadius: '16px',
+                                            overflow: 'hidden',
+                                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.15)',
                                         }}
-                                    />
+                                    >
+                                        <iframe
+                                            ref={deviceMode === 'desktop' ? iframeRef : undefined}
+                                            key={`desktop-${iframeKey}`}
+                                            src={getFullPreviewUrl()}
+                                            style={{
+                                                width: '111.11%',
+                                                height: '111.11%',
+                                                transform: 'scale(0.9)',
+                                                transformOrigin: 'top left',
+                                                border: 'none',
+                                            }}
+                                            title="Preview Desktop"
+                                            onLoad={deviceMode === 'desktop' ? handleIframeLoad : undefined}
+                                            onError={deviceMode === 'desktop' ? handleIframeError : undefined}
+                                        />
+                                    </div>
                                 </div>
-                            )}
-                        </div>
-                    )}
 
-                    {/* Error state - Only show on error */}
-                    {loadState === 'error' && previewUrl && (
-                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/95 backdrop-blur-sm">
-                            <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
-                            <p className="text-gray-900 font-semibold mb-2">Preview Server Not Ready</p>
-                            <p className="text-gray-600 text-sm mb-2 text-center px-8 max-w-md">
-                                The preview server is still starting up or stopped.
-                            </p>
-                            <p className="text-gray-500 text-xs mb-6 text-center px-8 max-w-md">
-                                Send a message to the AI to trigger changes, or manually refresh after a few seconds.
-                            </p>
-                            <button
-                                onClick={handleManualRefresh}
-                                className="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 shadow-md"
-                            >
-                                <RefreshCw className="w-4 h-4" />
-                                Retry Preview
-                            </button>
-                        </div>
-                    )}
-
-                    {previewUrl ? (
-                        <div className={cn(
-                            "relative w-full h-full flex items-center justify-center",
-                            (!isServerReady || loadState === 'loading' || loadState === 'error') && "invisible"
-                        )}>
-                            {/* Desktop View */}
-                            <div
-                                className="absolute inset-0 flex items-center justify-center p-4"
-                                style={{
-                                    opacity: deviceMode === 'desktop' ? 1 : 0,
-                                    transform: deviceMode === 'desktop' ? 'scale(1)' : 'scale(0.98)',
-                                    pointerEvents: deviceMode === 'desktop' ? 'auto' : 'none',
-                                    overflow: 'hidden',
-                                    transition: 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                    willChange: 'opacity, transform',
-                                }}
-                            >
+                                {/* Mobile View */}
                                 <div
+                                    className="absolute inset-0 flex items-center justify-center"
                                     style={{
-                                        width: '100%',
-                                        height: '100%',
-                                        borderRadius: '16px',
-                                        overflow: 'hidden',
-                                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.15)',
+                                        opacity: deviceMode === 'mobile' ? 1 : 0,
+                                        transform: deviceMode === 'mobile' ? 'scale(1)' : 'scale(0.98)',
+                                        pointerEvents: deviceMode === 'mobile' ? 'auto' : 'none',
+                                        transition: 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        willChange: 'opacity, transform',
                                     }}
                                 >
-                                    <iframe
-                                        ref={deviceMode === 'desktop' ? iframeRef : undefined}
-                                        key={`desktop-${iframeKey}`}
-                                        src={getFullPreviewUrl()}
+                                    <div
                                         style={{
-                                            width: '111.11%',
-                                            height: '111.11%',
-                                            transform: 'scale(0.9)',
-                                            transformOrigin: 'top left',
-                                            border: 'none',
+                                            width: `${MOBILE_WIDTH * mobileScale}px`,
+                                            height: `${MOBILE_HEIGHT * mobileScale}px`,
+                                            borderRadius: `${40 * mobileScale}px`,
+                                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)',
+                                            overflow: 'hidden',
+                                            position: 'relative',
                                         }}
-                                        title="Preview Desktop"
-                                        onLoad={deviceMode === 'desktop' ? handleIframeLoad : undefined}
-                                        onError={deviceMode === 'desktop' ? handleIframeError : undefined}
-                                    />
+                                    >
+                                        <iframe
+                                            ref={deviceMode === 'mobile' ? iframeRef : undefined}
+                                            key={`mobile-${iframeKey}`}
+                                            src={getFullPreviewUrl()}
+                                            style={{
+                                                width: `${MOBILE_WIDTH}px`,
+                                                height: `${MOBILE_HEIGHT}px`,
+                                                transform: `scale(${mobileScale})`,
+                                                transformOrigin: 'top left',
+                                                border: 'none',
+                                                borderRadius: '40px',
+                                            }}
+                                            title="Preview Mobile"
+                                            onLoad={deviceMode === 'mobile' ? handleIframeLoad : undefined}
+                                            onError={deviceMode === 'mobile' ? handleIframeError : undefined}
+                                        />
+                                    </div>
                                 </div>
                             </div>
-
-                            {/* Mobile View */}
-                            <div
-                                className="absolute inset-0 flex items-center justify-center"
-                                style={{
-                                    opacity: deviceMode === 'mobile' ? 1 : 0,
-                                    transform: deviceMode === 'mobile' ? 'scale(1)' : 'scale(0.98)',
-                                    pointerEvents: deviceMode === 'mobile' ? 'auto' : 'none',
-                                    transition: 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                    willChange: 'opacity, transform',
-                                }}
-                            >
-                                <div
-                                    style={{
-                                        width: `${MOBILE_WIDTH * mobileScale}px`,
-                                        height: `${MOBILE_HEIGHT * mobileScale}px`,
-                                        borderRadius: `${40 * mobileScale}px`,
-                                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)',
-                                        overflow: 'hidden',
-                                        position: 'relative',
-                                    }}
-                                >
-                                    <iframe
-                                        ref={deviceMode === 'mobile' ? iframeRef : undefined}
-                                        key={`mobile-${iframeKey}`}
-                                        src={getFullPreviewUrl()}
-                                        style={{
-                                            width: `${MOBILE_WIDTH}px`,
-                                            height: `${MOBILE_HEIGHT}px`,
-                                            transform: `scale(${mobileScale})`,
-                                            transformOrigin: 'top left',
-                                            border: 'none',
-                                            borderRadius: '40px',
-                                        }}
-                                        title="Preview Mobile"
-                                        onLoad={deviceMode === 'mobile' ? handleIframeLoad : undefined}
-                                        onError={deviceMode === 'mobile' ? handleIframeError : undefined}
-                                    />
-                                </div>
+                        ) : !isLoading ? (
+                            /* Only show empty state when NOT loading - otherwise the loading overlay handles it */
+                            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                                <Monitor className="w-16 h-16 mb-4 opacity-20" />
+                                <p className="text-sm font-medium text-gray-700">Preview not available</p>
+                                <p className="text-xs mt-1 text-gray-500">Send a message to start preview</p>
                             </div>
-                        </div>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                            <Monitor className="w-16 h-16 mb-4 opacity-20" />
-                            <p className="text-sm font-medium text-gray-700">Preview not available</p>
-                            <p className="text-xs mt-1 text-gray-500">Send a message to start preview</p>
-                        </div>
-                    )}
-                </div>
+                        ) : null}
+                    </div>
+                )}
             </div>
-        </div >
+
+            {/* Terminal Drawer - Fixed at bottom of preview */}
+            {showTerminal && (
+                <div className="absolute bottom-0 left-0 right-0 h-72 z-[100] border-t border-gray-200 bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.1)] animate-in slide-in-from-bottom duration-300">
+                    <Terminal
+                        onTerminalReady={async (term: any) => {
+                            try {
+                                const shell = await spawn('jsh', [], {
+                                    env: {
+                                        TERMINAL: 'xterm-256color',
+                                    },
+                                });
+
+                                // Pipe shell output to terminal
+                                shell.output.pipeTo(
+                                    new WritableStream({
+                                        write(data) {
+                                            term.write(data);
+                                        },
+                                    })
+                                );
+
+                                // Pipe terminal input to shell
+                                const input = shell.input.getWriter();
+                                term.onData((data: string) => {
+                                    input.write(data);
+                                });
+                            } catch (e) {
+                                console.error('Failed to spawn shell:', e);
+                                term.write('\r\nFailed to spawn shell\r\n');
+                            }
+                        }}
+                    />
+                </div>
+            )}
+        </div>
     );
 }

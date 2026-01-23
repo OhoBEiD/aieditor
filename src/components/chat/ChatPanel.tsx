@@ -15,6 +15,7 @@ interface ChatPanelProps {
     onRevert?: (messageId: string) => void;
     onStop?: () => void;
     onAccept?: () => void;
+    onFileClick?: (filePath: string) => void;
     hasChanges?: boolean;
     isAccepting?: boolean;
     isLoading?: boolean;
@@ -33,6 +34,7 @@ export function ChatPanel({
     onRevert,
     onStop,
     onAccept,
+    onFileClick,
     hasChanges = false,
     isAccepting = false,
     isLoading = false,
@@ -40,7 +42,7 @@ export function ChatPanel({
     isStreaming = false,
     thinkingSteps = [],
     agentThinking = [],
-    executorMode = 'auto',
+    executorMode = 'mastra',
     onModeChange,
 }: ChatPanelProps) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -110,6 +112,7 @@ export function ChatPanel({
                                 steps={thinkingSteps}
                                 isComplete={!isStreaming}
                                 thinking={agentThinking}
+                                onFileClick={onFileClick}
                             />
                         ) : isLoading && <LoadingIndicator />}
                     </div>

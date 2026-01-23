@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { processMessage } from '@/lib/ai/AIService';
 
-// n8n webhook URL - Self-hosted on Fly.io (10 minute timeout!)
-const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://n8n-ai-editor.fly.dev/webhook/agent/edit-ui';
-
+// Main Chat API - now powered by in-app AI
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { siteId, conversationId, userId, message, pageUrl, uiContext, image, requestId: clientRequestId, executorMode } = body;
+        const { siteId, conversationId, userId, message, pageUrl, fileContents, requestId: clientRequestId } = body;
 
         // Validate required fields
         if (!siteId || !conversationId || !userId || !message) {
@@ -19,80 +18,52 @@ export async function POST(request: NextRequest) {
         // Use client-provided requestId or generate new one
         const requestId = clientRequestId || `req_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
-        // Call n8n webhook and WAIT for response
-        const n8nResponse = await fetch(N8N_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                siteId,
-                conversationId,
-                userId,
-                message,
-                pageUrl,
-                uiContext,
-                requestId,
-                image, // Pass image data for vision analysis
-                executorMode, // Pass executor mode selection (auto, fast, thinking)
-                statusCallbackUrl: '', // Not used in sync mode
-            }),
+        console.log(`🚀 Processing AI request: ${requestId}`, { message: message.substring(0, 50) });
+
+        // Process message with in-app AI service
+        // Pass fileContents from WebContainer so AI has context
+        const result = await processMessage({
+            message,
+            requestId,
+            sessionId: conversationId,
+            siteId,
+            fileContents: fileContents || {},
+            // TODO: Fetch conversation history from Supabase if needed
+            conversationHistory: ''
         });
 
-        if (!n8nResponse.ok) {
-            const errorText = await n8nResponse.text();
-            console.error('n8n error:', errorText);
-            return NextResponse.json(
-                {
-                    requestId,
-                    status: 'error',
-                    summary: 'Failed to process request. Please try again.',
-                    diff: '',
-                    previewUrl: '',
-                    filesChanged: [],
-                    warnings: ['Workflow error: ' + errorText.slice(0, 100)]
-                },
-                { status: 200 } // Return 200 so frontend can display the error message
-            );
-        }
-
-        // Read text response first to debug/handle empty responses
-        const textResponse = await n8nResponse.text();
-
-        if (!textResponse) {
-            console.error('n8n returned empty response');
-            throw new Error('Empty response from workflow');
-        }
-
-        let result;
-        try {
-            result = JSON.parse(textResponse);
-        } catch (e) {
-            console.error('Failed to parse n8n response:', textResponse);
-            // Verify if it is an HTML error page or similar
-            throw new Error(`Invalid JSON response: ${textResponse.slice(0, 100)}`);
-        }
-
-        // Return the n8n response directly
-        console.log('n8n response:', JSON.stringify(result, null, 2));
-
+        // Return standardized response
         return NextResponse.json({
-            requestId: result.requestId || requestId,
-            status: result.status || 'pending',
-            summary: result.summary || result.output || 'Changes processed.',
-            diff: result.diff || '',
-            previewUrl: result.previewUrl || '',
-            filesChanged: result.filesChanged || [],
-            warnings: result.warnings || [],
+            requestId,
+            status: 'completed',
+            summary: result.output,
+            diff: '',
+            previewUrl: '', // WebContainer handles preview
+            filesModified: result.filesModified,
+            filesCreated: result.filesCreated,
+            filesDeleted: result.filesDeleted,
+            warnings: [],
+            iterations: result.iterations,
+            toolsUsed: [],
+            // WebContainer mode: file operations for frontend to apply
+            fileOperations: result.fileOperations,
+            useWebContainer: true,
+            intent: result.intent,
+            // Build validation - client should run npm run build
+            requiresBuildValidation: result.requiresBuildValidation,
+            buildValidationMessage: result.buildValidationMessage
         });
-    } catch (err) {
+
+    } catch (err: any) {
         console.error('Chat API error:', err);
         return NextResponse.json({
             requestId: 'error',
             status: 'error',
-            summary: 'Something went wrong. Please try again.',
+            summary: 'Ensure you have set OPENROUTER_API_KEY in .env.local. Error: ' + err.message,
             diff: '',
             previewUrl: '',
             filesChanged: [],
-            warnings: [err instanceof Error ? err.message : 'Unknown error'],
+            warnings: [err.message],
         });
     }
 }

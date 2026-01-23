@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import type { CodeVersion } from '@/lib/supabase/types';
-import { rollbackChanges } from '@/lib/n8n/client';
+
 
 interface UseCodeVersionsOptions {
     clientId: string;
@@ -45,29 +45,9 @@ export function useCodeVersions({ clientId, sessionId }: UseCodeVersionsOptions)
 
     // Revert to a specific version
     const revertToVersion = useCallback(async (versionId: string) => {
-        try {
-            setIsReverting(true);
-            setError(null);
-
-            const result = await rollbackChanges({
-                siteId: clientId,
-                requestId: versionId,
-                userId: clientId,
-            });
-
-            if (result.status === 'rolled_back') {
-                // Refresh versions list (revert status handled by n8n workflow)
-                await fetchVersions();
-            }
-
-            return { success: true, message: 'Reverted successfully' };
-        } catch (err) {
-            setError(err instanceof Error ? err : new Error('Failed to revert'));
-            return { success: false, message: 'Revert failed' };
-        } finally {
-            setIsReverting(false);
-        }
-    }, [clientId, fetchVersions]);
+        console.log('Revert not implemented for in-app agent.');
+        return { success: false, message: 'Revert not supported locally' };
+    }, []);
 
     // Initial fetch
     useEffect(() => {

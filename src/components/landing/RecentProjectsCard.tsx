@@ -183,29 +183,186 @@ export function RecentProjectsCard({ onOpen }: RecentProjectsCardProps) {
                 </div>
             </div>
 
-            {/* Delete Confirmation Modal */}
+            {/* Delete Confirmation Modal - Modern Design */}
             {deleteConfirmId && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Project?</h3>
-                        <p className="text-sm text-gray-500 mb-6">
-                            This will permanently delete this project. This action cannot be undone.
-                        </p>
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setDeleteConfirmId(null)}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                    style={{ animation: 'fadeIn 0.2s ease-out' }}
+                >
+                    {/* Backdrop with blur */}
+                    <div
+                        className="absolute inset-0 bg-black/40 backdrop-blur-md"
+                        onClick={() => setDeleteConfirmId(null)}
+                        style={{ animation: 'fadeIn 0.2s ease-out' }}
+                    />
+
+                    {/* Modal Container */}
+                    <div
+                        className="relative w-full max-w-md"
+                        style={{ animation: 'modalSlideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
+                    >
+                        {/* Animated gradient border */}
+                        <div className="absolute -inset-[2px] rounded-3xl bg-gradient-to-r from-red-500 via-orange-500 to-red-500 opacity-75 blur-sm animate-pulse" />
+                        <div className="absolute -inset-[1px] rounded-3xl bg-gradient-to-r from-red-400 via-orange-400 to-red-400"
+                            style={{
+                                backgroundSize: '200% 200%',
+                                animation: 'gradientShift 3s ease infinite'
+                            }}
+                        />
+
+                        {/* Modal Content */}
+                        <div className="relative bg-white/95 backdrop-blur-xl rounded-3xl p-8 shadow-2xl overflow-hidden">
+                            {/* Decorative Elements */}
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
+                            <div className="absolute bottom-0 left-0 w-32 h-32 bg-orange-500/10 rounded-full blur-3xl -ml-16 -mb-16 pointer-events-none" />
+
+                            {/* Animated Warning Icon */}
+                            <div className="flex justify-center mb-6">
+                                <div
+                                    className="relative"
+                                    style={{ animation: 'bounceIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both' }}
+                                >
+                                    {/* Pulse rings */}
+                                    <div className="absolute inset-0 rounded-full bg-red-500/20 animate-ping" style={{ animationDuration: '1.5s' }} />
+                                    <div className="absolute inset-2 rounded-full bg-red-500/30 animate-ping" style={{ animationDuration: '2s', animationDelay: '0.3s' }} />
+
+                                    {/* Icon container */}
+                                    <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center shadow-lg shadow-red-500/30">
+                                        <Trash2
+                                            className="w-10 h-10 text-white"
+                                            style={{ animation: 'shake 0.5s ease-in-out 0.3s' }}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Title */}
+                            <h3
+                                className="text-2xl font-bold text-center text-gray-900 mb-3"
+                                style={{ animation: 'slideUp 0.3s ease-out 0.15s both' }}
                             >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={() => handleDelete(deleteConfirmId)}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
+                                Delete Project?
+                            </h3>
+
+                            {/* Project Name Preview */}
+                            <div
+                                className="mb-4 px-4 py-3 bg-gray-50 rounded-xl border border-gray-100"
+                                style={{ animation: 'slideUp 0.3s ease-out 0.2s both' }}
                             >
-                                Delete
-                            </button>
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 rounded-lg bg-gradient-to-br from-red-100 to-orange-100">
+                                        <Box className="w-4 h-4 text-red-500" />
+                                    </div>
+                                    <span className="font-medium text-gray-800 truncate">
+                                        {projects.find(p => p.id === deleteConfirmId)?.name || 'This project'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Warning Message */}
+                            <p
+                                className="text-center text-gray-500 mb-8 leading-relaxed"
+                                style={{ animation: 'slideUp 0.3s ease-out 0.25s both' }}
+                            >
+                                This will <span className="font-semibold text-red-500">permanently delete</span> the project
+                                and its GitHub repository. This action cannot be undone.
+                            </p>
+
+                            {/* Action Buttons */}
+                            <div
+                                className="flex gap-4"
+                                style={{ animation: 'slideUp 0.3s ease-out 0.3s both' }}
+                            >
+                                <button
+                                    onClick={() => setDeleteConfirmId(null)}
+                                    className="flex-1 group relative px-6 py-3.5 font-semibold text-gray-700 rounded-2xl transition-all duration-300 overflow-hidden hover:scale-[1.02] active:scale-[0.98]"
+                                >
+                                    {/* Button background */}
+                                    <div className="absolute inset-0 bg-gray-100 group-hover:bg-gray-200 transition-colors" />
+                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] duration-700" />
+
+                                    <span className="relative flex items-center justify-center gap-2">
+                                        <X className="w-4 h-4" />
+                                        Cancel
+                                    </span>
+                                </button>
+
+                                <button
+                                    onClick={() => handleDelete(deleteConfirmId)}
+                                    className="flex-1 group relative px-6 py-3.5 font-semibold text-white rounded-2xl transition-all duration-300 overflow-hidden hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-red-500/30 hover:shadow-xl hover:shadow-red-500/40"
+                                >
+                                    {/* Animated gradient background */}
+                                    <div
+                                        className="absolute inset-0 bg-gradient-to-r from-red-500 via-red-600 to-orange-500"
+                                        style={{
+                                            backgroundSize: '200% 100%',
+                                            animation: 'gradientShift 2s ease infinite'
+                                        }}
+                                    />
+                                    {/* Shine effect */}
+                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] duration-700" />
+
+                                    <span className="relative flex items-center justify-center gap-2">
+                                        <Trash2 className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+                                        Delete Forever
+                                    </span>
+                                </button>
+                            </div>
                         </div>
                     </div>
+
+                    {/* Keyframe Animations */}
+                    <style jsx>{`
+                        @keyframes fadeIn {
+                            from { opacity: 0; }
+                            to { opacity: 1; }
+                        }
+                        @keyframes modalSlideIn {
+                            from { 
+                                opacity: 0;
+                                transform: scale(0.9) translateY(20px);
+                            }
+                            to { 
+                                opacity: 1;
+                                transform: scale(1) translateY(0);
+                            }
+                        }
+                        @keyframes slideUp {
+                            from {
+                                opacity: 0;
+                                transform: translateY(10px);
+                            }
+                            to {
+                                opacity: 1;
+                                transform: translateY(0);
+                            }
+                        }
+                        @keyframes bounceIn {
+                            0% {
+                                opacity: 0;
+                                transform: scale(0.3);
+                            }
+                            50% {
+                                transform: scale(1.1);
+                            }
+                            70% {
+                                transform: scale(0.9);
+                            }
+                            100% {
+                                opacity: 1;
+                                transform: scale(1);
+                            }
+                        }
+                        @keyframes shake {
+                            0%, 100% { transform: rotate(0deg); }
+                            25% { transform: rotate(-10deg); }
+                            75% { transform: rotate(10deg); }
+                        }
+                        @keyframes gradientShift {
+                            0%, 100% { background-position: 0% 50%; }
+                            50% { background-position: 100% 50%; }
+                        }
+                    `}</style>
                 </div>
             )}
 

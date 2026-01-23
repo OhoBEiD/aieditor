@@ -89,20 +89,22 @@ function FileTreeNode({
         switch (ext) {
             case 'js':
             case 'jsx':
+                return <FileCode className="w-4 h-4 text-[#f1e05a]" />;
             case 'ts':
             case 'tsx':
-                return <FileCode className="w-4 h-4 text-yellow-400" />;
+                return <FileCode className="w-4 h-4 text-[#3178c6]" />;
             case 'css':
+                return <FileType className="w-4 h-4 text-[#563d7c]" />;
             case 'scss':
-                return <FileType className="w-4 h-4 text-blue-400" />;
+                return <FileType className="w-4 h-4 text-[#c6538c]" />;
             case 'json':
-                return <FileJson className="w-4 h-4 text-yellow-500" />;
+                return <FileJson className="w-4 h-4 text-[#f1e05a]" />;
             case 'html':
-                return <FileCode className="w-4 h-4 text-orange-400" />;
+                return <FileCode className="w-4 h-4 text-[#e34c26]" />;
             case 'md':
-                return <FileText className="w-4 h-4 text-gray-400" />;
+                return <FileText className="w-4 h-4 text-[#455061]" />;
             default:
-                return <File className="w-4 h-4 text-[var(--text-muted)]" />;
+                return <File className="w-4 h-4 text-gray-500" />;
         }
     };
 
@@ -119,41 +121,42 @@ function FileTreeNode({
             <button
                 onClick={handleClick}
                 className={cn(
-                    'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left',
-                    'text-sm transition-colors duration-150',
+                    'w-full flex items-center gap-1.5 px-2 py-[3px] rounded-sm text-left group border border-transparent',
+                    'text-[13px] transition-colors duration-75 font-mono',
                     isSelected
-                        ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)]'
-                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
+                        ? 'bg-[#1f2428] text-white border-[#30363d]'
+                        : 'text-gray-400 hover:bg-[#161b22] hover:text-gray-200'
                 )}
-                style={{ paddingLeft: `${8 + level * 16}px` }}
+                style={{ paddingLeft: `${12 + level * 12}px` }}
             >
                 {isFolder ? (
-                    <>
+                    <div className="flex items-center gap-1.5 opacity-80 group-hover:opacity-100">
                         {isOpen ? (
-                            <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-[var(--text-muted)]" />
+                            <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
                         ) : (
-                            <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-[var(--text-muted)]" />
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
                         )}
                         {isOpen ? (
-                            <FolderOpen className="w-4 h-4 flex-shrink-0 text-[var(--accent-primary)]" />
+                            <FolderOpen className="w-4 h-4 text-[#7ee787]" />
                         ) : (
-                            <Folder className="w-4 h-4 flex-shrink-0 text-[var(--accent-primary)]" />
+                            <Folder className="w-4 h-4 text-[#7ee787]" />
                         )}
-                    </>
+                    </div>
                 ) : (
-                    <>
+                    <div className="flex items-center gap-1.5">
                         <span className="w-3.5" />
                         {getFileIcon(node.name)}
-                    </>
+                    </div>
                 )}
-                <span className="truncate">{node.name}</span>
+                <span className="truncate flex-1">{node.name}</span>
                 {node.isModified && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-warning)] flex-shrink-0" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#d2a8ff] flex-shrink-0" />
                 )}
             </button>
 
             {isFolder && isOpen && node.children && (
-                <div>
+                <div className="relative">
+                    {/* Indentation guide could go here */}
                     {node.children.map((child) => (
                         <FileTreeNode
                             key={child.path}

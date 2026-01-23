@@ -7,7 +7,7 @@ import type { ExecutorMode } from '@/components/chat/MessageInput';
 import { PreviewPanel } from '@/components/editor/PreviewPanel';
 import { DeploymentSettings } from '@/components/settings/DeploymentSettings';
 import { supabase } from '@/lib/supabase/client';
-import { applyChanges, rollbackChanges } from '@/lib/n8n/client';
+
 import { useThinkingSteps } from '@/hooks/useThinkingSteps';
 import type { ThinkingStep } from '@/components/chat/ThinkingSteps';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,7 @@ import { Bot, X, Settings, MessageSquare } from 'lucide-react';
 import { LandingPage } from '@/components/landing/LandingPage';
 import { gsap } from 'gsap';
 import Image from 'next/image';
+import { useWebContainer } from '@/hooks/useWebContainer';
 
 // Configuration - Can be overridden by active project
 const DEFAULT_CLIENT_ID = '00000000-0000-0000-0000-000000000001';
@@ -202,6 +203,7 @@ interface Project {
     name: string;
     repoUrl: string;
     previewSubdomain: string;
+    branch?: string;
 }
 
 export default function Home() {
@@ -215,11 +217,19 @@ export default function Home() {
     const [activeProject, setActiveProject] = useState<Project | null>(null);
     const activeProjectId = activeProject?.id || DEFAULT_CLIENT_ID; // Use UUID id for database queries
 
-    // Thinking steps state - Live updates from Supabase
+    // Thinking steps state - Live updates from Supabase + SSE
     const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
-    const { steps: liveThinkingSteps, isSubscribed } = useThinkingSteps(currentRequestId);
+    const { steps: liveThinkingSteps, isSubscribed, refresh: refreshThinkingSteps } = useThinkingSteps(currentRequestId, activeSessionId);
+    const [sseThinkingSteps, setSseThinkingSteps] = useState<ThinkingStep[]>([]); // SSE thinking steps
     const [agentThinking, setAgentThinking] = useState<string[]>([]); // Real thinking from n8n
     const [isStreaming, setIsStreaming] = useState(false);
+
+    // Merge SSE and Supabase thinking steps
+    // If we have SSE steps, use them; otherwise fall back to Supabase steps
+    // After completion, keep showing steps from Supabase (they persist)
+    const allThinkingSteps = sseThinkingSteps.length > 0
+        ? sseThinkingSteps
+        : (liveThinkingSteps.length > 0 ? liveThinkingSteps : []);
 
     // Helper to add message without duplicates
     const addMessage = useCallback((newMsg: Message) => {
@@ -248,13 +258,47 @@ export default function Home() {
     const [showSettings, setShowSettings] = useState(false);
 
     // Executor mode - user selection for Fast vs Thinking
-    const [executorMode, setExecutorMode] = useState<ExecutorMode>('thinking');
+    // Default to 'mastra' (Automate Editor) instead of Claude Code
+    const [executorMode, setExecutorMode] = useState<ExecutorMode>('mastra');
+
+    // External file selection (from chat panel clicking on file names in thinking steps)
+    const [selectedFileFromChat, setSelectedFileFromChat] = useState<string | null>(null);
 
     // Abort controller for canceling requests
     const abortControllerRef = useRef<AbortController | null>(null);
 
     // Current request ID for stopping n8n execution
     const currentRequestIdRef = useRef<string | null>(null);
+
+    // WebContainer for in-browser preview (replaces fly.io)
+    const {
+        status: wcStatus,
+        previewUrl: wcPreviewUrl,
+        applyFileChanges,
+        boot: bootWebContainer,
+        mountFiles,
+        installDependencies,
+        startDevServer,
+        initFromGitHub,
+        getFileContext,
+        applyFileOperations,
+        runBuild,
+    } = useWebContainer({
+        projectId: activeProjectId,
+        onReady: (url) => {
+            console.log('[WebContainer] Preview ready:', url);
+            setPreviewUrl(url);
+            setIsPreviewLoading(false);
+        },
+        onError: (err) => console.error('[WebContainer] Error:', err),
+    });
+
+    // Use WebContainer URL if available
+    useEffect(() => {
+        if (wcPreviewUrl && wcStatus === 'running') {
+            setPreviewUrl(wcPreviewUrl);
+        }
+    }, [wcPreviewUrl, wcStatus]);
 
     // No inactivity timeout - preview stays running until page closes or preview mode is off
 
@@ -321,72 +365,23 @@ export default function Home() {
             };
             console.log('[Preview] Sending to orchestrator:', { ...requestBody, gitToken: requestBody.gitToken ? '***' : undefined });
 
-            // Retry logic for orchestrator call (handles race condition with new repo creation)
-            let response: Response | null = null;
-            let lastError: Error | null = null;
-            const maxRetries = 3;
-
-            for (let attempt = 0; attempt < maxRetries; attempt++) {
-                try {
-                    response = await fetch('https://preview-orchestrator.fly.dev/preview/start', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(requestBody),
-                    });
-
-                    if (response.ok) {
-                        break; // Success, exit retry loop
-                    }
-
-                    // Try to get error details - handle both JSON and text responses
-                    let errorData: { error?: string; message?: string; raw?: string } = {};
-                    try {
-                        const text = await response.text();
-                        try {
-                            errorData = JSON.parse(text);
-                        } catch {
-                            errorData = { raw: text.substring(0, 500) }; // Capture raw text if not JSON
-                        }
-                    } catch {
-                        errorData = { raw: 'Failed to read response body' };
-                    }
-                    // Use warn instead of error for retryable attempts to avoid Next.js error overlay
-                    if (response.status === 500 && attempt < maxRetries - 1) {
-                        console.warn(`[Preview] Orchestrator error (attempt ${attempt + 1}/${maxRetries}), will retry:`, response.status, errorData);
-                        const delay = (attempt + 1) * 2000; // 2s, 4s, 6s
-                        console.log(`[Preview] Retrying in ${delay / 1000}s...`);
-                        await new Promise(r => setTimeout(r, delay));
-                        continue;
-                    }
-
-                    // Final attempt or non-retryable error - log as error
-                    console.error(`[Preview] Orchestrator error (final):`, response.status, errorData);
-
-                    // Non-retryable error or max retries reached
-                    setShowPreview(true);
-                    const errorMessage = errorData.error || errorData.message || errorData.raw || response.statusText || `HTTP ${response.status}`;
-                    throw new Error(`Failed to start preview: ${errorMessage}`);
-                } catch (err) {
-                    if (err instanceof Error && err.message.startsWith('Failed to start preview:')) {
-                        throw err; // Re-throw our own errors
-                    }
-                    lastError = err instanceof Error ? err : new Error(String(err));
-                    if (attempt < maxRetries - 1) {
-                        const delay = (attempt + 1) * 2000;
-                        console.log(`[Preview] Network error, retrying in ${delay / 1000}s...`, err);
-                        await new Promise(r => setTimeout(r, delay));
-                    }
-                }
-            }
+            // WebContainers mode - skip fly.io orchestrator, just set preview ready
+            console.log('[Preview] Using WebContainers - skipping fly.io orchestrator');
+            const response = new Response(JSON.stringify({ status: 'ready', previewUrl: null }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+            });
 
             if (!response?.ok) {
-                throw lastError || new Error('Failed to start preview after retries');
+                throw new Error('Failed to start preview after retries');
             }
 
             const data = await response.json();
             if (data.status === 'ready' || data.status === 'starting') {
-                setPreviewUrl(data.previewUrl || `https://${targetSiteId}.preview.automatelb.com`);
-                setShowPreview(true); // Ensure we switch to Editor view
+                // Don't set fly.io URL - WebContainer will provide its own URL
+                // Just switch to Editor view and let WebContainer boot
+                setShowPreview(true);
+                console.log('[Preview] Ready for WebContainer - no external URL needed');
 
                 // Detect available pages from repo
                 detectAvailablePages(targetRepoUrl, token);
@@ -468,72 +463,11 @@ export default function Home() {
         setPreviewUrl(undefined);
         // Clear preview URL from localStorage when exiting
         localStorage.removeItem('previewUrl');
-
-        // Stop the preview server
-        try {
-            await fetch('https://preview-orchestrator.fly.dev/preview/stop', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ siteId: activeProjectId })
-            });
-            console.log('[Preview] Preview server stopped');
-        } catch (err) {
-            console.error('[Preview] Failed to stop preview server:', err);
-        }
+        console.log('[Preview] Preview closed');
     }, []);
 
-    // Stop preview when page unloads
-    useEffect(() => {
-        const handleBeforeUnload = () => {
-            // Note: This is best-effort, may not always fire (e.g., PC shutdown)
-            navigator.sendBeacon?.('https://preview-orchestrator.fly.dev/preview/stop', JSON.stringify({ siteId: activeProjectId }));
-        };
+    // No longer need to stop external preview server - WebContainers run in browser
 
-        window.addEventListener('beforeunload', handleBeforeUnload);
-
-        return () => {
-            window.removeEventListener('beforeunload', handleBeforeUnload);
-        };
-    }, []);
-
-    // Suppress preview iframe WebSocket HMR errors (these are harmless noise from the preview server)
-    useEffect(() => {
-        const originalError = console.error;
-        const originalWarn = console.warn;
-        const originalLog = console.log;
-
-        const shouldSuppress = (message: string) => {
-            return message.includes('WebSocket connection') ||
-                message.includes('Invalid frame header') ||
-                message.includes('_next/webpack-hmr') ||
-                message.includes('[HMR] connected') ||
-                message.includes('failed: Invalid frame header');
-        };
-
-        console.error = (...args: any[]) => {
-            const message = args[0]?.toString() || '';
-            if (shouldSuppress(message)) return;
-            originalError.apply(console, args);
-        };
-
-        console.warn = (...args: any[]) => {
-            const message = args[0]?.toString() || '';
-            if (shouldSuppress(message)) return;
-            originalWarn.apply(console, args);
-        };
-
-        console.log = (...args: any[]) => {
-            const message = args[0]?.toString() || '';
-            if (shouldSuppress(message)) return;
-            originalLog.apply(console, args);
-        };
-
-        return () => {
-            console.error = originalError;
-            console.warn = originalWarn;
-            console.log = originalLog;
-        };
-    }, []);
 
     // Define loadSessions function before useEffect hooks that use it
     const loadSessions = useCallback(async () => {
@@ -568,16 +502,74 @@ export default function Home() {
         }
     }, [activeProjectId, activeSessionId]);
 
-    // Auto-start preview when showPreview is true
-    // Always start preview for active project to ensure server is running
+    // Auto-start WebContainer preview when showPreview is true
+    // If project has repoUrl, pull from GitHub; otherwise use starter template
+    const wcInitializedForProjectRef = useRef<string | null>(null);
+    const wcInitInProgressRef = useRef(false);
+
     useEffect(() => {
-        if (isClient && showPreview && !isPreviewLoading && activeProject && !previewUrl) {
-            // Start preview if we don't have a preview URL yet
-            // The server will be provisioned if needed
-            console.log('[Preview] Auto-starting preview on load...');
-            startPreview();
+        // Skip if not ready or already loading
+        if (!isClient || !showPreview) return;
+        if (!activeProject) return;
+
+        // Skip if initialization is in progress
+        if (wcInitInProgressRef.current) {
+            console.log('[Preview] Initialization already in progress, skipping');
+            return;
         }
-    }, [isClient, showPreview, isPreviewLoading, activeProject?.id, previewUrl]);
+
+        // Skip if we've already initialized for this project AND have a preview URL
+        if (wcInitializedForProjectRef.current === activeProject.id && previewUrl) {
+            console.log('[Preview] Already initialized for project:', activeProject.id);
+            return;
+        }
+
+        // If WebContainer is running but for a different project, we need to reload files
+        const needsProjectSwitch = wcStatus === 'running' && wcInitializedForProjectRef.current && wcInitializedForProjectRef.current !== activeProject.id;
+
+        console.log('[Preview] Init check - status:', wcStatus, 'project:', activeProject.id, 'prev:', wcInitializedForProjectRef.current, 'needsSwitch:', needsProjectSwitch);
+
+        wcInitInProgressRef.current = true;
+        setIsPreviewLoading(true);
+
+        (async () => {
+            try {
+                // If project has a GitHub repo, pull from it
+                if (activeProject.repoUrl) {
+                    console.log('[Preview] Loading project from GitHub:', activeProject.repoUrl);
+                    // Get GitHub token from localStorage
+                    const githubToken = localStorage.getItem('github_token') || undefined;
+                    await initFromGitHub(activeProject.repoUrl, githubToken, activeProject.branch || 'main');
+                    console.log('[Preview] Project loaded from GitHub successfully');
+                } else {
+                    // No repo URL - use starter template for new projects
+                    console.log('[Preview] No repo URL, using starter template');
+                    await bootWebContainer();
+                    const { STARTER_TEMPLATE } = await import('@/lib/webcontainer/starterTemplate');
+                    await mountFiles(STARTER_TEMPLATE);
+                    await installDependencies();
+                    await startDevServer();
+                }
+                console.log('[Preview] WebContainer started successfully');
+                wcInitializedForProjectRef.current = activeProject.id;
+            } catch (err: any) {
+                console.error('[Preview] Failed to boot WebContainer:', err);
+                // If it's a "single instance" error, the container is already running
+                // This is expected when switching projects - just mark as initialized
+                if (err.message?.includes('single') && err.message?.includes('instance')) {
+                    console.log('[Preview] WebContainer already booted (singleton), marking as initialized');
+                    wcInitializedForProjectRef.current = activeProject.id;
+                    // If we have a preview URL from the previous project, keep it
+                    // The files should have been loaded by initFromGitHub or mountFiles
+                }
+            } finally {
+                setIsPreviewLoading(false);
+                wcInitInProgressRef.current = false;
+            }
+        })();
+        // Intentionally limiting dependencies to avoid infinite loops
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isClient, showPreview, activeProject?.id]);
 
     // Fix hydration + restore preferences + restore active project
     useEffect(() => {
@@ -610,27 +602,13 @@ export default function Home() {
         if (savedPanelOpen !== null) {
             setIsPanelOpen(savedPanelOpen === 'true');
         }
-        // Restore preview URL from localStorage
+        // Restore preview URL from localStorage (only WebContainer URLs)
         const savedPreviewUrl = localStorage.getItem('previewUrl');
-        if (savedPreviewUrl) {
+        if (savedPreviewUrl && !savedPreviewUrl.includes('.preview.automatelb.com')) {
+            // Only restore WebContainer URLs, not old fly.io URLs
             setPreviewUrl(savedPreviewUrl);
-        } else if (hasActiveProject) {
-            // Fallback: generate preview URL from active project siteKey
-            try {
-                const savedProject = localStorage.getItem('activeProject');
-                if (savedProject) {
-                    const parsedProject = JSON.parse(savedProject);
-                    const effectiveSiteKey = parsedProject.siteKey || parsedProject.id;
-                    if (effectiveSiteKey) {
-                        const fallbackUrl = `https://${effectiveSiteKey}.preview.automatelb.com`;
-                        console.log('[App] No saved preview URL, using fallback:', fallbackUrl);
-                        setPreviewUrl(fallbackUrl);
-                    }
-                }
-            } catch (e) {
-                console.error('Failed to generate fallback preview URL:', e);
-            }
         }
+        // Note: No fly.io fallback - WebContainer will generate its own URL when it boots
 
 
 
@@ -806,29 +784,29 @@ export default function Home() {
         }
     }, []);
 
-    // Handle stop button - abort the current request and stop n8n execution
+    // Handle stop button - abort the current request and stop execution
     const handleStop = useCallback(async () => {
-        // Abort the fetch request
+        // 1. Abort the fetch request (client-side)
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
         }
 
-        // Stop the n8n execution via orchestrator
-        if (currentRequestIdRef.current) {
+        // 2. Set cancellation flag in Supabase (monitored by agents)
+        if (activeSessionId) {
+            console.log(`[Stop] Cancelling session: ${activeSessionId}`);
             try {
-                console.log(`Stopping n8n execution for request ${currentRequestIdRef.current}...`);
-                await fetch('https://preview-orchestrator.fly.dev/execution/stop', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ requestId: currentRequestIdRef.current })
-                });
-                console.log('N8n execution stop request sent');
+                await supabase
+                    .from('chat_sessions')
+                    .update({ is_cancelled: true })
+                    .eq('id', activeSessionId);
             } catch (err) {
-                console.error('Failed to stop n8n execution:', err);
+                console.error('[Stop] Failed to set cancellation flag:', err);
             }
-            currentRequestIdRef.current = null;
         }
+
+        // 3. Clear current request ID
+        currentRequestIdRef.current = null;
 
         // Add "Stopped by user" message
         if (activeSessionId) {
@@ -868,11 +846,7 @@ export default function Home() {
             abortControllerRef.current.abort();
             // Fire-and-forget stop signal to backend
             if (currentRequestIdRef.current) {
-                fetch('https://preview-orchestrator.fly.dev/execution/stop', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ requestId: currentRequestIdRef.current })
-                }).catch(e => console.error('Failed to ignore-stop:', e));
+                console.log('[Cleanup] Previous request:', currentRequestIdRef.current);
             }
         }
 
@@ -953,11 +927,26 @@ export default function Home() {
             startedAt: new Date().toISOString(),
         }));
 
-        // Clear previous thinking steps
+        // Reset cancellation flag and state for new request
+        setIsSending(true);
+        setIsStreaming(true);
+        // Clear SSE thinking steps for new request (they'll be replaced by new ones)
+        // But keep liveThinkingSteps from Supabase so old steps remain visible
+        setSseThinkingSteps([]);
         setAgentThinking([]);
+        // Don't clear currentRequestId here - it will be updated below with the new requestId
+        // This keeps old steps visible from Supabase subscription
 
-        // Create new abort controller for this request
-        abortControllerRef.current = new AbortController();
+        if (sessionId) {
+            await supabase
+                .from('chat_sessions')
+                .update({ is_cancelled: false }) // Reset to false for a new request
+                .eq('id', sessionId);
+        }
+
+        // Create AbortController for this request
+        const abortController = new AbortController();
+        abortControllerRef.current = abortController;
 
         try {
             // Save user message with image metadata if present
@@ -968,7 +957,6 @@ export default function Home() {
                     role: 'user',
                     content: content.trim() || 'Sent an image',
                     metadata: imageData ? { image: imageData } : undefined,
-                    executor_mode: executorMode, // Save the user-selected mode
                 })
                 .select()
                 .single();
@@ -1000,36 +988,58 @@ export default function Home() {
                 const { data: { user } } = await supabase.auth.getUser();
                 const targetSiteId = targetProject?.siteKey || DEFAULT_CLIENT_ID;
 
-                const response = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        siteId: targetSiteId,
-                        conversationId: sessionId,
-                        userId: user?.id || targetSiteId, // Real User ID
-                        message: content.trim(),
-                        image: imageData, // Pass image for AI vision analysis
-                        requestId, // Pass requestId for live thinking
-                        executorMode, // Pass executor mode (auto, fast, thinking)
-                    }),
-                    signal: abortControllerRef.current.signal,
-                });
+                // Get file context from WebContainer
+                console.log('📂 Reading file context for AI...');
+                const fileContents = await getFileContext();
+                console.log('✅ Read ' + Object.keys(fileContents).length + ' files');
 
-                const result = await response.json();
-                console.log('N8N Response:', result);
+                // Call API based on mode
+                let response;
 
-                // Store real thinking from n8n (if provided)
-                if (result.thinking?.length > 0) {
-                    setAgentThinking(result.thinking);
+                if (executorMode === 'mastra') {
+                    // Call Mastra API
+                    response = await fetch('/api/mastra', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: content.trim(),
+                            files: fileContents,
+                            conversationHistory: messages.map(m => ({
+                                role: m.role === 'user' ? 'user' : 'assistant',
+                                content: m.content
+                            })),
+                            mode: 'mastra',
+                            maxSteps: 20,
+                            requestId,
+                            siteId: targetSiteId
+                        }),
+                    });
+                } else {
+                    // Call Standard Chat API (Claude Code or Hybrid Auto)
+                    // Hybrid mode uses the same API but with internal intent-based routing
+                    response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            siteId: targetSiteId,
+                            conversationId: sessionId,
+                            userId: user?.id || targetSiteId,
+                            message: content.trim(),
+                            image: imageData,
+                            requestId,
+                            executorMode: executorMode === 'hybrid' ? 'hybrid' : executorMode,
+                            fileContents // Pass full file context
+                        }),
+                    });
                 }
 
-                // Clear thinking steps after completion
-                setTimeout(() => {
-                    setCurrentRequestId(null); // Stop live subscription
-                    setAgentThinking([]);
-                    setIsStreaming(false);
-                    localStorage.removeItem('activeRequest'); // Clear saved request state
-                }, 3000);
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                console.log('N8N Response:', result);
 
                 // Format and save AI response
                 const aiContent = result.summary || 'Changes processed.';
@@ -1048,7 +1058,6 @@ export default function Home() {
                             filesChanged: result.filesChanged,
                             warnings: result.warnings,
                         },
-                        executor_mode: executorMode, // Save the mode used for this response
                     })
                     .select()
                     .single();
@@ -1056,35 +1065,108 @@ export default function Home() {
                 if (aiError) throw aiError;
                 addMessage(aiMsg as Message);
 
-                // Store context
+                // Store context with proper type assertions
                 setRequestContexts(prev => new Map(prev).set(aiMsg.id, {
-                    requestId: result.requestId,
-                    status: result.status || 'preview_ready',
+                    requestId: result.requestId || requestId,
+                    status: (result.status || 'preview_ready') as 'preview_ready' | 'applied' | 'rolled_back',
                     previewUrl: result.previewUrl || '',
                     prUrl: '',
                     messageId: aiMsg.id,
                 }));
 
-                // Update preview - HMR will handle the refresh automatically
-                if (result.previewUrl) {
-                    // Extract base URL without query params
-                    const baseUrl = result.previewUrl.split('?')[0].split('#')[0];
-                    console.log('Setting preview URL:', baseUrl);
-                    setPreviewUrl(baseUrl);
+                // Don't clear thinking steps immediately - keep them visible for review
+                // Only clear after a longer delay (30 seconds) or when user starts new request
+                setIsStreaming(false);
+                // Refresh thinking steps to ensure we have the complete list (recovers from Realtime drops)
+                if (refreshThinkingSteps) {
+                    refreshThinkingSteps(requestId).catch(console.error);
+                }
+                // Keep requestId and steps visible so user can review what happened
+                // They'll be cleared when a new request starts
 
-                    // Always trigger preview start/refresh after AI responds
-                    console.log('[Preview] AI response received - ensuring preview is running...');
-                    startPreview();
+                // Handle file operations via WebContainer if present
+                if (result.fileOperations && Array.isArray(result.fileOperations) && result.fileOperations.length > 0) {
+                    console.log('🔧 Applying ' + result.fileOperations.length + ' file operations...');
+                    const applyResult = await applyFileOperations(result.fileOperations);
 
-                    console.log('Changes pushed to preview server - HMR will update automatically');
-                } else {
-                    console.warn('No preview URL in result:', result);
-                    // Still try to start preview using the active project
-                    if (activeProject) {
-                        console.log('[Preview] No previewUrl in result, starting with active project...');
-                        startPreview();
+                    if (applyResult && applyResult.success && applyResult.applied > 0) {
+                        console.log(`✅ Successfully applied ${applyResult.applied}/${applyResult.total} file operations`);
+
+                        // Run build validation if requested by the AI
+                        if (result.requiresBuildValidation) {
+                            console.log('🔨 Running build validation...');
+
+                            // Add a thinking step for build validation
+                            const buildStepId = 'build-validation-step';
+                            setSseThinkingSteps(prev => [
+                                ...prev,
+                                {
+                                    id: buildStepId,
+                                    tool_name: 'validate_build',
+                                    toolName: 'validate_build',
+                                    status: 'running',
+                                    message: 'Running npm run build to validate...',
+                                    details: {}
+                                }
+                            ]);
+
+                            const buildResult = await runBuild();
+
+                            if (buildResult.success) {
+                                console.log('✅ Build validation passed!');
+                                // Update thinking step to complete
+                                setSseThinkingSteps(prev => prev.map(step =>
+                                    step.id === buildStepId
+                                        ? { ...step, status: 'complete' as const, message: 'Build succeeded! Project compiles correctly.' }
+                                        : step
+                                ));
+                            } else {
+                                console.log('❌ Build validation failed:', buildResult.errors);
+                                // Update thinking step to show error
+                                setSseThinkingSteps(prev => prev.map(step =>
+                                    step.id === buildStepId
+                                        ? {
+                                            ...step,
+                                            status: 'error' as const,
+                                            message: 'Build failed with errors',
+                                            details: { content: buildResult.errors.join('\n') }
+                                        }
+                                        : step
+                                ));
+
+                                // Add error step with details
+                                setSseThinkingSteps(prev => [
+                                    ...prev,
+                                    {
+                                        id: 'build-error-step',
+                                        tool_name: 'error',
+                                        toolName: 'error',
+                                        status: 'error' as const,
+                                        message: 'Build errors need to be fixed',
+                                        details: { content: buildResult.errors.slice(0, 5).join('\n') }
+                                    }
+                                ]);
+                            }
+                        }
+
+                        // Force preview refresh after AI file changes to show new content
+                        // Wait longer to ensure HMR has processed all file changes
+                        console.log('🔄 Refreshing preview to show new content...');
+                        setTimeout(() => {
+                            setPreviewRefreshKey(prev => prev + 1);
+                            console.log('🔄 Preview refresh triggered (refreshKey incremented)');
+                        }, 1500); // Increased delay to allow HMR to process all changes
+                    } else {
+                        console.warn('⚠️ File operations may have failed. Applied:', applyResult?.applied || 0);
+                        // Still try to refresh preview in case some files were written
+                        setTimeout(() => {
+                            setPreviewRefreshKey(prev => prev + 1);
+                            console.log('🔄 Preview refresh triggered (fallback)');
+                        }, 1500);
                     }
                 }
+
+
             } catch (apiError) {
                 // Ignore abort errors
                 if (apiError instanceof Error && apiError.name === 'AbortError') {
@@ -1116,7 +1198,13 @@ export default function Home() {
                 }
             }
         } catch (err) {
-            console.error('Failed to send message:', err);
+            // Better error logging - handle Error objects and plain objects
+            const errorMessage = err instanceof Error
+                ? err.message
+                : (typeof err === 'object' && err !== null)
+                    ? JSON.stringify(err, Object.getOwnPropertyNames(err))
+                    : String(err);
+            console.error('Failed to send message:', errorMessage, err);
             // Cleanup thinking on error
             setCurrentRequestId(null);
             setIsStreaming(false);
@@ -1124,107 +1212,26 @@ export default function Home() {
         } finally {
             setIsSending(false);
         }
-    }, [activeSessionId, messages.length]);
+    }, [activeSessionId, messages.length, refreshThinkingSteps]);
 
     const handleRevert = useCallback(async (messageId: string) => {
-        const context = requestContexts.get(messageId);
-        if (!context) {
-            console.log('No context found for message:', messageId);
-            return;
-        }
-
-        try {
-            const response = await rollbackChanges({
-                siteId: activeProjectId,
-                requestId: context.requestId,
-                userId: activeProjectId,
-            });
-
-            // Update context
-            setRequestContexts(prev => {
-                const updated = new Map(prev);
-                updated.set(messageId, { ...context, status: 'rolled_back' });
-                return updated;
-            });
-
-            // Save confirmation message
-            if (activeSessionId) {
-                const { data: revertMsg } = await supabase
-                    .from('messages')
-                    .insert({
-                        session_id: activeSessionId,
-                        role: 'assistant',
-                        content: `✅ **Changes reverted successfully!**\n\nRevert commit: \`${response.revertCommitSha?.substring(0, 7) || 'N/A'}\``,
-                    })
-                    .select()
-                    .single();
-
-                if (revertMsg) addMessage(revertMsg as Message);
-            }
-        } catch (err) {
-            console.error('Failed to revert:', err);
-
-            if (activeSessionId) {
-                const { data: errorMsg } = await supabase
-                    .from('messages')
-                    .insert({
-                        session_id: activeSessionId,
-                        role: 'assistant',
-                        content: `❌ **Revert failed:** ${err instanceof Error ? err.message : 'Unknown error'}`,
-                    })
-                    .select()
-                    .single();
-
-                if (errorMsg) addMessage(errorMsg as Message);
-            }
-        }
-    }, [requestContexts, activeSessionId, addMessage]);
+        console.log('Revert not implemented for in-app agent.');
+    }, []);
 
     const handleDeploy = useCallback(async () => {
         const pendingContext = Array.from(requestContexts.values())
             .filter(ctx => ctx.status === 'preview_ready')
             .pop();
 
-        if (!pendingContext) {
-            console.log('No pending changes to deploy');
-            return;
-        }
-
-        setIsDeploying(true);
-        try {
-            const response = await applyChanges({
-                siteId: activeProjectId,
-                requestId: pendingContext.requestId,
-                userId: activeProjectId,
-            });
-
-            // Update context
+        if (pendingContext) {
             setRequestContexts(prev => {
                 const updated = new Map(prev);
                 updated.set(pendingContext.messageId, { ...pendingContext, status: 'applied' });
                 return updated;
             });
-
-            // Save confirmation
-            if (activeSessionId) {
-                const { data: deployMsg } = await supabase
-                    .from('messages')
-                    .insert({
-                        session_id: activeSessionId,
-                        role: 'assistant',
-                        content: `🚀 **Deployed successfully!**\n\nCommit: \`${response.commitSha?.substring(0, 7) || 'N/A'}\``,
-                    })
-                    .select()
-                    .single();
-
-                if (deployMsg) addMessage(deployMsg as Message);
-            }
-        } catch (err) {
-            console.error('Failed to deploy:', err);
-        } finally {
-            setIsDeploying(false);
+            console.log('Marked changes as applied locally.');
         }
-    }, [requestContexts, activeSessionId, addMessage]);
+    }, [requestContexts]);
 
     // Create a new project from a message
     const createNewProject = useCallback(async (initialMessage: string) => {
@@ -1266,12 +1273,9 @@ export default function Home() {
 
             // Set as active project and switch to preview view
             setActiveProject(data.project);
-            // Set preview URL immediately from project siteKey - ensures preview shows while orchestrator starts
-            const effectiveSiteKey = data.project.siteKey || data.project.id;
-            if (effectiveSiteKey) {
-                setPreviewUrl(`https://${effectiveSiteKey}.preview.automatelb.com`);
-                console.log('[Project] Set immediate preview URL:', effectiveSiteKey);
-            }
+            setPreviewUrl(undefined); // Clear previous preview URL to trigger WebContainer boot
+            // Don't set fly.io URL - WebContainer will boot and provide its own URL
+            console.log('[Project] Created, WebContainer will boot for preview');
             setShowPreview(true); // Switch from LandingPage to Editor view
             setActiveSessionId(null); // Clear active session to force new chat for new project
             setMessages([]); // Clear messages for fresh start
@@ -1524,10 +1528,11 @@ export default function Home() {
                                         onSendMessage={handleSendMessage}
                                         onRevert={handleRevert}
                                         onStop={handleStop}
+                                        onFileClick={setSelectedFileFromChat}
                                         isLoading={isSending}
                                         isLoadingMessages={isLoadingMessages}
                                         isStreaming={isStreaming}
-                                        thinkingSteps={liveThinkingSteps}
+                                        thinkingSteps={allThinkingSteps}
                                         agentThinking={agentThinking}
                                         executorMode={executorMode}
                                         onModeChange={setExecutorMode}
@@ -1547,9 +1552,11 @@ export default function Home() {
                             hasChanges={hasPendingChanges}
                             isDeploying={isDeploying}
                             availablePages={availablePages}
-                            isLoading={isPreviewLoading}
+                            isLoading={isPreviewLoading || wcStatus === 'booting' || wcStatus === 'installing'}
                             refreshKey={previewRefreshKey}
                             repoUrl={activeProject?.repoUrl}
+                            projectId={activeProject?.id}
+                            externalSelectedFile={selectedFileFromChat}
                         />
                     </div>
                 </div>
@@ -1567,14 +1574,12 @@ export default function Home() {
                         // When opening a recent project, set it as active and switch to Editor view
                         if (project) {
                             setActiveProject(project);
-                            // Set preview URL immediately from project's siteKey
-                            const effectiveSiteKey = project.siteKey || project.id;
-                            if (effectiveSiteKey) {
-                                setPreviewUrl(`https://${effectiveSiteKey}.preview.automatelb.com`);
-                            }
+                            setPreviewUrl(undefined); // Clear previous URL to ensure correct boot/load
+                            // Don't set fly.io URL - WebContainer will boot and provide its own URL
+                            console.log('[Project] Opening project, WebContainer will boot for preview');
                         }
                         setShowPreview(true);
-                        // Start the preview server in the background
+                        // Start the preview (WebContainer will boot)
                         startPreview(project);
                     }}
                     isLoading={isPreviewLoading || isSending}
@@ -1584,7 +1589,7 @@ export default function Home() {
             )}
         </div>
     );
-}
+};
 
 function formatAIResponse(response: { summary: string; diff: string; prUrl: string; warnings: string[] }): string {
     const parts: string[] = [];

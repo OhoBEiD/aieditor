@@ -3,9 +3,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Send, Loader2, Paperclip, Github, Zap, Brain, Bot, ChevronDown, ImagePlus } from 'lucide-react';
+import { Send, Loader2, Paperclip, Github, ChevronDown, Check } from 'lucide-react';
 import { gsap } from 'gsap';
-import { RecentProjectsCard } from './RecentProjectsCard';
+import { ClaudeLogo } from '@/components/icons/ClaudeLogo';
+import { RecentProjectsTable } from './RecentProjectsTable';
 import { useAuth } from '@/contexts/AuthContext';
 import { AuthRequiredModal } from '@/components/auth/AuthRequiredModal';
 import { RepoSelectorModal } from '@/components/auth/RepoSelectorModal';
@@ -22,14 +23,13 @@ interface LandingPageProps {
     onModeChange?: (mode: ExecutorMode) => void;
 }
 
-export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOpenPreview, isLoading, executorMode = 'thinking', onModeChange }: LandingPageProps) {
+export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOpenPreview, isLoading, executorMode = 'mastra', onModeChange }: LandingPageProps) {
     const [message, setMessage] = useState('');
     const [showImportModal, setShowImportModal] = useState(false);
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [authModalMessage, setAuthModalMessage] = useState('Sign in to start building with AutoMate');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isModeDropdownOpen, setIsModeDropdownOpen] = useState(false);
-    const [addImages, setAddImages] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const dropdownMenuRef = useRef<HTMLDivElement>(null);
     const modeBtnRef = useRef<HTMLButtonElement>(null);
@@ -353,17 +353,11 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
 
             setIsSubmitting(true);
             try {
-                // Build the message with optional image instruction
-                let finalMessage = message.trim();
-                if (addImages) {
-                    finalMessage += '\n\n[IMPORTANT: Use the generate_image tool to create and include relevant, high-quality images throughout the website. Add hero images, feature images, and decorative visuals to make the website visually appealing.]';
-                }
-
                 // If onCreateProject is provided, create a new project
                 if (onCreateProject) {
-                    await onCreateProject(finalMessage);
+                    await onCreateProject(message.trim());
                 } else {
-                    onSendMessage(finalMessage);
+                    onSendMessage(message.trim());
                 }
                 setMessage('');
             } finally {
@@ -648,94 +642,92 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                 </button>
                             </div>
 
-                            {/* Mode Selector Dropdown (Bottom Left) */}
-                            {onModeChange && (
-                                <div className="absolute left-5 bottom-4 z-30" ref={dropdownRef}>
-                                    <button
-                                        ref={modeBtnRef}
-                                        type="button"
-                                        onClick={() => setIsModeDropdownOpen(!isModeDropdownOpen)}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-900 hover:bg-gray-100/50 transition-all"
-                                    >
-                                        {executorMode === 'thinking' ? (
-                                            <>
-                                                <Brain className="w-3.5 h-3.5 text-purple-600" />
-                                                <span className="text-gray-700">Thinking</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Zap className="w-3.5 h-3.5 text-amber-500" />
-                                                <span className="text-gray-700">Fast</span>
-                                            </>
-                                        )}
-                                        <ChevronDown className={cn("w-3 h-3 text-gray-400 transition-transform", isModeDropdownOpen && "rotate-180")} />
-                                    </button>
-
-                                    {/* Dropdown Menu */}
-                                    {isModeDropdownOpen && (
-                                        <div ref={dropdownMenuRef} className="absolute top-full left-0 mt-2 w-40 bg-white/95 backdrop-blur-md rounded-xl border border-gray-100 shadow-xl origin-top-left z-50">
-                                            <div className="p-1">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        onModeChange('thinking');
-                                                        setIsModeDropdownOpen(false);
-                                                    }}
-                                                    className={cn(
-                                                        "w-full flex items-center justify-between px-3 py-2 rounded-lg text-left text-xs transition-colors",
-                                                        executorMode === 'thinking' ? "bg-purple-50 text-purple-900" : "hover:bg-gray-50 text-gray-700"
-                                                    )}
-                                                >
-                                                    <div>
-                                                        <div className="font-medium">Thinking</div>
-                                                        <div className="text-[10px] opacity-70">Deep reasoning</div>
-                                                    </div>
-                                                    {executorMode === 'thinking' && (
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                                                    )}
-                                                </button>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        onModeChange('fast');
-                                                        setIsModeDropdownOpen(false);
-                                                    }}
-                                                    className={cn(
-                                                        "w-full flex items-center justify-between px-3 py-2 rounded-lg text-left text-xs transition-colors",
-                                                        executorMode === 'fast' ? "bg-amber-50 text-amber-900" : "hover:bg-gray-50 text-gray-700"
-                                                    )}
-                                                >
-                                                    <div>
-                                                        <div className="font-medium">Fast</div>
-                                                        <div className="text-[10px] opacity-70">Quick edits</div>
-                                                    </div>
-                                                    {executorMode === 'fast' && (
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                                    )}
-                                                </button>
-                                            </div>
-                                        </div>
+                            {/* Mode Selector Dropdown */}
+                            <div className="absolute left-5 bottom-4 z-30" ref={dropdownRef}>
+                                <button
+                                    ref={modeBtnRef}
+                                    type="button"
+                                    onClick={() => setIsModeDropdownOpen(!isModeDropdownOpen)}
+                                    className={cn(
+                                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
+                                        executorMode === 'mastra'
+                                            ? "bg-orange-50 text-orange-900 border-orange-100"
+                                            : "bg-purple-50 text-purple-900 border-purple-100"
                                     )}
-                                </div>
-                            )}
+                                >
+                                    {executorMode === 'mastra' ? (
+                                        <>
+                                            <Image src="/automatelogo.png" alt="AutoMate" width={14} height={14} className="object-contain" />
+                                            <span>AutoMate Editor</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ClaudeLogo className="w-3.5 h-3.5 text-purple-600" />
+                                            <span>Claude Code</span>
+                                        </>
+                                    )}
+                                    <ChevronDown className={cn(
+                                        "w-3 h-3 transition-transform",
+                                        isModeDropdownOpen && "rotate-180"
+                                    )} />
+                                </button>
 
-                            {/* Add Images Toggle */}
-                            <button
-                                type="button"
-                                onClick={() => setAddImages(!addImages)}
-                                className={cn(
-                                    "absolute left-44 bottom-4 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
-                                    addImages
-                                        ? "bg-pink-100 text-pink-700 hover:bg-pink-200"
-                                        : "text-gray-500 hover:text-gray-900 hover:bg-gray-100/50"
+                                {/* Dropdown Menu */}
+                                {isModeDropdownOpen && (
+                                    <div
+                                        ref={dropdownMenuRef}
+                                        className="absolute bottom-full left-0 mb-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden"
+                                    >
+                                        {/* Claude Code Option */}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                onModeChange?.('thinking');
+                                                setIsModeDropdownOpen(false);
+                                            }}
+                                            className={cn(
+                                                "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
+                                                executorMode !== 'mastra'
+                                                    ? "bg-purple-50"
+                                                    : "hover:bg-gray-50"
+                                            )}
+                                        >
+                                            <ClaudeLogo className="w-4 h-4 text-purple-600" />
+                                            <div className="flex-1">
+                                                <div className="text-sm font-medium text-gray-900">Claude Code</div>
+                                                <div className="text-xs text-gray-500">Anthropic Claude</div>
+                                            </div>
+                                            {executorMode !== 'mastra' && (
+                                                <Check className="w-4 h-4 text-purple-600" />
+                                            )}
+                                        </button>
+
+                                        {/* AutoMate Editor Option */}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                onModeChange?.('mastra');
+                                                setIsModeDropdownOpen(false);
+                                            }}
+                                            className={cn(
+                                                "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
+                                                executorMode === 'mastra'
+                                                    ? "bg-orange-50"
+                                                    : "hover:bg-gray-50"
+                                            )}
+                                        >
+                                            <Image src="/automatelogo.png" alt="AutoMate" width={16} height={16} className="object-contain" />
+                                            <div className="flex-1">
+                                                <div className="text-sm font-medium text-gray-900">AutoMate Editor</div>
+                                                <div className="text-xs text-gray-500">Mastra Agent (GPT-4o)</div>
+                                            </div>
+                                            {executorMode === 'mastra' && (
+                                                <Check className="w-4 h-4 text-orange-600" />
+                                            )}
+                                        </button>
+                                    </div>
                                 )}
-                                title="AI will generate and include images in your website"
-                            >
-                                <ImagePlus className={cn("w-3.5 h-3.5", addImages ? "text-pink-600" : "")} />
-                                <span>AI Images</span>
-                                {addImages && <div className="w-1.5 h-1.5 rounded-full bg-pink-500" />}
-                            </button>
+                            </div>
 
                             {/* Import GitHub Button (Bottom Right) */}
                             <button
@@ -757,7 +749,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                     {/* Recent Projects */}
                     <div ref={recentProjectsRef} className="opacity-0">
                         {onOpenPreview && (
-                            <RecentProjectsCard onOpen={onOpenPreview} />
+                            <RecentProjectsTable onOpen={onOpenPreview} limit={5} showPagination={false} />
                         )}
                     </div>
                 </div>

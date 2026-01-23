@@ -108,7 +108,7 @@ export function useMessages({ sessionId, clientId, onTitleUpdate }: UseMessagesO
     }, [sessionId]);
 
     // Send a message and get AI response
-    const sendMessage = useCallback(async (content: string) => {
+    const sendMessage = useCallback(async (content: string, fileContents?: Record<string, string>) => {
         if (!sessionId || !content.trim()) return;
 
         // Create abort controller for this request
@@ -153,6 +153,7 @@ export function useMessages({ sessionId, clientId, onTitleUpdate }: UseMessagesO
                     conversationId: sessionId,
                     userId: clientId,
                     message: content,
+                    fileContents: fileContents || {}, // Pass file contents to API
                 }),
                 signal: abortControllerRef.current.signal,
             });
