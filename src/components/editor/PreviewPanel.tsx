@@ -119,7 +119,7 @@ export function PreviewPanel({
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
     const [isServerReady, setIsServerReady] = useState(false);
     const [serverCheckCount, setServerCheckCount] = useState(0);
-    const [showGithubDropdown, setShowGithubDropdown] = useState(false);
+    const [drawerType, setDrawerType] = useState<'supabase' | 'github' | null>(null);
     const [showTerminal, setShowTerminal] = useState(false);
     const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
 
@@ -506,21 +506,20 @@ export function PreviewPanel({
     };
 
     const logoRef = useRef<HTMLDivElement>(null);
-    const dropdownRef = useRef<HTMLDivElement>(null);
+    const drawerRef = useRef<HTMLDivElement>(null);
 
-    // Close dropdown when clicking outside
+    // Close drawer when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setShowGithubDropdown(false);
+            if (drawerRef.current && !drawerRef.current.contains(event.target as Node)) {
+                setDrawerType(null);
             }
         };
-
-        if (showGithubDropdown) {
+        if (drawerType) {
             document.addEventListener('mousedown', handleClickOutside);
             return () => document.removeEventListener('mousedown', handleClickOutside);
         }
-    }, [showGithubDropdown]);
+    }, [drawerType]);
 
     // Logo animation for loading state
     useEffect(() => {
@@ -698,83 +697,140 @@ export function PreviewPanel({
                     </div>
                 </div>
 
-                {/* Right - GitHub & Deploy */}
-                <div className="flex items-center gap-2">
-                    {/* GitHub Dropdown OR Sync Button */}
-                    {repoUrl ? (
-                        <div className="relative" ref={dropdownRef}>
-                            <button
-                                onClick={() => setShowGithubDropdown(!showGithubDropdown)}
-                                className="p-2 rounded-lg text-gray-700 bg-white/40 border border-white/20 hover:bg-white/60 transition-all shadow-sm"
-                                title="GitHub Repository"
-                            >
-                                <Github className="w-4 h-4" />
-                            </button>
+                {/* Right - Supabase, GitHub (drawers), Deploy */}
+                <div className="relative flex items-center gap-2" ref={drawerRef}>
+                    {/* Supabase icon - opens drawer */}
+                    <button
+                        onClick={() => setDrawerType(drawerType === 'supabase' ? null : 'supabase')}
+                        className={cn(
+                            "p-2 rounded-lg bg-white/40 border border-white/20 hover:bg-white/60 transition-all shadow-sm flex items-center justify-center",
+                            drawerType === 'supabase' && "bg-emerald-100 border-emerald-200 ring-1 ring-emerald-200"
+                        )}
+                        title="Supabase"
+                    >
+                        <Image src="/supabase-logo.png" alt="Supabase" width={18} height={18} className="object-contain" />
+                    </button>
 
-                            {/* Dropdown Menu with Animation */}
-                            {showGithubDropdown && (
-                                <div
-                                    className="absolute right-0 top-full mt-2 w-56 bg-white/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl overflow-hidden z-[10000] animate-in fade-in slide-in-from-top-2 duration-200"
-                                    style={{
-                                        animation: 'slideDown 0.2s ease-out'
-                                    }}
-                                >
-                                    <style jsx>{`
-                                        @keyframes slideDown {
-                                            from {
-                                                opacity: 0;
-                                                transform: translateY(-8px);
-                                            }
-                                            to {
-                                                opacity: 1;
-                                                transform: translateY(0);
-                                            }
-                                        }
-                                    `}</style>
+                    {/* GitHub icon - opens drawer (Sync to GitHub or repo actions) */}
+                    <button
+                        onClick={() => setDrawerType(drawerType === 'github' ? null : 'github')}
+                        className={cn(
+                            "p-2 rounded-lg bg-white/40 border border-white/20 hover:bg-white/60 transition-all shadow-sm flex items-center justify-center",
+                            drawerType === 'github' && "bg-gray-100 border-gray-200 ring-1 ring-gray-200"
+                        )}
+                        title={repoUrl ? "GitHub Repository" : "Sync to GitHub"}
+                    >
+                        <Github className="w-4 h-4 text-gray-700" />
+                    </button>
 
-                                    <div className="p-2">
-                                        {/* View Repo */}
+                    {/* Expandable drawer - slides in from right of icons */}
+                    {drawerType && (
+                        <div
+                            className={cn(
+                                "absolute right-0 top-full mt-2 flex flex-col overflow-hidden rounded-xl border bg-white/95 shadow-2xl backdrop-blur-xl z-[10000] border-white/20",
+                                drawerType === 'supabase' ? "w-64" : "w-56"
+                            )}
+                            style={{
+                                animation: 'previewDrawerIn 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards',
+                                transformOrigin: 'top right',
+                            }}
+                        >
+                            <style>{`
+                                @keyframes previewDrawerIn {
+                                    from {
+                                        opacity: 0;
+                                        transform: scale(0.92) translateX(8px);
+                                    }
+                                    to {
+                                        opacity: 1;
+                                        transform: scale(1) translateX(0);
+                                    }
+                                }
+                            `}</style>
+
+                            {drawerType === 'supabase' && (
+                                <>
+                                    <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+                                        <Image src="/supabase-logo.png" alt="" width={20} height={20} className="object-contain shrink-0" />
+                                        <span className="font-semibold text-gray-900">Supabase</span>
+                                    </div>
+                                    <div className="p-3 space-y-1">
                                         <a
-                                            href={repoUrl}
+                                            href="https://supabase.com/dashboard"
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors group"
-                                            onClick={() => setShowGithubDropdown(false)}
+                                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
+                                            onClick={() => setDrawerType(null)}
                                         >
-                                            <Github className="w-4 h-4 text-gray-600 group-hover:text-gray-900" />
-                                            <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
-                                                View Repository
-                                            </span>
+                                            Dashboard
                                         </a>
-
-                                        {/* Download ZIP */}
-                                        <button
-                                            onClick={handleDownloadZip}
-                                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors group"
+                                        <a
+                                            href="https://supabase.com/docs"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
+                                            onClick={() => setDrawerType(null)}
                                         >
-                                            <Download className="w-4 h-4 text-gray-600 group-hover:text-gray-900" />
-                                            <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
-                                                Download ZIP
-                                            </span>
-                                        </button>
+                                            Documentation
+                                        </a>
+                                        <p className="px-3 py-2 text-xs text-gray-500">
+                                            Connect your project to Supabase for auth, database, and storage.
+                                        </p>
                                     </div>
-                                </div>
+                                </>
+                            )}
+
+                            {drawerType === 'github' && (
+                                <>
+                                    <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+                                        <Github className="w-5 h-5 text-gray-700" />
+                                        <span className="font-semibold text-gray-900">GitHub</span>
+                                    </div>
+                                    <div className="p-2">
+                                        {repoUrl ? (
+                                            <>
+                                                <a
+                                                    href={repoUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors group"
+                                                    onClick={() => setDrawerType(null)}
+                                                >
+                                                    <Github className="w-4 h-4 text-gray-600 group-hover:text-gray-900" />
+                                                    <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
+                                                        View Repository
+                                                    </span>
+                                                </a>
+                                                <button
+                                                    onClick={() => { handleDownloadZip(); setDrawerType(null); }}
+                                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors group"
+                                                >
+                                                    <Download className="w-4 h-4 text-gray-600 group-hover:text-gray-900" />
+                                                    <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
+                                                        Download ZIP
+                                                    </span>
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <button
+                                                onClick={() => { handleSyncToGithub(); setDrawerType(null); }}
+                                                disabled={isSyncing}
+                                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors group disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {isSyncing ? (
+                                                    <Loader2 className="w-4 h-4 animate-spin text-gray-600" />
+                                                ) : (
+                                                    <Github className="w-4 h-4 text-gray-600 group-hover:text-gray-900" />
+                                                )}
+                                                <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
+                                                    {isSyncing ? 'Syncing...' : 'Sync to GitHub'}
+                                                </span>
+                                            </button>
+                                        )}
+                                    </div>
+                                </>
                             )}
                         </div>
-                    ) : (
-                        <button
-                            onClick={handleSyncToGithub}
-                            disabled={isSyncing}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium shadow-sm disabled:opacity-50"
-                            title="Sync to GitHub"
-                        >
-                            {isSyncing ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                                <Github className="w-4 h-4" />
-                            )}
-                            {isSyncing ? 'Syncing...' : 'Sync to GitHub'}
-                        </button>
                     )}
 
                     {/* Deploy Button */}

@@ -18,17 +18,24 @@ interface Project {
 interface ProjectsListProps {
     onSelectProject: (project: Project) => void;
     onCreateNew: () => void;
+    /** When provided, only this user's projects are fetched. Omit when signed out to show none. */
+    userId?: string | null;
 }
 
-export function ProjectsList({ onSelectProject, onCreateNew }: ProjectsListProps) {
+export function ProjectsList({ onSelectProject, onCreateNew, userId }: ProjectsListProps) {
     const [projects, setProjects] = useState<Project[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchProjects = async () => {
+            if (!userId) {
+                setProjects([]);
+                setIsLoading(false);
+                return;
+            }
             try {
-                const response = await fetch('/api/projects/list');
+                const response = await fetch(`/api/projects/list?userId=${encodeURIComponent(userId)}`);
                 if (!response.ok) {
                     throw new Error('Failed to fetch projects');
                 }
@@ -43,7 +50,7 @@ export function ProjectsList({ onSelectProject, onCreateNew }: ProjectsListProps
         };
 
         fetchProjects();
-    }, []);
+    }, [userId]);
 
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);

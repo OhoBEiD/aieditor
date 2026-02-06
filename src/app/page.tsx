@@ -320,26 +320,17 @@ export default function Home() {
         // The URL will be set by handleSendMessage after AI responds
         console.log('[Preview] Starting preview server, waiting for orchestrator...');
 
-        // Get GitHub token for detecting pages and orchestrator
-        // Fallback to system token for email-only users
-        const SYSTEM_GITHUB_TOKEN = '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';
+        // Get GitHub token from user session if available
         let token: string | undefined;
         try {
             const { data: { session } } = await supabase.auth.getSession();
             token = session?.provider_token || undefined;
             if (!token && session?.user) {
-                // Try fetching from DB - Use maybeSingle() to avoid 406 triggers on strict cardinatlity errors
                 const { data: dbToken } = await supabase.from('github_tokens' as any).select('access_token').eq('user_id', session.user.id).limit(1).maybeSingle();
                 if (dbToken) token = dbToken.access_token;
             }
         } catch (e) {
             console.warn('Failed to get token for preview:', e);
-        }
-
-        // Use system token as fallback if no user token
-        if (!token) {
-            console.log('[Preview] Using system GitHub token as fallback');
-            token = SYSTEM_GITHUB_TOKEN;
         }
 
         try {
@@ -600,6 +591,7 @@ export default function Home() {
 
 
         // Restore active request state (for page refresh during AI thinking)
+        /* 
         try {
             const savedActiveRequest = localStorage.getItem('activeRequest');
             if (savedActiveRequest) {
@@ -624,6 +616,7 @@ export default function Home() {
             console.error('Failed to restore active request:', e);
             localStorage.removeItem('activeRequest');
         }
+        */
     }, []);
 
     // Load sessions on mount

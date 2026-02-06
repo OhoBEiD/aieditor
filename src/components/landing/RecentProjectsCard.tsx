@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase/client';
 
 interface RecentProjectsCardProps {
     onOpen: (project?: any) => void;
+    /** When provided, only this user's projects are shown. Omit when signed out. */
+    userId?: string | null;
 }
 
 interface Project {
@@ -18,7 +20,7 @@ interface Project {
     preview_subdomain: string;
 }
 
-export function RecentProjectsCard({ onOpen }: RecentProjectsCardProps) {
+export function RecentProjectsCard({ onOpen, userId }: RecentProjectsCardProps) {
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -29,11 +31,17 @@ export function RecentProjectsCard({ onOpen }: RecentProjectsCardProps) {
 
     useEffect(() => {
         const fetchRecentProjects = async () => {
+            if (!userId) {
+                setProjects([]);
+                setLoading(false);
+                return;
+            }
             try {
                 const { data, error } = await supabase
                     .from('sites')
                     .select('*')
                     .neq('id', '00000000-0000-0000-0000-000000000000')
+                    .eq('user_id', userId)
                     .order('updated_at', { ascending: false })
                     .limit(20);
 
@@ -55,7 +63,7 @@ export function RecentProjectsCard({ onOpen }: RecentProjectsCardProps) {
         };
 
         fetchRecentProjects();
-    }, []);
+    }, [userId]);
 
     // Close menu when clicking outside
     useEffect(() => {

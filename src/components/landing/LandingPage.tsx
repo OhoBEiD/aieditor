@@ -255,29 +255,32 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                 'start+=0.3'
             );
 
-            // Recent projects
-            tl.fromTo(recentProjectsRef.current,
-                { y: 30, opacity: 0 },
-                { y: 0, opacity: 1, duration: 0.4 },
-                'start+=0.35'
-            );
+            // Recent projects (only when signed in and section is rendered)
+            if (recentProjectsRef.current) {
+                tl.fromTo(recentProjectsRef.current,
+                    { y: 30, opacity: 0 },
+                    { y: 0, opacity: 1, duration: 0.4 },
+                    'start+=0.35'
+                );
+            }
 
-            // Auth buttons animation - Independent timeline
-            const authTl = gsap.timeline({ defaults: { ease: 'power3.out' }, delay: 0.3 });
-
-            if (isAuthenticated) {
-                if (usernameRef.current && signoutRef.current) {
-                    authTl.fromTo([usernameRef.current, signoutRef.current],
-                        { y: -20, opacity: 0, scale: 0.9 },
-                        { y: 0, opacity: 1, scale: 1, duration: 0.3, stagger: 0.05, ease: 'back.out(1.5)' }
-                    );
-                }
-            } else {
-                if (loginRef.current && signupRef.current) {
-                    authTl.fromTo([loginRef.current, signupRef.current],
-                        { y: -20, opacity: 0, scale: 0.9 },
-                        { y: 0, opacity: 1, scale: 1, duration: 0.3, stagger: 0.05, ease: 'back.out(1.5)' }
-                    );
+            // Auth buttons animation - run when auth state is ready (not loading) so refs exist
+            if (!authLoading) {
+                const authTl = gsap.timeline({ defaults: { ease: 'power3.out' }, delay: 0.3 });
+                if (isAuthenticated) {
+                    if (usernameRef.current && signoutRef.current) {
+                        authTl.fromTo([usernameRef.current, signoutRef.current],
+                            { y: -20, opacity: 0, scale: 0.9 },
+                            { y: 0, opacity: 1, scale: 1, duration: 0.3, stagger: 0.05, ease: 'back.out(1.5)' }
+                        );
+                    }
+                } else {
+                    if (loginRef.current && signupRef.current) {
+                        authTl.fromTo([loginRef.current, signupRef.current],
+                            { y: -20, opacity: 0, scale: 0.9 },
+                            { y: 0, opacity: 1, scale: 1, duration: 0.3, stagger: 0.05, ease: 'back.out(1.5)' }
+                        );
+                    }
                 }
             }
 
@@ -340,7 +343,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
         }, containerRef);
 
         return () => ctx.revert();
-    }, [isAuthenticated]); // Re-run when auth state changes
+    }, [isAuthenticated, authLoading]); // Re-run when auth state is ready so login/signup refs exist
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -557,14 +560,14 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                             <Link
                                 href="/login"
                                 ref={loginRef}
-                                className="px-6 py-2.5 text-sm font-medium text-gray-700 bg-white/40 hover:bg-white/80 hover:text-gray-900 transition-all rounded-full backdrop-blur-sm border border-white/20 shadow-sm hover:shadow-md opacity-0"
+                                className="px-6 py-2.5 text-sm font-medium text-gray-700 bg-white/40 hover:bg-white/80 hover:text-gray-900 transition-all rounded-full backdrop-blur-sm border border-white/20 shadow-sm hover:shadow-md"
                             >
                                 Log in
                             </Link>
                             <Link
                                 href="/signup"
                                 ref={signupRef}
-                                className="px-6 py-2.5 text-sm font-medium text-white rounded-full transition-all hover:scale-105 bg-purple-500 hover:bg-purple-600 shadow-lg shadow-purple-500/20 active:scale-95 opacity-0"
+                                className="px-6 py-2.5 text-sm font-medium text-white rounded-full transition-all hover:scale-105 bg-purple-500 hover:bg-purple-600 shadow-lg shadow-purple-500/20 active:scale-95"
                             >
                                 Sign up
                             </Link>
@@ -746,12 +749,12 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
 
 
 
-                    {/* Recent Projects */}
-                    <div ref={recentProjectsRef} className="opacity-0">
-                        {onOpenPreview && (
-                            <RecentProjectsTable onOpen={onOpenPreview} limit={5} showPagination={false} />
-                        )}
-                    </div>
+                    {/* Recent Projects - only when signed in; show only current user's projects */}
+                    {isAuthenticated && user?.id && onOpenPreview && (
+                        <div ref={recentProjectsRef} className="opacity-0">
+                            <RecentProjectsTable userId={user.id} onOpen={onOpenPreview} limit={5} showPagination={false} />
+                        </div>
+                    )}
                 </div>
 
                 {/* Repo Selector Modal */}

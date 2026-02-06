@@ -7,8 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
  * This allows the stop button to actually cancel the AI processing
  */
 
-const N8N_BASE_URL = process.env.N8N_BASE_URL || 'https://omarsobh.app.n8n.cloud/api/v1';
-const N8N_API_KEY = process.env.N8N_API_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ZjFkOGM1NS01YzFkLTRhYmQtOTdjYS04ZmY2OTc2MmY0NTIiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzY4OTUxMTYxfQ.k0Lpp2CyBjEOXXhTTQDlzZP4XpufpSPrN1PDZlY3KAw';
+const N8N_BASE_URL = process.env.N8N_BASE_URL || '';
+const N8N_API_KEY = process.env.N8N_API_KEY || '';
 
 export async function POST(request: NextRequest) {
     try {

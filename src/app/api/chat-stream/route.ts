@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 // n8n webhook URL
-const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://n8n-ai-editor.fly.dev/webhook/agent/edit-ui';
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';
 
 // Supabase client for polling thinking_steps
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://jjrbnjubjiswvxeradzw.supabase.co';

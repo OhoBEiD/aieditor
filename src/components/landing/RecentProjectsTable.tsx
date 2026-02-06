@@ -9,6 +9,8 @@ interface RecentProjectsTableProps {
     onOpen: (project?: any) => void;
     limit?: number;
     showPagination?: boolean;
+    /** When provided, only projects for this user are shown. Required for proper scoping. */
+    userId?: string | null;
 }
 
 interface Project {
@@ -20,7 +22,7 @@ interface Project {
     preview_subdomain: string;
 }
 
-export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false }: RecentProjectsTableProps) {
+export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false, userId }: RecentProjectsTableProps) {
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -36,23 +38,31 @@ export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false 
 
     useEffect(() => {
         const fetchProjects = async () => {
+            if (!userId) {
+                setProjects([]);
+                setTotalProjects(0);
+                setLoading(false);
+                return;
+            }
             try {
                 // First get total count if pagination is enabled
                 if (showPagination) {
                     const { count, error: countError } = await supabase
                         .from('sites')
                         .select('*', { count: 'exact', head: true })
-                        .neq('id', '00000000-0000-0000-0000-000000000000');
+                        .neq('id', '00000000-0000-0000-0000-000000000000')
+                        .eq('user_id', userId);
 
                     if (countError) throw countError;
                     setTotalProjects(count || 0);
                 }
 
-                // Fetch data with pagination
+                // Fetch data with pagination - only this user's projects
                 let query = supabase
                     .from('sites')
                     .select('*')
                     .neq('id', '00000000-0000-0000-0000-000000000000')
+                    .eq('user_id', userId)
                     .order('updated_at', { ascending: false });
 
                 if (showPagination) {
@@ -83,7 +93,7 @@ export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false 
         };
 
         fetchProjects();
-    }, [limit, showPagination, currentPage]);
+    }, [limit, showPagination, currentPage, userId]);
 
     // Close menu when clicking outside
     useEffect(() => {

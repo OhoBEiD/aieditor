@@ -7,9 +7,11 @@ import { ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import gsap from 'gsap';
 import { RecentProjectsTable } from '@/components/landing/RecentProjectsTable';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function ProjectsPage() {
     const router = useRouter();
+    const { user, isAuthenticated, isLoading: authLoading } = useAuth();
 
     // Refs for GSAP animations
     const logoRef = useRef<HTMLDivElement>(null);
@@ -194,11 +196,18 @@ export default function ProjectsPage() {
                 </div>
 
                 <div ref={gridRef} className="opacity-0">
-                    <RecentProjectsTable
-                        onOpen={handleOpenProject}
-                        limit={10}
-                        showPagination={true}
-                    />
+                    {!authLoading && !isAuthenticated ? (
+                        <div className="rounded-2xl bg-white/70 backdrop-blur-sm border border-white/30 p-8 text-center text-gray-600">
+                            Sign in to see your projects.
+                        </div>
+                    ) : (
+                        <RecentProjectsTable
+                            userId={user?.id ?? null}
+                            onOpen={handleOpenProject}
+                            limit={10}
+                            showPagination={true}
+                        />
+                    )}
                 </div>
             </div>
         </div>

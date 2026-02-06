@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
  */
 
 // Use WebContainer-specific endpoint if available, fallback to default
-const N8N_WEBHOOK_URL = process.env.N8N_WEBCONTAINER_URL || process.env.N8N_WEBHOOK_URL || 'https://omarsobh.app.n8n.cloud/webhook/webcontainer-ai';
+const N8N_WEBHOOK_URL = process.env.N8N_WEBCONTAINER_URL || process.env.N8N_WEBHOOK_URL || '';
 
 interface FileOperation {
     type: 'write' | 'delete' | 'modify';
