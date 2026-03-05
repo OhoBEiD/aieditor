@@ -12,6 +12,7 @@ import { AuthRequiredModal } from '@/components/auth/AuthRequiredModal';
 import { RepoSelectorModal } from '@/components/auth/RepoSelectorModal';
 import type { ExecutorMode } from '@/components/chat/MessageInput';
 import { cn } from '@/lib/utils';
+import VantaFogBackground from '@/components/common/VantaFogBackground';
 
 interface LandingPageProps {
     onSendMessage: (message: string) => void;
@@ -27,7 +28,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
     const [message, setMessage] = useState('');
     const [showImportModal, setShowImportModal] = useState(false);
     const [showAuthModal, setShowAuthModal] = useState(false);
-    const [authModalMessage, setAuthModalMessage] = useState('Sign in to start building with AutoMate');
+    const [authModalMessage, setAuthModalMessage] = useState('Sign in to start building with Automate');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isModeDropdownOpen, setIsModeDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -134,10 +135,10 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
 
     useEffect(() => {
         const phrases = [
-            "Ask AutoMate to create a landing page...",
-            "Ask AutoMate to build a dashboard...",
-            "Ask AutoMate to design a portfolio...",
-            "Ask AutoMate to help with code..."
+            "Ask Automate to create a landing page...",
+            "Ask Automate to build a dashboard...",
+            "Ask Automate to design a portfolio...",
+            "Ask Automate to help with code..."
         ];
         const currentPhrase = phrases[phraseIndex];
 
@@ -213,7 +214,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
 
             // Shine effect on logo
             tl.to(logoRef.current, {
-                filter: 'drop-shadow(0 0 20px rgba(139, 92, 246, 0.8)) brightness(1.3)',
+                filter: 'drop-shadow(0 0 20px rgba(182, 145, 97, 0.8)) brightness(1.3)',
                 duration: 0.4,
                 yoyo: true,
                 repeat: 1,
@@ -371,7 +372,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
 
     const handleImportClick = () => {
         if (!isAuthenticated) {
-            setAuthModalMessage('Sign in to start building with AutoMate');
+            setAuthModalMessage('Sign in to start building with Automate');
             setShowAuthModal(true);
             return;
         }
@@ -416,102 +417,9 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
             className="relative h-screen w-full overflow-hidden"
             style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
         >
-            {/* Animated SVG Background - Lovable style */}
+            {/* Animated Vanta Fog Background */}
             <div className="fixed inset-0 z-0 pointer-events-none">
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 1920 1080"
-                    className="w-full h-full"
-                    preserveAspectRatio="xMidYMid slice"
-                >
-                    <defs>
-                        {/* Animated gradients - more vibrant colors */}
-                        <radialGradient id="blob1" cx="50%" cy="50%">
-                            <stop offset="0%" stopColor="#6366f1" stopOpacity="0.9">
-                                <animate attributeName="stop-color" values="#6366f1;#8b5cf6;#ec4899;#6366f1" dur="8s" repeatCount="indefinite" />
-                            </stop>
-                            <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0">
-                                <animate attributeName="stop-color" values="#8b5cf6;#ec4899;#6366f1;#8b5cf6" dur="8s" repeatCount="indefinite" />
-                            </stop>
-                        </radialGradient>
-
-                        <radialGradient id="blob2" cx="50%" cy="50%">
-                            <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.9">
-                                <animate attributeName="stop-color" values="#06b6d4;#14b8a6;#10b981;#06b6d4" dur="10s" repeatCount="indefinite" />
-                            </stop>
-                            <stop offset="100%" stopColor="#14b8a6" stopOpacity="0">
-                                <animate attributeName="stop-color" values="#14b8a6;#10b981;#06b6d4;#14b8a6" dur="10s" repeatCount="indefinite" />
-                            </stop>
-                        </radialGradient>
-
-                        <radialGradient id="blob3" cx="50%" cy="50%">
-                            <stop offset="0%" stopColor="#f97316" stopOpacity="0.9">
-                                <animate attributeName="stop-color" values="#f97316;#facc15;#eab308;#f97316" dur="12s" repeatCount="indefinite" />
-                            </stop>
-                            <stop offset="100%" stopColor="#facc15" stopOpacity="0">
-                                <animate attributeName="stop-color" values="#facc15;#eab308;#f97316;#facc15" dur="12s" repeatCount="indefinite" />
-                            </stop>
-                        </radialGradient>
-
-                        <radialGradient id="blob4" cx="50%" cy="50%">
-                            <stop offset="0%" stopColor="#ec4899" stopOpacity="0.9">
-                                <animate attributeName="stop-color" values="#ec4899;#f43f5e;#a855f7;#ec4899" dur="9s" repeatCount="indefinite" />
-                            </stop>
-                            <stop offset="100%" stopColor="#f43f5e" stopOpacity="0">
-                                <animate attributeName="stop-color" values="#f43f5e;#a855f7;#ec4899;#f43f5e" dur="9s" repeatCount="indefinite" />
-                            </stop>
-                        </radialGradient>
-
-                        <radialGradient id="blob5" cx="50%" cy="50%">
-                            <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.9">
-                                <animate attributeName="stop-color" values="#0ea5e9;#3b82f6;#6366f1;#0ea5e9" dur="11s" repeatCount="indefinite" />
-                            </stop>
-                            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0">
-                                <animate attributeName="stop-color" values="#3b82f6;#6366f1;#0ea5e9;#3b82f6" dur="11s" repeatCount="indefinite" />
-                            </stop>
-                        </radialGradient>
-
-                        <filter id="blur">
-                            <feGaussianBlur stdDeviation="100" />
-                        </filter>
-                    </defs>
-
-                    {/* Base background */}
-                    <rect width="100%" height="100%" fill="#ffffff" />
-
-                    {/* Animated blobs - faster movement */}
-                    <g filter="url(#blur)">
-                        <ellipse cx="20%" cy="35%" rx="450" ry="380" fill="url(#blob1)">
-                            <animate attributeName="cx" values="20%;35%;15%;20%" dur="15s" repeatCount="indefinite" />
-                            <animate attributeName="cy" values="35%;50%;30%;35%" dur="12s" repeatCount="indefinite" />
-                            <animate attributeName="rx" values="450;480;450" dur="10s" repeatCount="indefinite" />
-                        </ellipse>
-
-                        <ellipse cx="80%" cy="55%" rx="500" ry="450" fill="url(#blob2)">
-                            <animate attributeName="cx" values="80%;65%;85%;80%" dur="18s" repeatCount="indefinite" />
-                            <animate attributeName="cy" values="55%;70%;50%;55%" dur="14s" repeatCount="indefinite" />
-                            <animate attributeName="rx" values="500;530;500" dur="11s" repeatCount="indefinite" />
-                        </ellipse>
-
-                        <ellipse cx="50%" cy="85%" rx="550" ry="400" fill="url(#blob3)">
-                            <animate attributeName="cx" values="50%;60%;40%;50%" dur="16s" repeatCount="indefinite" />
-                            <animate attributeName="cy" values="85%;75%;90%;85%" dur="13s" repeatCount="indefinite" />
-                            <animate attributeName="ry" values="400;450;400" dur="9s" repeatCount="indefinite" />
-                        </ellipse>
-
-                        <ellipse cx="65%" cy="25%" rx="420" ry="360" fill="url(#blob4)">
-                            <animate attributeName="cx" values="65%;75%;55%;65%" dur="14s" repeatCount="indefinite" />
-                            <animate attributeName="cy" values="25%;35%;20%;25%" dur="11s" repeatCount="indefinite" />
-                            <animate attributeName="rx" values="420;460;420" dur="8s" repeatCount="indefinite" />
-                        </ellipse>
-
-                        <ellipse cx="35%" cy="70%" rx="480" ry="420" fill="url(#blob5)">
-                            <animate attributeName="cx" values="35%;25%;45%;35%" dur="17s" repeatCount="indefinite" />
-                            <animate attributeName="cy" values="70%;60%;80%;70%" dur="15s" repeatCount="indefinite" />
-                            <animate attributeName="ry" values="420;470;420" dur="10s" repeatCount="indefinite" />
-                        </ellipse>
-                    </g>
-                </svg>
+                <VantaFogBackground />
             </div>
 
             {/* Header - Logo + Auth Buttons */}
@@ -521,36 +429,40 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                     <div ref={logoRef} className="relative w-16 h-16 opacity-0">
                         <Image
                             src="/automatelogo.png"
-                            alt="AutoMate Logo"
+                            alt="Automate Logo"
                             fill
                             className="object-contain"
                         />
                     </div>
                     <span
                         ref={brandRef}
-                        className="text-3xl font-bold text-gray-900 tracking-tight opacity-0"
-                        style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}
+                        className="text-3xl font-bold tracking-tight opacity-0"
+                        style={{
+                            fontFamily: 'Helvetica, Arial, sans-serif',
+                            color: '#2c2418',
+                        }}
                     >
-                        AutoMate
+                        Automate
                     </span>
                 </div>
 
                 {/* Auth Buttons */}
                 <div className="flex items-center gap-3">
                     {authLoading ? (
-                        <div className="w-8 h-8 rounded-full bg-gray-200 animate-pulse" />
+                        <div className="w-8 h-8 rounded-full bg-[#d6cfc9] animate-pulse" />
                     ) : isAuthenticated ? (
                         <>
-                            <span
-                                ref={usernameRef}
-                                className="px-4 py-2 text-sm font-medium text-purple-700 bg-purple-100 rounded-full opacity-0"
+                            <Link
+                                href="/profile"
+                                ref={usernameRef as any}
+                                className="px-4 py-2 text-sm font-medium text-[#84745b] bg-[#b69161]/10 border border-[#b69161]/20 rounded-full opacity-0 hover:bg-[#b69161]/20 transition-colors"
                             >
                                 {user?.user_metadata?.user_name || user?.user_metadata?.preferred_username || user?.email?.split('@')[0]}
-                            </span>
+                            </Link>
                             <button
                                 ref={signoutRef}
                                 onClick={() => signOut()}
-                                className="px-4 py-2 text-sm font-medium text-red-600 bg-red-100/60 hover:bg-red-200/80 transition-colors rounded-full opacity-0"
+                                className="px-4 py-2 text-sm font-medium text-[#c45c4a] bg-[#c45c4a]/10 border border-[#c45c4a]/20 hover:bg-[#c45c4a]/20 transition-colors rounded-full opacity-0"
                             >
                                 Sign out
                             </button>
@@ -560,14 +472,14 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                             <Link
                                 href="/login"
                                 ref={loginRef}
-                                className="px-6 py-2.5 text-sm font-medium text-gray-700 bg-white/40 hover:bg-white/80 hover:text-gray-900 transition-all rounded-full backdrop-blur-sm border border-white/20 shadow-sm hover:shadow-md"
+                                className="px-6 py-2.5 text-sm font-medium text-[#84745b] bg-[#f2efed]/60 hover:bg-[#f2efed] hover:text-[#2c2418] transition-all rounded-full backdrop-blur-sm border border-[#b69161]/20 shadow-sm hover:shadow-[#b69161]/10"
                             >
                                 Log in
                             </Link>
                             <Link
                                 href="/signup"
                                 ref={signupRef}
-                                className="px-6 py-2.5 text-sm font-medium text-white rounded-full transition-all hover:scale-105 bg-purple-500 hover:bg-purple-600 shadow-lg shadow-purple-500/20 active:scale-95"
+                                className="px-6 py-2.5 text-sm font-medium text-white rounded-full transition-all hover:scale-105 bg-[#b69161] hover:bg-[#c9a474] shadow-lg shadow-[#b69161]/20 active:scale-95"
                             >
                                 Sign up
                             </Link>
@@ -581,8 +493,11 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                 {/* Headline */}
                 <h1
                     ref={headlineRef}
-                    className="text-5xl md:text-7xl font-bold text-gray-900 text-center mb-6 max-w-4xl opacity-0"
-                    style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
+                    className="text-5xl md:text-7xl font-bold text-center mb-6 max-w-4xl opacity-0"
+                    style={{
+                        fontFamily: 'system-ui, -apple-system, sans-serif',
+                        color: '#2c2418',
+                    }}
                 >
                     Build something Extraordinary
                 </h1>
@@ -590,7 +505,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                 {/* Subline */}
                 <p
                     ref={sublineRef}
-                    className="text-lg md:text-xl text-gray-600 text-center mb-16 max-w-xl opacity-0"
+                    className="text-lg md:text-xl text-center mb-16 max-w-xl opacity-0 text-[#4a3f32]"
                 >
                     Create apps and websites by chatting with AI
                 </p>
@@ -598,9 +513,10 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                 <div ref={inputRef} className="w-full max-w-3xl flex flex-col items-center opacity-0">
                     <form onSubmit={handleSubmit} className="w-full relative z-50 rounded-3xl">
                         <div
-                            className="relative rounded-3xl bg-white shadow-2xl"
+                            className="relative rounded-3xl backdrop-blur-xl border border-[#b69161]/30"
                             style={{
-                                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15)',
+                                background: 'linear-gradient(135deg, rgba(230, 224, 221, 0.6) 0%, rgba(242, 239, 237, 0.5) 50%, rgba(230, 224, 221, 0.55) 100%)',
+                                boxShadow: '0 20px 60px rgba(132, 116, 91, 0.15), 0 8px 32px rgba(132, 116, 91, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.5)',
                             }}
                         >
 
@@ -612,7 +528,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                 onChange={(e) => setMessage(e.target.value)}
                                 onKeyDown={handleKeyDown}
                                 placeholder={placeholderText}
-                                className="w-full pl-8 pr-32 pt-6 pb-24 text-base text-gray-900 placeholder-gray-400 bg-transparent outline-none rounded-3xl"
+                                className="w-full pl-8 pr-32 pt-6 pb-24 text-base text-[#2c2418] placeholder-[#7a6f60] bg-transparent outline-none rounded-3xl"
                                 style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
                                 disabled={isLoading || isSubmitting}
                             />
@@ -621,7 +537,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                             <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1">
                                 <button
                                     type="button"
-                                    className="p-2.5 text-gray-400 hover:text-gray-600 transition-colors rounded-full hover:bg-gray-100/50"
+                                    className="p-2.5 text-[#2c2418] hover:text-[#2c2418] transition-colors rounded-full hover:bg-[#b69161]/15"
                                     onClick={() => {/* Handle attach */ }}
                                 >
                                     <Paperclip className="w-5 h-5" />
@@ -633,8 +549,8 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                     className={cn(
                                         "p-3.5 rounded-full text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105",
                                         message.trim()
-                                            ? "bg-purple-500 hover:bg-purple-600 shadow-lg shadow-purple-500/20"
-                                            : "bg-gray-300"
+                                            ? "bg-[#b69161] hover:bg-[#c9a474] shadow-lg shadow-[#b69161]/40"
+                                            : "bg-[#a89d8e]"
                                     )}
                                 >
                                     {isLoading || isSubmitting ? (
@@ -652,20 +568,20 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                     type="button"
                                     onClick={() => setIsModeDropdownOpen(!isModeDropdownOpen)}
                                     className={cn(
-                                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
+                                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border border-[#b69161]/40 backdrop-blur-md",
                                         executorMode === 'mastra'
-                                            ? "bg-orange-50 text-orange-900 border-orange-100"
-                                            : "bg-purple-50 text-purple-900 border-purple-100"
+                                            ? "bg-[#e6e0dd]/60 text-[#2c2418]"
+                                            : "bg-[#e6e0dd]/60 text-[#2c2418]"
                                     )}
                                 >
                                     {executorMode === 'mastra' ? (
                                         <>
-                                            <Image src="/automatelogo.png" alt="AutoMate" width={14} height={14} className="object-contain" />
-                                            <span>AutoMate Editor</span>
+                                            <Image src="/automatelogo.png" alt="Automate" width={14} height={14} className="object-contain" />
+                                            <span>Automate Editor</span>
                                         </>
                                     ) : (
                                         <>
-                                            <ClaudeLogo className="w-3.5 h-3.5 text-purple-600" />
+                                            <ClaudeLogo className="w-3.5 h-3.5 text-[#2c2418]" />
                                             <span>Claude Code</span>
                                         </>
                                     )}
@@ -679,7 +595,11 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                 {isModeDropdownOpen && (
                                     <div
                                         ref={dropdownMenuRef}
-                                        className="absolute bottom-full left-0 mb-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden"
+                                        className="absolute bottom-full left-0 mb-2 w-48 rounded-xl shadow-xl border border-[#b69161]/30 overflow-hidden backdrop-blur-xl"
+                                        style={{
+                                            background: 'linear-gradient(135deg, rgba(242, 239, 237, 0.92) 0%, rgba(230, 224, 221, 0.88) 100%)',
+                                            boxShadow: '0 8px 32px rgba(132, 116, 91, 0.2)',
+                                        }}
                                     >
                                         {/* Claude Code Option */}
                                         <button
@@ -691,21 +611,21 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                             className={cn(
                                                 "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
                                                 executorMode !== 'mastra'
-                                                    ? "bg-purple-50"
-                                                    : "hover:bg-gray-50"
+                                                    ? "bg-[#b69161]/15"
+                                                    : "hover:bg-[#b69161]/10"
                                             )}
                                         >
-                                            <ClaudeLogo className="w-4 h-4 text-purple-600" />
+                                            <ClaudeLogo className="w-4 h-4 text-[#2c2418]" />
                                             <div className="flex-1">
-                                                <div className="text-sm font-medium text-gray-900">Claude Code</div>
-                                                <div className="text-xs text-gray-500">Anthropic Claude</div>
+                                                <div className="text-sm font-medium text-[#2c2418]">Claude Code</div>
+                                                <div className="text-xs text-[#7a6f60]">Anthropic Claude</div>
                                             </div>
                                             {executorMode !== 'mastra' && (
-                                                <Check className="w-4 h-4 text-purple-600" />
+                                                <Check className="w-4 h-4 text-[#2c2418]" />
                                             )}
                                         </button>
 
-                                        {/* AutoMate Editor Option */}
+                                        {/* Automate Editor Option */}
                                         <button
                                             type="button"
                                             onClick={() => {
@@ -715,17 +635,17 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                             className={cn(
                                                 "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
                                                 executorMode === 'mastra'
-                                                    ? "bg-orange-50"
-                                                    : "hover:bg-gray-50"
+                                                    ? "bg-[#b69161]/15"
+                                                    : "hover:bg-[#b69161]/10"
                                             )}
                                         >
-                                            <Image src="/automatelogo.png" alt="AutoMate" width={16} height={16} className="object-contain" />
+                                            <Image src="/automatelogo.png" alt="Automate" width={16} height={16} className="object-contain" />
                                             <div className="flex-1">
-                                                <div className="text-sm font-medium text-gray-900">AutoMate Editor</div>
-                                                <div className="text-xs text-gray-500">Mastra Agent (GPT-4o)</div>
+                                                <div className="text-sm font-medium text-[#2c2418]">Automate Editor</div>
+                                                <div className="text-xs text-[#7a6f60]">Mastra Agent (GPT-4o)</div>
                                             </div>
                                             {executorMode === 'mastra' && (
-                                                <Check className="w-4 h-4 text-orange-600" />
+                                                <Check className="w-4 h-4 text-[#2c2418]" />
                                             )}
                                         </button>
                                     </div>
@@ -737,7 +657,7 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                 ref={importBtnRef}
                                 type="button"
                                 onClick={handleImportClick}
-                                className="absolute right-5 bottom-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-900 hover:bg-gray-100/50 transition-all opacity-0"
+                                className="absolute right-5 bottom-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[#2c2418] hover:text-[#2c2418] hover:bg-[#b69161]/15 transition-all opacity-0"
                             >
                                 <Github className="w-3.5 h-3.5" />
                                 <span>Import</span>

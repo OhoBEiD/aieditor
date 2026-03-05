@@ -222,7 +222,7 @@ export function CodePreview({
                                     title="Preview"
                                 />
                             ) : (
-                                <div className="flex items-center justify-center h-[400px] text-gray-400">
+                                <div className="flex items-center justify-center h-[400px] text-[#a89d8e]">
                                     <div className="text-center">
                                         <Monitor className="w-12 h-12 mx-auto mb-3 opacity-50" />
                                         <p className="text-sm">Preview not available</p>

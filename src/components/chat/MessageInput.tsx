@@ -2,9 +2,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Send, Image, X, Square, ChevronUp, Check } from 'lucide-react';
+import { Send, X, Square, ChevronUp, Check, Paperclip } from 'lucide-react';
 import NextImage from 'next/image';
 import { ClaudeLogo } from '@/components/icons/ClaudeLogo';
+import { ContextIndicator } from './ContextIndicator';
+import type { ContextUsage } from '@/hooks/useContextUsage';
 import { gsap } from 'gsap';
 
 export type ExecutorMode = 'auto' | 'fast' | 'thinking' | 'mastra';
@@ -17,16 +19,18 @@ interface MessageInputProps {
     executorMode?: ExecutorMode;
     onModeChange?: (mode: ExecutorMode) => void;
     showModeSelector?: boolean;
+    contextUsage?: ContextUsage;
 }
 
 export function MessageInput({
     onSend,
     onStop,
     isLoading = false,
-    placeholder = "Describe what to change...",
+    placeholder = "Give a followup...",
     executorMode = 'mastra',
     onModeChange,
-    showModeSelector = true,
+    showModeSelector: _showModeSelector = true,
+    contextUsage,
 }: MessageInputProps) {
     const [message, setMessage] = useState('');
     const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -36,31 +40,24 @@ export function MessageInput({
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const dropdownMenuRef = useRef<HTMLDivElement>(null);
-    const modeBtnRef = useRef<HTMLButtonElement>(null);
     const formRef = useRef<HTMLFormElement>(null);
 
-    // Auto-focus textarea on mount and when component becomes visible
     useEffect(() => {
-        // Focus after a short delay to ensure component is fully rendered
         const focusTimer = setTimeout(() => {
             if (textareaRef.current && !isLoading) {
                 textareaRef.current.focus();
             }
         }, 100);
-
         return () => clearTimeout(focusTimer);
     }, [isLoading]);
 
-    // Focus textarea when clicking anywhere on the form (except buttons)
     const handleFormClick = (e: React.MouseEvent<HTMLFormElement>) => {
-        // Only focus if clicking on the form container, not on buttons or inputs
         if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.focus-input-on-click')) {
             e.preventDefault();
             textareaRef.current?.focus();
         }
     };
 
-    // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -71,87 +68,24 @@ export function MessageInput({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // GSAP animation for dropdown
     useEffect(() => {
         if (!dropdownMenuRef.current) return;
-
         if (isModeDropdownOpen) {
-            // Opening animation
             gsap.fromTo(dropdownMenuRef.current,
-                {
-                    opacity: 0,
-                    y: 10,
-                    scale: 0.95,
-                },
-                {
-                    opacity: 1,
-                    y: 0,
-                    scale: 1,
-                    duration: 0.25,
-                    ease: 'back.out(1.7)',
-                }
+                { opacity: 0, y: 10, scale: 0.95 },
+                { opacity: 1, y: 0, scale: 1, duration: 0.25, ease: 'back.out(1.7)' }
             );
-
-            // Animate dropdown items with stagger
             const items = dropdownMenuRef.current.querySelectorAll('button');
             gsap.fromTo(items,
-                {
-                    opacity: 0,
-                    x: -10,
-                },
-                {
-                    opacity: 1,
-                    x: 0,
-                    duration: 0.2,
-                    stagger: 0.05,
-                    ease: 'power2.out',
-                    delay: 0.1,
-                }
+                { opacity: 0, x: -10 },
+                { opacity: 1, x: 0, duration: 0.2, stagger: 0.05, ease: 'power2.out', delay: 0.1 }
             );
         } else {
-            // Closing animation
             gsap.to(dropdownMenuRef.current, {
-                opacity: 0,
-                y: 10,
-                scale: 0.95,
-                duration: 0.15,
-                ease: 'power2.in',
+                opacity: 0, y: 10, scale: 0.95, duration: 0.15, ease: 'power2.in',
             });
         }
     }, [isModeDropdownOpen]);
-
-    // GSAP hover animation for mode button
-    useEffect(() => {
-        if (!modeBtnRef.current) return;
-
-        const btn = modeBtnRef.current;
-
-        const handleMouseEnter = () => {
-            gsap.to(btn, {
-                scale: 1.05,
-                y: -2,
-                duration: 0.2,
-                ease: 'power2.out',
-            });
-        };
-
-        const handleMouseLeave = () => {
-            gsap.to(btn, {
-                scale: 1,
-                y: 0,
-                duration: 0.2,
-                ease: 'power2.out',
-            });
-        };
-
-        btn.addEventListener('mouseenter', handleMouseEnter);
-        btn.addEventListener('mouseleave', handleMouseLeave);
-
-        return () => {
-            btn.removeEventListener('mouseenter', handleMouseEnter);
-            btn.removeEventListener('mouseleave', handleMouseLeave);
-        };
-    }, []);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -163,42 +97,28 @@ export function MessageInput({
         }
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSubmit(e);
-        }
-    };
-
     const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) {
-            processImageFile(file);
-        }
+        if (file) processImageFile(file);
     };
 
     const processImageFile = (file: File) => {
         if (!file.type.startsWith('image/')) return;
         setSelectedImage(file);
         const reader = new FileReader();
-        reader.onloadend = () => {
-            setImagePreview(reader.result as string);
-        };
+        reader.onloadend = () => setImagePreview(reader.result as string);
         reader.readAsDataURL(file);
     };
 
     const handlePaste = (e: React.ClipboardEvent) => {
         const items = e.clipboardData?.items;
         if (!items) return;
-
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             if (item.type.startsWith('image/')) {
                 e.preventDefault();
                 const file = item.getAsFile();
-                if (file) {
-                    processImageFile(file);
-                }
+                if (file) processImageFile(file);
                 break;
             }
         }
@@ -207,43 +127,34 @@ export function MessageInput({
     const removeImage = () => {
         setSelectedImage(null);
         setImagePreview(null);
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-        }
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    // Auto-resize textarea up to max height (~10 lines)
     React.useEffect(() => {
         if (textareaRef.current) {
-            const minHeight = 32;
+            const minHeight = 36;
             const maxHeight = 180;
-
-            // If empty, use minimum height
             if (!message.trim()) {
                 textareaRef.current.style.height = `${minHeight}px`;
                 textareaRef.current.style.overflowY = 'hidden';
                 return;
             }
-
-            // Reset height to auto to get the correct scrollHeight
             textareaRef.current.style.height = 'auto';
-            // Calculate new height, capped at maxHeight
             const newHeight = Math.max(minHeight, Math.min(textareaRef.current.scrollHeight, maxHeight));
             textareaRef.current.style.height = `${newHeight}px`;
-            // Enable scrolling if content exceeds max height
             textareaRef.current.style.overflowY = textareaRef.current.scrollHeight > maxHeight ? 'auto' : 'hidden';
         }
     }, [message]);
 
     return (
-        <div className="flex-shrink-0 p-4 relative z-50">
+        <div className="flex-shrink-0 px-3 pb-3 pt-2 relative z-50">
             {/* Image Preview */}
             {imagePreview && (
-                <div className="mb-3 relative inline-block">
+                <div className="mb-2 relative inline-block">
                     <img
                         src={imagePreview}
                         alt="Preview"
-                        className="h-16 rounded-lg border border-gray-200"
+                        className="h-14 rounded-lg border border-[#b69161]/15"
                     />
                     <button
                         onClick={removeImage}
@@ -254,11 +165,12 @@ export function MessageInput({
                 </div>
             )}
 
-            <form 
+            {/* Input field */}
+            <form
                 ref={formRef}
-                onSubmit={handleSubmit} 
+                onSubmit={handleSubmit}
                 onClick={handleFormClick}
-                className="flex items-center gap-3 focus-input-on-click cursor-text"
+                className="relative bg-[#f2efed] rounded-2xl border border-[#b69161]/25 transition-colors focus-input-on-click cursor-text"
             >
                 <input
                     ref={fileInputRef}
@@ -268,7 +180,6 @@ export function MessageInput({
                     className="hidden"
                 />
 
-                {/* Text Input - Auto-expanding textarea */}
                 <textarea
                     ref={textareaRef}
                     value={message}
@@ -280,102 +191,108 @@ export function MessageInput({
                         }
                     }}
                     onPaste={handlePaste}
-                    onClick={(e) => {
-                        // Stop propagation to prevent form click handler from interfering
-                        e.stopPropagation();
-                    }}
+                    onClick={(e) => e.stopPropagation()}
                     placeholder={placeholder}
                     disabled={isLoading}
                     rows={1}
                     autoFocus
                     className={cn(
-                        'flex-1 px-3 py-1.5 rounded-2xl text-xs resize-none',
-                        'bg-white/50 backdrop-blur-sm border border-white/20',
-                        'text-gray-900 placeholder:text-gray-500',
-                        'focus:outline-none focus:ring-0 focus:bg-white/70 transition-all duration-200',
+                        'w-full px-4 pt-3 pb-2 rounded-2xl text-sm resize-none',
+                        'bg-transparent border-0',
+                        'text-[#2c2418] placeholder:text-[#a89d8e]',
+                        'focus:outline-none focus:ring-0 transition-all duration-200',
                         'disabled:opacity-50',
-                        'caret-blue-500'
+                        'caret-[#b69161]'
                     )}
                     style={{
-                        caretColor: '#3b82f6',
-                        minHeight: '32px',
-                        maxHeight: '180px' // ~10 lines
+                        caretColor: '#b69161',
+                        minHeight: '36px',
+                        maxHeight: '180px'
                     }}
                 />
 
-                {/* Image Upload Button */}
-                <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex-shrink-0 p-2 rounded-full text-gray-500 hover:text-blue-600 hover:bg-gray-100 transition-colors"
-                    title="Upload image"
-                >
-                    <Image className="w-4 h-4" />
-                </button>
+                {/* Bottom row inside input: actions */}
+                <div className="flex items-center justify-between px-3 pb-2.5">
+                    <div />
+                    <div className="flex items-center gap-1">
+                        {/* Image upload */}
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="p-1.5 rounded-lg text-[#b69161]/60 hover:text-[#b69161] hover:bg-[#b69161]/10 transition-colors"
+                            title="Attach image"
+                        >
+                            <Paperclip className="w-4 h-4" />
+                        </button>
 
-                {/* Send/Stop Button */}
-                {isLoading ? (
-                    <button
-                        type="button"
-                        onClick={onStop}
-                        className="flex-shrink-0 p-2 rounded-full transition-all bg-red-500 text-white hover:bg-red-600"
-                        title="Stop generation"
-                    >
-                        <Square className="w-4 h-4 fill-current" />
-                    </button>
-                ) : (
-                    <button
-                        type="submit"
-                        disabled={!message.trim() && !selectedImage}
-                        className={cn(
-                            'flex-shrink-0 p-2 rounded-full transition-all',
-                            (message.trim() || selectedImage)
-                                ? 'bg-blue-500 text-white hover:bg-blue-600'
-                                : 'bg-gray-200 text-gray-400'
+                        {/* Send / Stop */}
+                        {isLoading ? (
+                            <button
+                                type="button"
+                                onClick={onStop}
+                                className="p-1.5 rounded-lg bg-[#2c2418] text-white hover:bg-[#4a3f32] transition-colors"
+                                title="Stop generation"
+                            >
+                                <Square className="w-4 h-4 fill-current" />
+                            </button>
+                        ) : (
+                            <button
+                                type="submit"
+                                disabled={!message.trim() && !selectedImage}
+                                className={cn(
+                                    'p-1.5 rounded-lg transition-colors',
+                                    (message.trim() || selectedImage)
+                                        ? 'bg-[#b69161] text-white hover:bg-[#c9a474]'
+                                        : 'bg-[#d6cfc9]/50 text-[#a89d8e]'
+                                )}
+                            >
+                                <Send className="w-4 h-4" />
+                            </button>
                         )}
-                    >
-                        <Send className="w-4 h-4" />
-                    </button>
-                )}
+                    </div>
+                </div>
             </form>
 
-            {/* Mode Selector Dropdown */}
-            <div className="mt-2 relative" ref={dropdownRef}>
-                <button
-                    ref={modeBtnRef}
-                    type="button"
-                    onClick={() => setIsModeDropdownOpen(!isModeDropdownOpen)}
-                    className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
-                        executorMode === 'mastra'
-                            ? "bg-orange-50 text-orange-900 border-orange-100"
-                            : "bg-purple-50 text-purple-900 border-purple-100"
-                    )}
-                >
-                    {executorMode === 'mastra' ? (
-                        <>
-                            <NextImage src="/automatelogo.png" alt="AutoMate" width={14} height={14} className="object-contain" />
-                            <span>AutoMate Editor</span>
-                        </>
-                    ) : (
-                        <>
-                            <ClaudeLogo className="w-3.5 h-3.5 text-purple-600" />
-                            <span>Claude Code</span>
-                        </>
-                    )}
-                    <ChevronUp className={cn(
-                        "w-3 h-3 transition-transform",
-                        isModeDropdownOpen && "rotate-180"
-                    )} />
-                </button>
+            {/* Bottom bar: Agent + Model selectors */}
+            <div className="flex items-center justify-between mt-2 px-1" ref={dropdownRef}>
+                <div className="flex items-center gap-2">
+                    {/* Agent selector pill */}
+                    <button
+                        type="button"
+                        onClick={() => setIsModeDropdownOpen(!isModeDropdownOpen)}
+                        className={cn(
+                            "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all border",
+                            "bg-[#d6cfc9]/30 text-[#84745b] border-[#b69161]/20 hover:bg-[#b69161]/10 hover:text-[#84745b]"
+                        )}
+                    >
+                        {executorMode === 'mastra' ? (
+                            <>
+                                <NextImage src="/automatelogo.png" alt="" width={14} height={14} className="object-contain" />
+                                <span>Automate</span>
+                            </>
+                        ) : (
+                            <>
+                                <ClaudeLogo className="w-3.5 h-3.5" />
+                                <span>Claude Code</span>
+                            </>
+                        )}
+                        <ChevronUp className={cn(
+                            "w-3 h-3 transition-transform",
+                            isModeDropdownOpen && "rotate-180"
+                        )} />
+                    </button>
+                </div>
+
+                {/* Context usage indicator */}
+                {contextUsage && <ContextIndicator usage={contextUsage} />}
 
                 {/* Dropdown Menu */}
                 {isModeDropdownOpen && (
                     <div
                         ref={dropdownMenuRef}
-                        className="absolute bottom-full left-0 mb-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden"
+                        className="absolute bottom-full left-1 mb-2 w-52 bg-[#f2efed] rounded-xl shadow-2xl border border-[#b69161]/20 overflow-hidden"
                     >
-                        {/* Claude Code Option */}
+                        {/* Claude Code */}
                         <button
                             type="button"
                             onClick={() => {
@@ -385,21 +302,21 @@ export function MessageInput({
                             className={cn(
                                 "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
                                 executorMode !== 'mastra'
-                                    ? "bg-purple-50"
-                                    : "hover:bg-gray-50"
+                                    ? "bg-[#b69161]/10"
+                                    : "hover:bg-[#b69161]/5"
                             )}
                         >
-                            <ClaudeLogo className="w-4 h-4 text-purple-600" />
+                            <ClaudeLogo className="w-4 h-4 text-[#84745b]" />
                             <div className="flex-1">
-                                <div className="text-sm font-medium text-gray-900">Claude Code</div>
-                                <div className="text-xs text-gray-500">Anthropic Claude</div>
+                                <div className="text-sm font-medium text-[#2c2418]">Claude Code</div>
+                                <div className="text-xs text-[#7a6f60]">Anthropic Claude</div>
                             </div>
                             {executorMode !== 'mastra' && (
-                                <Check className="w-4 h-4 text-purple-600" />
+                                <Check className="w-4 h-4 text-[#b69161]" />
                             )}
                         </button>
 
-                        {/* AutoMate Editor Option */}
+                        {/* Automate */}
                         <button
                             type="button"
                             onClick={() => {
@@ -409,17 +326,17 @@ export function MessageInput({
                             className={cn(
                                 "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
                                 executorMode === 'mastra'
-                                    ? "bg-orange-50"
-                                    : "hover:bg-gray-50"
+                                    ? "bg-[#b69161]/10"
+                                    : "hover:bg-[#b69161]/5"
                             )}
                         >
-                            <NextImage src="/automatelogo.png" alt="AutoMate" width={16} height={16} className="object-contain" />
+                            <NextImage src="/automatelogo.png" alt="" width={16} height={16} className="object-contain" />
                             <div className="flex-1">
-                                <div className="text-sm font-medium text-gray-900">AutoMate Editor</div>
-                                <div className="text-xs text-gray-500">Custom AI</div>
+                                <div className="text-sm font-medium text-[#2c2418]">Automate Editor</div>
+                                <div className="text-xs text-[#7a6f60]">Custom AI</div>
                             </div>
                             {executorMode === 'mastra' && (
-                                <Check className="w-4 h-4 text-orange-600" />
+                                <Check className="w-4 h-4 text-[#b69161]" />
                             )}
                         </button>
                     </div>

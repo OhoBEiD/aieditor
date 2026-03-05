@@ -26,31 +26,31 @@ export function AuthRequiredModal({ isOpen, onClose, message }: AuthRequiredModa
                 {/* Close button */}
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 transition-colors rounded-full hover:bg-gray-100"
+                    className="absolute top-4 right-4 p-2 text-[#a89d8e] hover:text-[#5a4f3e] transition-colors rounded-full hover:bg-[#e6e0dd]"
                 >
                     <X className="w-5 h-5" />
                 </button>
 
                 {/* Icon */}
                 <div className="flex justify-center mb-6">
-                    <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center">
+                    <div className="w-16 h-16 bg-gradient-to-br from-[#b69161] to-[#84745b] rounded-2xl flex items-center justify-center">
                         <LogIn className="w-8 h-8 text-white" />
                     </div>
                 </div>
 
                 {/* Content */}
-                <h2 className="text-2xl font-bold text-center text-gray-900 mb-2">
+                <h2 className="text-2xl font-bold text-center text-[#2c2418] mb-2">
                     Sign in required
                 </h2>
-                <p className="text-center text-gray-600 mb-8">
-                    {message || 'Please sign in to continue using AutoMate'}
+                <p className="text-center text-[#5a4f3e] mb-8">
+                    {message || 'Please sign in to continue using Automate'}
                 </p>
 
                 {/* Actions */}
                 <div className="space-y-3">
                     <button
                         onClick={handleGitHubLogin}
-                        className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-gray-900 hover:bg-gray-800 text-white font-medium rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                        className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-[#2c2418] hover:bg-[#3d3122] text-white font-medium rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
                     >
                         <Github className="w-5 h-5" />
                         Continue with GitHub
@@ -59,14 +59,14 @@ export function AuthRequiredModal({ isOpen, onClose, message }: AuthRequiredModa
                     <div className="flex gap-3">
                         <Link
                             href="/login"
-                            className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-purple-500/20"
+                            className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-[#b69161] hover:bg-[#c9a474] text-white font-medium rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-[#b69161]/20"
                         >
                             <LogIn className="w-4 h-4" />
                             Sign In
                         </Link>
                         <Link
                             href="/signup"
-                            className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-purple-100 hover:bg-purple-200 text-purple-700 font-medium rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-[#e6e0dd] hover:bg-[#d6cfc9] text-[#84745b] font-medium rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
                         >
                             <UserPlus className="w-4 h-4" />
                             Sign Up

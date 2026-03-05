@@ -4,6 +4,7 @@
 import { TOOLS, FileOperation, ToolResult } from '../tools';
 import { listFiles, readFile, writeFile, strReplace, deleteFile, resetOperations, getOperations } from '../tools/file';
 import { generateImage } from '../tools/image';
+import { webSearch, webScrape } from '../tools/web';
 import { EXECUTOR_SYSTEM_PROMPT } from '../prompts/system';
 
 interface Message {
@@ -71,21 +72,43 @@ interface ValidateBuildResult extends ToolResult {
     buildMessage?: string;
 }
 
-function runTool(name: string, args: Record<string, any>, context: ExecutorContext): ToolResult | ValidateBuildResult {
+async function runTool(name: string, args: Record<string, any>, context: ExecutorContext): Promise<ToolResult | ValidateBuildResult> {
     switch (name) {
         case 'list_files':
             return listFiles(context.fileContents, args.pattern || '*');
         case 'read_file':
         case 'view_lines':
             return readFile(context.fileContents, args.path || args.file, args.startLine, args.endLine);
-        case 'write_file':
-            return writeFile(args.path, args.content);
-        case 'str_replace':
-            return strReplace(args.file, args.old_text, args.new_text);
-        case 'delete_file':
-            return deleteFile(args.path);
+        case 'write_file': {
+            const result = writeFile(args.path, args.content);
+            // Update context so subsequent reads see the new content (enables verify loop)
+            if (result.success && args.path && args.content !== undefined) {
+                context.fileContents[args.path] = args.content;
+            }
+            return result;
+        }
+        case 'str_replace': {
+            const result = strReplace(args.file, args.old_text, args.new_text);
+            // Update context so subsequent reads see the modification (enables verify loop)
+            if (result.success && args.file && context.fileContents[args.file]) {
+                context.fileContents[args.file] = context.fileContents[args.file].replace(args.old_text, args.new_text);
+            }
+            return result;
+        }
+        case 'delete_file': {
+            const result = deleteFile(args.path);
+            // Remove from context so subsequent reads know the file is gone
+            if (result.success && args.path) {
+                delete context.fileContents[args.path];
+            }
+            return result;
+        }
         case 'generate_image':
             return generateImage(args.prompt);
+        case 'web_search':
+            return webSearch(args.query, args.maxResults);
+        case 'web_scrape':
+            return webScrape(args.url, args.maxLength);
         case 'validate_build':
             // This signals the client to run npm run build
             return {
@@ -226,6 +249,10 @@ export async function executeWithTools(context: ExecutorContext): Promise<Execut
                         }
                     } else if (toolName === 'generate_image') {
                         stepMessage = `Generating image...`;
+                    } else if (toolName === 'web_search' && args.query) {
+                        stepMessage = `Searching: "${args.query.substring(0, 50)}"`;
+                    } else if (toolName === 'web_scrape' && args.url) {
+                        try { stepMessage = `Reading ${new URL(args.url).hostname}`; } catch { stepMessage = `Reading URL...`; }
                     } else if (toolName === 'delete_file' && args.path) {
                         stepMessage = `Deleting ${args.path.split('/').pop() || args.path}`;
                     }
@@ -235,7 +262,7 @@ export async function executeWithTools(context: ExecutorContext): Promise<Execut
                         await context.onStep(toolName, 'running', stepMessage, details, stepIndex);
                     }
 
-                    const result = runTool(toolName, args, context) as ValidateBuildResult;
+                    const result = await runTool(toolName, args, context) as ValidateBuildResult;
                     iterations++;
 
                     // Check if this is a build validation request

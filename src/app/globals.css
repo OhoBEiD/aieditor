@@ -29,62 +29,57 @@
 
 /* =====================================================
    AI Editor Agent - Design System
-   AutoMate Color Palette
+   Automate Color Palette
    ===================================================== */
 
-/* CSS Variables - AutoMate Theme */
+/* CSS Variables - Automate Theme (Warm Fog Palette) */
 :root {
-  /* Background Colors */
-  --bg-primary: #0a0a12;
-  --bg-secondary: #12121a;
-  --bg-tertiary: #1a1a24;
-  --bg-elevated: #1e1e28;
-  --bg-hover: #252530;
+  /* Background Colors - Warm Light Theme */
+  --bg-primary: #e8e8e8;
+  --bg-secondary: #e0dbd7;
+  --bg-tertiary: #d6cfc9;
+  --bg-elevated: #f2efed;
+  --bg-hover: #ddd6d0;
 
-  /* Core Accent Colors - Logo Gradient */
-  --accent-deep-blue: #1C54AF;
-  --accent-teal-blue: #1E85B3;
-  --accent-cyan-teal: #30AFC3;
-  --accent-bright-aqua: #3FDDDB;
-  --accent-mint: #58D0AC;
-  --accent-lime: #C4F187;
-  --accent-magenta: #B72CC2;
-  --accent-purple: #7D1CB4;
-  --accent-indigo: #5311A1;
+  /* Core Accent Colors - Fog Palette */
+  --accent-highlight: #e6e0dd;
+  --accent-midtone: #b69161;
+  --accent-lowlight: #84745b;
+  --accent-base: #e8e8e8;
 
-  /* Primary Accent (use teal-blue as main) */
-  --accent-primary: #1E85B3;
-  --accent-primary-hover: #30AFC3;
-  --accent-secondary: #1C54AF;
-  --accent-success: #58D0AC;
-  --accent-warning: #C4F187;
-  --accent-danger: #B72CC2;
+  /* Primary Accent */
+  --accent-primary: #b69161;
+  --accent-primary-hover: #c9a474;
+  --accent-secondary: #84745b;
+  --accent-success: #6b8f71;
+  --accent-warning: #d4a843;
+  --accent-danger: #c45c4a;
 
-  /* Text Colors - For Dark Theme */
-  --text-primary: #ffffff;
-  --text-secondary: #e0e0e0;
-  --text-muted: #a0a0a0;
-  --text-disabled: #606060;
+  /* Text Colors - Dark on Light */
+  --text-primary: #2c2418;
+  --text-secondary: #4a3f32;
+  --text-muted: #7a6f60;
+  --text-disabled: #a89d8e;
 
   /* Border Colors */
-  --border-default: rgba(255, 255, 255, 0.1);
-  --border-hover: rgba(255, 255, 255, 0.2);
-  --border-focus: #3FDDDB;
+  --border-default: rgba(132, 116, 91, 0.2);
+  --border-hover: rgba(132, 116, 91, 0.35);
+  --border-focus: #b69161;
 
   /* Shadows / Depth */
-  --shadow-deep-indigo: #170A46;
-  --shadow-darker: #1E1962;
+  --shadow-deep: #84745b;
+  --shadow-darker: #6b5f4a;
 
-  /* Gradient - Logo colors */
-  --gradient-primary: linear-gradient(135deg, #1C54AF 0%, #1E85B3 20%, #30AFC3 40%, #3FDDDB 60%, #58D0AC 80%, #C4F187 100%);
-  --gradient-accent: linear-gradient(135deg, #B72CC2 0%, #7D1CB4 50%, #5311A1 100%);
-  --gradient-glass: linear-gradient(135deg, rgba(30, 133, 179, 0.1) 0%, rgba(63, 221, 219, 0.05) 100%);
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, #84745b 0%, #b69161 40%, #c9a474 70%, #e6e0dd 100%);
+  --gradient-accent: linear-gradient(135deg, #84745b 0%, #b69161 50%, #c9a474 100%);
+  --gradient-glass: linear-gradient(135deg, rgba(182, 145, 97, 0.08) 0%, rgba(230, 224, 221, 0.05) 100%);
 
   /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.6);
-  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.7);
-  --shadow-glow: 0 0 20px rgba(63, 221, 219, 0.3);
+  --shadow-sm: 0 1px 2px rgba(44, 36, 24, 0.1);
+  --shadow-md: 0 4px 6px rgba(44, 36, 24, 0.12);
+  --shadow-lg: 0 10px 25px rgba(44, 36, 24, 0.15);
+  --shadow-glow: 0 0 20px rgba(182, 145, 97, 0.3);
 
   /* Spacing */
   --radius-sm: 6px;
@@ -138,34 +133,34 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(132, 116, 91, 0.3);
   border-radius: 4px;
   backdrop-filter: blur(8px);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(132, 116, 91, 0.5);
 }
 
 /* Selection */
 ::selection {
-  background: rgba(99, 102, 241, 0.3);
+  background: rgba(182, 145, 97, 0.3);
   color: var(--text-primary);
 }
 
 /* Glass Effect Utility */
 .glass {
-  background: rgba(18, 18, 26, 0.8);
+  background: rgba(242, 239, 237, 0.8);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border-default);
+  border: 1px solid rgba(132, 116, 91, 0.15);
 }
 
 .glass-strong {
-  background: rgba(18, 18, 26, 0.95);
+  background: rgba(242, 239, 237, 0.95);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--border-default);
+  border: 1px solid rgba(132, 116, 91, 0.15);
 }
 
 /* Gradient Text */
@@ -243,11 +238,11 @@ body {
 
   0%,
   100% {
-    box-shadow: 0 0 5px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 0 5px rgba(182, 145, 97, 0.3);
   }
 
   50% {
-    box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
+    box-shadow: 0 0 20px rgba(182, 145, 97, 0.5);
   }
 }
 
@@ -350,9 +345,7 @@ code {
   align-items: center;
 }
 
-/* Focus States */
-input:focus,
-textarea:focus,
+/* Focus States - Only apply to buttons for accessibility */
 button:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 2px;

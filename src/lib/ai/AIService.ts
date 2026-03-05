@@ -1,7 +1,7 @@
 // Main AI Service - orchestrates intent classification and execution
 // This is the primary entry point for chat messages
 
-import { classifyIntent, IntentResult } from './agents/IntentClassifier';
+import { classifyIntent, ClassificationResult } from './agents/IntentClassifier';
 import { executeWithTools } from './agents/Executor';
 import { executeVercelUIAgent } from './agents/VercelUIAgent';
 import { FileOperation } from './tools';
@@ -19,7 +19,7 @@ export interface AIServiceRequest {
 
 export interface AIServiceResponse {
     output: string;
-    intent: IntentResult;
+    intent: ClassificationResult | { type: string; confidence: number; needsPlanner?: boolean; source: string };
     fileOperations: FileOperation[];
     filesCreated: string[];
     filesModified: string[];

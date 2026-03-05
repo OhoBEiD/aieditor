@@ -24,26 +24,26 @@ export function Terminal({ onTerminalReady, className }: TerminalProps) {
             fontSize: 12,
             fontFamily: 'Menlo, Monaco, "Courier New", monospace',
             theme: {
-                background: '#ffffff', // White background
-                foreground: '#18181b', // Zinc-900
-                cursor: '#18181b',
-                selectionBackground: '#e4e4e7', // Zinc-200
-                black: '#000000',
-                red: '#ef4444',
-                green: '#16a34a', // Darker green for light mode
-                yellow: '#ca8a04', // Darker yellow
-                blue: '#2563eb', // Darker blue
-                magenta: '#c026d3',
-                cyan: '#0891b2',
-                white: '#e5e7eb', // This acts as "dim" in some contexts, or bright black equivalent
-                brightBlack: '#71717a',
-                brightRed: '#f87171',
-                brightGreen: '#4ade80',
-                brightYellow: '#facc15',
-                brightBlue: '#60a5fa',
-                brightMagenta: '#e879f9',
-                brightCyan: '#22d3ee',
-                brightWhite: '#fafafa',
+                background: '#f2efed',
+                foreground: '#2c2418',
+                cursor: '#2c2418',
+                selectionBackground: '#d6cfc9',
+                black: '#2c2418',
+                red: '#c45c4a',
+                green: '#6b8f71',
+                yellow: '#d4a843',
+                blue: '#84745b',
+                magenta: '#b69161',
+                cyan: '#84745b',
+                white: '#e6e0dd',
+                brightBlack: '#7a6f60',
+                brightRed: '#c45c4a',
+                brightGreen: '#6b8f71',
+                brightYellow: '#d4a843',
+                brightBlue: '#84745b',
+                brightMagenta: '#c9a474',
+                brightCyan: '#84745b',
+                brightWhite: '#f2efed',
             },
             convertEol: true, // Treat \n as new line
             cursorStyle: 'bar', // More modern cursor
@@ -83,7 +83,7 @@ export function Terminal({ onTerminalReady, className }: TerminalProps) {
     return (
         <div
             ref={terminalRef}
-            className={`w-full h-full overflow-hidden bg-white ${className || ''}`}
+            className={`w-full h-full overflow-hidden bg-[#f2efed] ${className || ''}`}
             style={{ padding: '8px' }}
         />
     );

@@ -152,29 +152,29 @@ export function CodeView({ listFiles, readFile, writeFile, className, externalSe
         return () => ctx.revert();
     }, []);
 
-    const glassStyle = "backdrop-blur-xl bg-white/30 border border-white/20 rounded-2xl shadow-[0_8px_32px_0_rgba(31,38,135,0.37)]";
+    const darkGlassStyle = "backdrop-blur-xl bg-[#f2efed]/90 border border-[#b69161]/20 rounded-2xl shadow-[0_8px_32px_0_rgba(44,36,24,0.1)]";
 
     return (
         <div className={cn("flex h-full font-sans bg-transparent py-4 px-4 gap-4", className)}>
-            {/* Sidebar - File Tree - Liquid Glass */}
-            <div className={cn("w-80 flex-shrink-0 flex flex-col file-sidebar overflow-hidden", glassStyle)}>
+            {/* Sidebar - File Tree - Dark Glass */}
+            <div className={cn("w-80 flex-shrink-0 flex flex-col file-sidebar overflow-hidden", darkGlassStyle)}>
                 {/* Search */}
-                <div className="p-4 border-b border-white/10">
-                    <div className="flex items-center gap-2 px-3 py-2 bg-white/20 border border-white/10 rounded-xl transition-all shadow-inner focus-within:bg-white/40">
-                        <Search className="w-4 h-4 text-gray-800" />
+                <div className="p-4 border-b border-[#b69161]/10">
+                    <div className="flex items-center gap-2 px-3 py-2 bg-[#d6cfc9]/20 border border-[#b69161]/20 rounded-xl transition-all focus-within:border-[#b69161]/40">
+                        <Search className="w-4 h-4 text-[#b69161]/60" />
                         <input
                             type="text"
                             placeholder="Search..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="bg-transparent text-black placeholder-gray-500 outline-none flex-1 text-sm font-medium"
+                            className="bg-transparent text-[#b69161] placeholder-[#a89d8e] outline-none flex-1 text-sm font-medium"
                         />
                     </div>
                 </div>
 
                 {/* File Tree */}
                 {isLoading ? (
-                    <div className="flex items-center justify-center p-4 text-gray-800 text-sm font-medium">
+                    <div className="flex items-center justify-center p-4 text-[#b69161]/60 text-sm font-medium">
                         Loading files...
                     </div>
                 ) : (
@@ -191,22 +191,22 @@ export function CodeView({ listFiles, readFile, writeFile, className, externalSe
             <div className="flex-1 flex flex-col bg-transparent relative z-10 gap-4">
                 {selectedFile ? (
                     <>
-                        {/* Editor Header / Breadcrumbs - Liquid Glass */}
-                        <div className={cn("editor-breadcrumbs flex items-center px-6 h-14 shrink-0 shadow-sm", glassStyle)}>
-                            <div className="flex items-center gap-2 text-sm text-gray-900 font-medium">
-                                <Search className="w-4 h-4 text-gray-900" />
-                                <span className="text-gray-400 mx-1">/</span>
+                        {/* Editor Header / Breadcrumbs - Dark Glass */}
+                        <div className={cn("editor-breadcrumbs flex items-center px-6 h-14 shrink-0 shadow-sm", darkGlassStyle)}>
+                            <div className="flex items-center gap-2 text-sm text-[#b69161] font-medium">
+                                <Search className="w-4 h-4 text-[#b69161]/60" />
+                                <span className="text-[#b69161]/30 mx-1">/</span>
                                 {selectedFile.split('/').map((part, i, arr) => (
                                     <div key={i} className="flex items-center gap-1">
                                         <span className={cn(
                                             "transition-colors px-2 py-0.5 rounded-lg",
                                             i === arr.length - 1
-                                                ? "text-black font-bold bg-white/40 shadow-sm border border-white/10"
-                                                : "text-gray-700 hover:text-black cursor-pointer hover:bg-white/20"
+                                                ? "text-[#b69161] font-bold bg-[#b69161]/10 border border-[#b69161]/20"
+                                                : "text-[#b69161]/60 hover:text-[#b69161] cursor-pointer hover:bg-[#d6cfc9]/30"
                                         )}>
                                             {part}
                                         </span>
-                                        {i < arr.length - 1 && <span className="text-gray-300">/</span>}
+                                        {i < arr.length - 1 && <span className="text-[#b69161]/20">/</span>}
                                     </div>
                                 ))}
                             </div>
@@ -218,14 +218,14 @@ export function CodeView({ listFiles, readFile, writeFile, className, externalSe
                                 filePath={selectedFile}
                                 content={fileContent}
                                 onChange={handleContentChange}
-                                className="!mx-0 !mb-0 !mt-0" // Reset internal margins to use flex gap
+                                className="!mx-0 !mb-0 !mt-0"
                             />
                         </div>
                     </>
                 ) : (
                     <div className="flex-1 flex flex-col gap-4">
-                        <div className={cn("h-14 shrink-0 shadow-sm", glassStyle)} />
-                        <div className={cn("flex-1 shadow-sm", glassStyle)} />
+                        <div className={cn("h-14 shrink-0 shadow-sm", darkGlassStyle)} />
+                        <div className={cn("flex-1 shadow-sm", darkGlassStyle)} />
                     </div>
                 )}
             </div>

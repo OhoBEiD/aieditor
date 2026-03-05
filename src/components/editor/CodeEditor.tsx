@@ -52,8 +52,8 @@ export function CodeEditor({ filePath, content, onChange, onClose, className }: 
 
     return (
         <div className={cn("flex flex-col h-full bg-transparent code-editor-container", className)}>
-            {/* Editor Card - Liquid Glass */}
-            <div className="flex-1 border border-white/20 rounded-2xl overflow-hidden shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] mx-4 mb-4 mt-2 bg-white/30 backdrop-blur-xl relative">
+            {/* Editor Card - Dark Glass */}
+            <div className="flex-1 border border-[#b69161]/20 rounded-2xl overflow-hidden shadow-[0_8px_32px_0_rgba(44,36,24,0.1)] mx-4 mb-4 mt-2 bg-[#f2efed]/90 backdrop-blur-xl relative">
                 <style jsx global>{`
                     .monaco-editor, .monaco-editor-background, .monaco-editor .inputarea.ime-input {
                         background-color: transparent !important;
@@ -63,26 +63,26 @@ export function CodeEditor({ filePath, content, onChange, onClose, className }: 
                     }
                     /* Subtle line numbers */
                     .monaco-editor .line-numbers {
-                        color: rgba(0, 0, 0, 0.3) !important;
+                        color: rgba(132, 116, 91, 0.4) !important;
                     }
                 `}</style>
                 <Editor
                     height="100%"
                     language={language}
                     value={content}
-                    theme="vs-light"
+                    theme="vs-dark"
                     onChange={(value) => onChange?.(value || '')}
                     loading={
-                        <div className="flex flex-col items-center justify-center h-full w-full bg-white/30 backdrop-blur-xl">
+                        <div className="flex flex-col items-center justify-center h-full w-full bg-[#f2efed] backdrop-blur-xl">
                             <div className="flex flex-col items-center gap-3">
                                 <Image
                                     src="/automatelogo.png"
-                                    alt="AutoMate"
+                                    alt="Automate"
                                     width={40}
                                     height={40}
                                     className="animate-pulse"
                                 />
-                                <div className="flex items-center gap-2 text-gray-600">
+                                <div className="flex items-center gap-2 text-[#b69161]/60">
                                     <Loader2 className="w-4 h-4 animate-spin" />
                                     <span className="text-sm font-medium">Loading editor...</span>
                                 </div>

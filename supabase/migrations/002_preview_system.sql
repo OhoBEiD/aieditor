@@ -38,6 +38,7 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_preview_deployments_updated_at ON preview_deployments;
 CREATE TRIGGER update_preview_deployments_updated_at
   BEFORE UPDATE ON preview_deployments
   FOR EACH ROW

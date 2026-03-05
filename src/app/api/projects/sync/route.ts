@@ -12,10 +12,34 @@ interface File {
 
 export async function POST(req: NextRequest) {
     try {
-        const { projectId, githubToken, repoName } = await req.json();
+        const { projectId, githubToken: clientToken, repoName, isPrivate = true, description } = await req.json();
 
-        if (!projectId || !githubToken) {
-            return NextResponse.json({ error: 'Missing projectId or githubToken' }, { status: 400 });
+        if (!projectId) {
+            return NextResponse.json({ error: 'Missing projectId' }, { status: 400 });
+        }
+
+        // Resolve GitHub token: prefer server-side lookup, fall back to client-provided token
+        let githubToken = clientToken;
+
+        if (!githubToken) {
+            const authHeader = req.headers.get('authorization');
+            if (authHeader?.startsWith('Bearer ')) {
+                const supabaseToken = authHeader.replace('Bearer ', '');
+                const { data: { user } } = await supabase.auth.getUser(supabaseToken);
+                if (user) {
+                    const { data: tokenRow } = await supabase
+                        .from('github_tokens')
+                        .select('access_token')
+                        .eq('user_id', user.id)
+                        .limit(1)
+                        .maybeSingle();
+                    githubToken = tokenRow?.access_token;
+                }
+            }
+        }
+
+        if (!githubToken) {
+            return NextResponse.json({ error: 'No GitHub token available. Please connect GitHub to your account.' }, { status: 401 });
         }
 
         // 1. Get Project Files
@@ -34,7 +58,8 @@ export async function POST(req: NextRequest) {
         }
 
         // 2. Create Repository on User's GitHub
-        console.log(`Creating repo ${repoName} on GitHub user account...`);
+        const finalRepoName = repoName || `automate-project-${Date.now()}`;
+        console.log(`Creating repo ${finalRepoName} on GitHub user account...`);
         const createRes = await fetch('https://api.github.com/user/repos', {
             method: 'POST',
             headers: {
@@ -43,15 +68,10 @@ export async function POST(req: NextRequest) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                name: repoName,
-                private: true,
-                auto_init: true, // Init with README so main branch exists? Or false and we create it?
-                // Empty repo is better for creating initial commit from scratch.
-                // But default branch creation via API needs a parent or we create ref directly.
-                // Actually, 'auto_init: true' creates a commit. Then we can get latest commit and update it?
-                // Or 'auto_init: false' and we create 'git/commits'? 
-                // To create a commit in empty repo (no parents), we need to handle it.
-                // Easiest: auto_init=true, then get main SHA, create new tree based on it (or just new tree), commit, updating ref.
+                name: finalRepoName,
+                private: isPrivate,
+                description: description || 'Created with Automate',
+                auto_init: true,
             })
         });
 
@@ -63,19 +83,12 @@ export async function POST(req: NextRequest) {
         const repoData = await createRes.json();
         const owner = repoData.owner.login;
         const repo = repoData.name;
-        const defaultBranch = repoData.default_branch || 'main'; // auto_init usually sets main
+        const defaultBranch = repoData.default_branch || 'main';
 
-        // 3. Create Blobs for all files
-        // Optimization: Create blobs in parallel
-        // For simple usage, we can construct the tree directly if content is text.
-        // GitHub Tree API allows specifying content directly for text files?
-        // Yes, "content" field in tree creation if executable bit not needed?
-        // Wait, "create a tree": tree.tree array can contain "content" (string) or "sha" (blob).
-
-        // Construct Tree Array
+        // 3. Construct Tree Array
         const treeItems = files.map((f: File) => ({
             path: f.path,
-            mode: '100644', // file
+            mode: '100644',
             type: 'blob',
             content: f.content
         }));
@@ -92,7 +105,6 @@ export async function POST(req: NextRequest) {
             const refData = await refRes.json();
             parentCommitSha = refData.object.sha;
 
-            // Get commit to get tree
             const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${parentCommitSha}`, {
                 headers: { 'Authorization': `Bearer ${githubToken}` }
             });
@@ -111,7 +123,7 @@ export async function POST(req: NextRequest) {
             },
             body: JSON.stringify({
                 tree: treeItems,
-                base_tree: baseTreeSha // Update on top of README if auto_init
+                base_tree: baseTreeSha
             })
         });
 
@@ -131,7 +143,7 @@ export async function POST(req: NextRequest) {
                 'Accept': 'application/vnd.github.v3+json',
             },
             body: JSON.stringify({
-                message: 'Initial sync from AutoMate',
+                message: 'Initial sync from Automate',
                 tree: newTreeSha,
                 parents: parentCommitSha ? [parentCommitSha] : []
             })

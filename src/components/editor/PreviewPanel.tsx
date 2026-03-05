@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import { Monitor, Smartphone, RefreshCw, X, Loader2, ExternalLink, AlertCircle, Download, Github, Terminal as TerminalIcon, Code, Eye } from 'lucide-react';
+import { Monitor, Smartphone, RefreshCw, X, Loader2, ExternalLink, AlertCircle, Download, Github, Terminal as TerminalIcon, Code, Eye, Check, Circle } from 'lucide-react';
 import { Button } from '@/components/ui';
 import Image from 'next/image';
 import { gsap } from 'gsap';
@@ -10,19 +10,139 @@ import dynamic from 'next/dynamic';
 import { useWebContainer } from '@/hooks/useWebContainer';
 import { supabase } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import { SupabaseDrawer } from './SupabaseDrawer';
+import { GitHubSyncDropdown } from './GitHubSyncDropdown';
+import { useSupabaseConnection } from '@/hooks/useSupabaseConnection';
 
 // Dynamic imports for SSR safety
 const Terminal = dynamic(() => import('./Terminal').then(mod => mod.Terminal), {
     ssr: false,
-    loading: () => <div className="w-full h-full flex items-center justify-center text-gray-400">Loading terminal...</div>
+    loading: () => <div className="w-full h-full flex items-center justify-center text-[#b69161]/60">Loading terminal...</div>
 });
 
 const CodeView = dynamic(() => import('./CodeView').then(mod => mod.CodeView), {
     ssr: false,
-    loading: () => <div className="w-full h-full flex items-center justify-center bg-[#1e1e1e] text-gray-400">Loading editor...</div>
+    loading: () => <div className="w-full h-full flex items-center justify-center bg-transparent text-[#b69161]/60">Loading editor...</div>
 });
 
 type DeviceMode = 'desktop' | 'mobile';
+
+// Phase steps for the loader
+const PHASES = [
+    { key: 'environment', label: 'Environment ready' },
+    { key: 'mounting', label: 'Mounting files' },
+    { key: 'installing', label: 'Installing packages' },
+    { key: 'starting', label: 'Starting dev server' },
+    { key: 'ready', label: 'Preview ready' },
+] as const;
+
+function getPhaseIndex(
+    wcStatus?: string,
+    previewUrl?: string,
+    isServerReady?: boolean,
+): number {
+    if (isServerReady && previewUrl) return 5; // all done
+    if (previewUrl) return 4; // server starting, preview URL available
+    switch (wcStatus) {
+        case 'starting': return 4;
+        case 'installing': return 3;
+        case 'mounting': return 2;
+        case 'booting': return 1;
+        default: return 0;
+    }
+}
+
+function getPhasePercent(phaseIdx: number): number {
+    const percents = [10, 25, 40, 65, 85, 100];
+    return percents[Math.min(phaseIdx, percents.length - 1)];
+}
+
+function PhaseLoader({
+    logoRef,
+    wcStatus,
+    previewUrl,
+    isServerReady,
+    retryCount,
+    serverCheckCount,
+}: {
+    logoRef: React.RefObject<HTMLDivElement | null>;
+    wcStatus?: string;
+    previewUrl?: string;
+    isServerReady?: boolean;
+    retryCount?: number;
+    serverCheckCount?: number;
+}) {
+    const phaseIdx = getPhaseIndex(wcStatus, previewUrl, isServerReady);
+    const percent = getPhasePercent(phaseIdx);
+
+    return (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white rounded-2xl">
+            {/* Logo */}
+            <div ref={logoRef} className="mb-8">
+                <Image
+                    src="/automatelogo.png"
+                    alt="Automate"
+                    width={64}
+                    height={64}
+                    className="drop-shadow-2xl object-contain"
+                />
+            </div>
+
+            {/* Phase Steps */}
+            <div className="flex flex-col gap-2.5 mb-6 min-w-[200px]">
+                {PHASES.map((phase, i) => {
+                    const stepNum = i + 1;
+                    const isComplete = phaseIdx > stepNum;
+                    const isActive = phaseIdx === stepNum;
+                    const isPending = phaseIdx < stepNum;
+
+                    return (
+                        <div key={phase.key} className="flex items-center gap-2.5">
+                            {/* Icon */}
+                            {isComplete ? (
+                                <div className="w-4.5 h-4.5 flex items-center justify-center">
+                                    <Check className="w-3.5 h-3.5 text-emerald-500" strokeWidth={3} />
+                                </div>
+                            ) : isActive ? (
+                                <div className="w-4.5 h-4.5 flex items-center justify-center">
+                                    <Loader2 className="w-3.5 h-3.5 text-[#b69161] animate-spin" />
+                                </div>
+                            ) : (
+                                <div className="w-4.5 h-4.5 flex items-center justify-center">
+                                    <Circle className="w-3 h-3 text-[#b69161]/25" />
+                                </div>
+                            )}
+                            {/* Label */}
+                            <span className={cn(
+                                'text-xs transition-colors duration-300',
+                                isComplete && 'text-[#b69161]/70',
+                                isActive && 'text-[#b69161] font-medium',
+                                isPending && 'text-[#b69161]/30',
+                            )}>
+                                {isActive ? `${phase.label}...` : phase.label}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-52 h-1.5 bg-[#d6cfc9]/20 rounded-full overflow-hidden">
+                <div
+                    className="h-full bg-gradient-to-r from-[#b69161] to-[#c9a474] rounded-full transition-all duration-1000 ease-out"
+                    style={{ width: `${percent}%` }}
+                />
+            </div>
+
+            {/* Retry info */}
+            {retryCount !== undefined && retryCount > 0 && (
+                <p className="text-[#b69161]/40 text-[10px] mt-3">
+                    Retry {retryCount}
+                </p>
+            )}
+        </div>
+    );
+}
 
 interface PreviewPanelProps {
     previewUrl?: string;
@@ -39,6 +159,8 @@ interface PreviewPanelProps {
     projectId?: string;
     // External file selection (from chat panel clicking on file names)
     externalSelectedFile?: string | null;
+    // WebContainer status for accurate loading messages
+    wcStatus?: 'idle' | 'booting' | 'mounting' | 'installing' | 'starting' | 'running' | 'error';
 }
 
 export function PreviewPanel({
@@ -54,61 +176,10 @@ export function PreviewPanel({
     availablePages = [],
     repoUrl,
     externalSelectedFile,
-    projectId
+    projectId,
+    wcStatus,
 }: PreviewPanelProps) {
     const router = useRouter();
-    const [isSyncing, setIsSyncing] = useState(false);
-
-    const handleSyncToGithub = async () => {
-        if (!projectId) return;
-        try {
-            setIsSyncing(true);
-            const { data: { session } } = await supabase.auth.getSession();
-            let token = session?.provider_token;
-
-            // If no provider token in session, check if we have one in DB (optional fallback)
-            // For now, rely on session or prompt
-            if (!token) {
-                // Simple prompt for MVP as requested "user later syncs"
-                // Ideally we'd trigger OAuth flow, but keeping it simple/robust
-                const promptToken = window.prompt("To sync, please enter a GitHub Personal Access Token (repo scope):");
-                if (!promptToken) {
-                    setIsSyncing(false);
-                    return;
-                }
-                token = promptToken;
-            }
-
-            const response = await fetch('/api/projects/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    projectId,
-                    githubToken: token,
-                    repoName: `automate-project-${Date.now()}` // Default name, user can rename later
-                })
-            });
-
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || 'Sync failed');
-            }
-
-            const data = await response.json();
-            console.log('Sync success:', data.repoUrl);
-
-            // Refresh to update UI with new repoUrl
-            router.refresh();
-            // Force reload active project from DB? The parent component should handle this via router refresh
-            window.location.reload();
-
-        } catch (error: any) {
-            console.error('Sync error:', error);
-            alert(`Failed to sync: ${error.message}`);
-        } finally {
-            setIsSyncing(false);
-        }
-    };
     const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
     const [iframeKey, setIframeKey] = useState(0);
     const [loadState, setLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
@@ -139,6 +210,9 @@ export function PreviewPanel({
 
     // Get spawn, listFiles, readFile from WebContainer for terminal and code view
     const { spawn, listFiles, readFile, writeFile } = useWebContainer();
+
+    // Supabase connection state
+    const supabaseConnection = useSupabaseConnection(projectId);
 
     // Desktop iframe target resolution
     const DESKTOP_WIDTH = 1920;
@@ -313,27 +387,18 @@ export function PreviewPanel({
 
     // Health check removed - using WebContainers now
 
-    // Refresh iframe when refreshKey changes (triggered after AI file operations)
+    // Debounced quiet refresh on refreshKey — no loading state flash, just reload after HMR has time to process
+    const refreshDebounceRef = useRef<NodeJS.Timeout | null>(null);
     useEffect(() => {
         if (refreshKey !== prevRefreshKey.current && refreshKey > 0) {
-            console.log('[Preview] RefreshKey changed, triggering iframe refresh:', refreshKey);
             prevRefreshKey.current = refreshKey;
-            // Small delay to allow HMR to process file changes
-            setTimeout(() => {
-                setLoadState('loading');
+            if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
+            refreshDebounceRef.current = setTimeout(() => {
                 setIframeKey(prev => prev + 1);
-            }, 300);
+            }, 2000);
         }
+        return () => { if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current); };
     }, [refreshKey]);
-
-    // Also refresh when previewUrl changes (with cache buster)
-    useEffect(() => {
-        if (previewUrl && previewUrl.includes('_refresh=')) {
-            console.log('[Preview] URL has refresh param, triggering iframe refresh');
-            setLoadState('loading');
-            setIframeKey(prev => prev + 1);
-        }
-    }, [previewUrl]);
 
     const handleIframeLoad = () => {
         console.log('[Preview] Iframe loaded successfully (Event)');
@@ -474,7 +539,7 @@ export function PreviewPanel({
             // Wait a bit before retrying
             setTimeout(() => {
                 setIframeKey(prev => prev + 1);
-            }, 2000);
+            }, 1000);
         } else {
             console.log('[Preview] Max retries reached, showing error');
             setLoadState('error');
@@ -502,7 +567,7 @@ export function PreviewPanel({
         // https://github.com/user/repo -> https://github.com/user/repo/archive/refs/heads/main.zip
         const zipUrl = `${repoUrl}/archive/refs/heads/main.zip`;
         window.open(zipUrl, '_blank');
-        setShowGithubDropdown(false);
+        setDrawerType(null);
     };
 
     const logoRef = useRef<HTMLDivElement>(null);
@@ -546,15 +611,21 @@ export function PreviewPanel({
     }, [isLoading, loadState]);
 
     return (
-        <div className={cn('flex flex-col h-full', className)}>
-            {/* Toolbar - Floating Transparent Glass */}
-            <div className="relative z-[9999] flex items-center justify-between px-4 py-3 backdrop-blur-xl bg-white/30 border border-white/20 rounded-2xl mx-6 mt-6 mb-4 shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] active:scale-[0.99] transition-all duration-300">
+        <div className={cn('flex flex-col h-full rounded-2xl overflow-hidden', className)}>
+            {/* Toolbar - Dark Black Liquid Glass */}
+            <div
+                className="relative z-[9999] flex items-center justify-between px-4 py-3 backdrop-blur-xl border border-[#b69161]/20 rounded-2xl mx-6 mt-6 mb-4 active:scale-[0.99] transition-all duration-300"
+                style={{
+                    background: 'linear-gradient(135deg, rgba(242, 239, 237, 0.95) 0%, rgba(246, 244, 242, 0.97) 50%, rgba(242, 239, 237, 0.95) 100%)',
+                    boxShadow: '0 20px 60px rgba(44, 36, 24, 0.1), 0 8px 32px rgba(44, 36, 24, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
+                }}
+            >
                 {/* Left - Exit & View Toggle */}
                 <div className="flex items-center gap-3">
                     {onExitPreview && (
                         <button
                             onClick={onExitPreview}
-                            className="flex items-center justify-center p-2 rounded-xl text-gray-700 bg-white/40 border border-white/20 hover:bg-white/60 hover:text-gray-900 transition-all shadow-sm"
+                            className="flex items-center justify-center p-2 rounded-xl text-[#b69161] bg-[#d6cfc9]/20 border border-[#b69161]/20 hover:bg-[#b69161]/10 transition-all shadow-sm"
                             title="Exit Preview"
                         >
                             <X className="w-4 h-4" />
@@ -562,14 +633,14 @@ export function PreviewPanel({
                     )}
 
                     {/* View Mode Toggle - Preview / Code (Moved to left) */}
-                    <div className="flex items-center p-1 rounded-xl bg-white/40 border border-white/20 shadow-sm">
+                    <div className="flex items-center p-1 rounded-xl bg-[#d6cfc9]/20 border border-[#b69161]/20 shadow-sm">
                         <button
                             onClick={() => setViewMode('preview')}
                             className={cn(
                                 'flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all text-sm',
                                 viewMode === 'preview'
-                                    ? 'bg-white text-purple-600 shadow-sm font-medium'
-                                    : 'text-gray-500 hover:text-gray-900'
+                                    ? 'bg-[#b69161] text-white shadow-sm font-medium'
+                                    : 'text-[#b69161]/60 hover:text-[#b69161]'
                             )}
                             title="Preview"
                         >
@@ -581,8 +652,8 @@ export function PreviewPanel({
                             className={cn(
                                 'flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all text-sm',
                                 viewMode === 'code'
-                                    ? 'bg-white text-purple-600 shadow-sm font-medium'
-                                    : 'text-gray-500 hover:text-gray-900'
+                                    ? 'bg-[#b69161] text-white shadow-sm font-medium'
+                                    : 'text-[#b69161]/60 hover:text-[#b69161]'
                             )}
                             title="Code"
                         >
@@ -599,15 +670,21 @@ export function PreviewPanel({
                         <div className="relative">
                             <button
                                 onClick={() => setShowPageSelector(!showPageSelector)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm bg-white/40 border border-white/20 hover:bg-white/60 transition-all shadow-sm"
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm bg-[#d6cfc9]/20 border border-[#b69161]/20 hover:bg-[#b69161]/10 transition-all shadow-sm"
                                 title="Select Page"
                             >
-                                <span className="text-xs font-medium text-gray-900">{currentPage}</span>
+                                <span className="text-xs font-medium text-[#b69161]">{currentPage}</span>
                             </button>
 
                             {showPageSelector && (
-                                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-[10000] w-64 max-h-96 overflow-y-auto bg-white/90 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl p-2">
-                                    <div className="text-xs font-semibold text-gray-500 px-2 py-1 mb-1">
+                                <div
+                                    className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-[10000] w-64 max-h-96 overflow-y-auto backdrop-blur-xl border border-[#b69161]/20 rounded-xl shadow-2xl p-2"
+                                    style={{
+                                        background: 'linear-gradient(135deg, rgba(242, 239, 237, 0.97) 0%, rgba(246, 244, 242, 0.97) 50%, rgba(242, 239, 237, 0.97) 100%)',
+                                        boxShadow: '0 8px 32px rgba(44, 36, 24, 0.12)',
+                                    }}
+                                >
+                                    <div className="text-xs font-semibold text-[#b69161]/60 px-2 py-1 mb-1">
                                         Available Pages
                                     </div>
                                     {availablePages.map((page) => (
@@ -617,8 +694,8 @@ export function PreviewPanel({
                                             className={cn(
                                                 'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors',
                                                 currentPage === page
-                                                    ? 'bg-purple-500 text-white shadow-md'
-                                                    : 'hover:bg-black/5 text-gray-900'
+                                                    ? 'bg-[#b69161]/20 text-[#b69161] font-medium'
+                                                    : 'hover:bg-[#d6cfc9]/30 text-[#b69161]/70'
                                             )}
                                         >
                                             {page}
@@ -630,14 +707,14 @@ export function PreviewPanel({
                     )}
 
                     {/* Device Toggle */}
-                    <div className="flex items-center p-1 rounded-xl bg-white/40 border border-white/20 shadow-sm">
+                    <div className="flex items-center p-1 rounded-xl bg-[#d6cfc9]/20 border border-[#b69161]/20 shadow-sm">
                         <button
                             onClick={() => setDeviceMode('desktop')}
                             className={cn(
                                 'p-1.5 rounded-lg transition-all',
                                 deviceMode === 'desktop' && viewMode === 'preview'
-                                    ? 'bg-white text-purple-600 shadow-sm'
-                                    : 'text-gray-500 hover:text-gray-900'
+                                    ? 'bg-[#b69161] text-white shadow-sm'
+                                    : 'text-[#b69161]/60 hover:text-[#b69161]'
                             )}
                             title="Desktop"
                             disabled={viewMode === 'code'}
@@ -649,8 +726,8 @@ export function PreviewPanel({
                             className={cn(
                                 'p-1.5 rounded-lg transition-all',
                                 deviceMode === 'mobile' && viewMode === 'preview'
-                                    ? 'bg-white text-purple-600 shadow-sm'
-                                    : 'text-gray-500 hover:text-gray-900'
+                                    ? 'bg-[#b69161] text-white shadow-sm'
+                                    : 'text-[#b69161]/60 hover:text-[#b69161]'
                             )}
                             title="Mobile"
                             disabled={viewMode === 'code'}
@@ -659,12 +736,12 @@ export function PreviewPanel({
                         </button>
                     </div>
 
-                    <div className="flex items-center gap-1 bg-white/40 border border-white/20 rounded-xl p-1 shadow-sm">
+                    <div className="flex items-center gap-1 bg-[#d6cfc9]/20 border border-[#b69161]/20 rounded-xl p-1 shadow-sm">
                         {/* Fix Error Button */}
                         {onFixError && buildError && (
                             <button
                                 onClick={() => onFixError(`Please fix the following build error:\n\n${buildError}`)}
-                                className="p-1.5 rounded-lg transition-all flex items-center gap-1 text-red-600 hover:text-red-700 hover:bg-red-50 bg-red-50/50"
+                                className="p-1.5 rounded-lg transition-all flex items-center gap-1 text-red-400 hover:text-red-300 hover:bg-red-500/20 bg-red-500/10"
                                 title="Fix Build Error"
                             >
                                 <AlertCircle className="w-4 h-4 animate-pulse" />
@@ -674,7 +751,7 @@ export function PreviewPanel({
 
                         <button
                             onClick={handleManualRefresh}
-                            className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-white transition-all"
+                            className="p-1.5 rounded-lg text-[#b69161]/60 hover:text-[#b69161] hover:bg-[#d6cfc9]/30 transition-all"
                             title="Refresh"
                             disabled={loadState === 'loading'}
                         >
@@ -687,8 +764,8 @@ export function PreviewPanel({
                             className={cn(
                                 "p-1.5 rounded-lg transition-all",
                                 showTerminal
-                                    ? "text-purple-600 bg-purple-100 hover:bg-purple-200"
-                                    : "text-gray-600 hover:text-gray-900 hover:bg-white"
+                                    ? "text-white bg-[#b69161] hover:bg-[#c9a474]"
+                                    : "text-[#b69161]/60 hover:text-[#b69161] hover:bg-[#d6cfc9]/30"
                             )}
                             title={showTerminal ? "Hide Terminal" : "Show Terminal"}
                         >
@@ -703,34 +780,51 @@ export function PreviewPanel({
                     <button
                         onClick={() => setDrawerType(drawerType === 'supabase' ? null : 'supabase')}
                         className={cn(
-                            "p-2 rounded-lg bg-white/40 border border-white/20 hover:bg-white/60 transition-all shadow-sm flex items-center justify-center",
-                            drawerType === 'supabase' && "bg-emerald-100 border-emerald-200 ring-1 ring-emerald-200"
+                            "p-2 rounded-lg bg-[#d6cfc9]/20 border border-[#b69161]/20 hover:bg-[#b69161]/10 transition-all shadow-sm flex items-center justify-center relative",
+                            drawerType === 'supabase' && "bg-emerald-500/20 border-emerald-400/40 ring-1 ring-emerald-400/30",
+                            supabaseConnection.isConnected && "border-emerald-400/40"
                         )}
-                        title="Supabase"
+                        title={supabaseConnection.isConnected ? "Supabase (Connected)" : "Connect Supabase"}
                     >
                         <Image src="/supabase-logo.png" alt="Supabase" width={18} height={18} className="object-contain" />
+                        {supabaseConnection.isConnected && (
+                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-black" />
+                        )}
                     </button>
+
+                    {/* Open Preview in New Tab */}
+                    {previewUrl && (
+                        <button
+                            onClick={() => window.open(getFullPreviewUrl(), '_blank')}
+                            className="p-2 rounded-lg bg-[#d6cfc9]/20 border border-[#b69161]/20 hover:bg-[#b69161]/10 transition-all shadow-sm flex items-center justify-center"
+                            title="Open in New Tab"
+                        >
+                            <ExternalLink className="w-4 h-4 text-[#b69161]" />
+                        </button>
+                    )}
 
                     {/* GitHub icon - opens drawer (Sync to GitHub or repo actions) */}
                     <button
                         onClick={() => setDrawerType(drawerType === 'github' ? null : 'github')}
                         className={cn(
-                            "p-2 rounded-lg bg-white/40 border border-white/20 hover:bg-white/60 transition-all shadow-sm flex items-center justify-center",
-                            drawerType === 'github' && "bg-gray-100 border-gray-200 ring-1 ring-gray-200"
+                            "p-2 rounded-lg bg-[#d6cfc9]/20 border border-[#b69161]/20 hover:bg-[#b69161]/10 transition-all shadow-sm flex items-center justify-center",
+                            drawerType === 'github' && "bg-[#b69161]/20 border-[#b69161]/40 ring-1 ring-[#b69161]/30"
                         )}
                         title={repoUrl ? "GitHub Repository" : "Sync to GitHub"}
                     >
-                        <Github className="w-4 h-4 text-gray-700" />
+                        <Github className="w-4 h-4 text-[#b69161]" />
                     </button>
 
                     {/* Expandable drawer - slides in from right of icons */}
                     {drawerType && (
                         <div
                             className={cn(
-                                "absolute right-0 top-full mt-2 flex flex-col overflow-hidden rounded-xl border bg-white/95 shadow-2xl backdrop-blur-xl z-[10000] border-white/20",
-                                drawerType === 'supabase' ? "w-64" : "w-56"
+                                "absolute right-0 top-full mt-2 flex flex-col overflow-hidden rounded-xl border border-[#b69161]/20 shadow-2xl backdrop-blur-xl z-[10000]",
+                                drawerType === 'supabase' ? "w-72" : "w-56"
                             )}
                             style={{
+                                background: 'linear-gradient(135deg, rgba(242, 239, 237, 0.97) 0%, rgba(246, 244, 242, 0.97) 50%, rgba(242, 239, 237, 0.97) 100%)',
+                                boxShadow: '0 20px 60px rgba(44, 36, 24, 0.12), 0 8px 32px rgba(44, 36, 24, 0.08)',
                                 animation: 'previewDrawerIn 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards',
                                 transformOrigin: 'top right',
                             }}
@@ -749,86 +843,27 @@ export function PreviewPanel({
                             `}</style>
 
                             {drawerType === 'supabase' && (
-                                <>
-                                    <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
-                                        <Image src="/supabase-logo.png" alt="" width={20} height={20} className="object-contain shrink-0" />
-                                        <span className="font-semibold text-gray-900">Supabase</span>
-                                    </div>
-                                    <div className="p-3 space-y-1">
-                                        <a
-                                            href="https://supabase.com/dashboard"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
-                                            onClick={() => setDrawerType(null)}
-                                        >
-                                            Dashboard
-                                        </a>
-                                        <a
-                                            href="https://supabase.com/docs"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
-                                            onClick={() => setDrawerType(null)}
-                                        >
-                                            Documentation
-                                        </a>
-                                        <p className="px-3 py-2 text-xs text-gray-500">
-                                            Connect your project to Supabase for auth, database, and storage.
-                                        </p>
-                                    </div>
-                                </>
+                                <SupabaseDrawer
+                                    connection={supabaseConnection}
+                                    onStartOAuth={supabaseConnection.startOAuth}
+                                    onConnectProject={supabaseConnection.connectProject}
+                                    onDisconnect={supabaseConnection.disconnect}
+                                    onRefreshSchema={supabaseConnection.refreshSchema}
+                                    onClose={() => setDrawerType(null)}
+                                />
                             )}
 
                             {drawerType === 'github' && (
-                                <>
-                                    <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
-                                        <Github className="w-5 h-5 text-gray-700" />
-                                        <span className="font-semibold text-gray-900">GitHub</span>
-                                    </div>
-                                    <div className="p-2">
-                                        {repoUrl ? (
-                                            <>
-                                                <a
-                                                    href={repoUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors group"
-                                                    onClick={() => setDrawerType(null)}
-                                                >
-                                                    <Github className="w-4 h-4 text-gray-600 group-hover:text-gray-900" />
-                                                    <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
-                                                        View Repository
-                                                    </span>
-                                                </a>
-                                                <button
-                                                    onClick={() => { handleDownloadZip(); setDrawerType(null); }}
-                                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors group"
-                                                >
-                                                    <Download className="w-4 h-4 text-gray-600 group-hover:text-gray-900" />
-                                                    <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
-                                                        Download ZIP
-                                                    </span>
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <button
-                                                onClick={() => { handleSyncToGithub(); setDrawerType(null); }}
-                                                disabled={isSyncing}
-                                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors group disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                {isSyncing ? (
-                                                    <Loader2 className="w-4 h-4 animate-spin text-gray-600" />
-                                                ) : (
-                                                    <Github className="w-4 h-4 text-gray-600 group-hover:text-gray-900" />
-                                                )}
-                                                <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
-                                                    {isSyncing ? 'Syncing...' : 'Sync to GitHub'}
-                                                </span>
-                                            </button>
-                                        )}
-                                    </div>
-                                </>
+                                <GitHubSyncDropdown
+                                    projectId={projectId}
+                                    repoUrl={repoUrl}
+                                    onSyncComplete={(url) => {
+                                        router.refresh();
+                                        window.location.reload();
+                                    }}
+                                    onClose={() => setDrawerType(null)}
+                                    onDownloadZip={handleDownloadZip}
+                                />
                             )}
                         </div>
                     )}
@@ -839,11 +874,11 @@ export function PreviewPanel({
                             variant="primary"
                             size="sm"
                             onClick={onDeploy}
-                            disabled={!hasChanges || isDeploying}
+                            disabled={isDeploying}
                             leftIcon={isDeploying ? <Loader2 className="w-4 h-4 animate-spin" /> : undefined}
                             className={cn(
                                 "shadow-lg active:scale-95 transition-all text-white border-0",
-                                isDeploying ? "bg-purple-400" : "bg-purple-500 hover:bg-purple-600 shadow-purple-500/20"
+                                isDeploying ? "bg-[#b69161]" : "bg-[#b69161] hover:bg-[#c9a474] shadow-[#b69161]/20"
                             )}
                         >
                             {isDeploying ? 'Deploying...' : 'Deploy'}
@@ -853,7 +888,7 @@ export function PreviewPanel({
             </div>
 
             {/* Preview Content */}
-            <div className="flex-1 flex items-center justify-center overflow-hidden relative">
+            <div className="flex-1 flex items-center justify-center overflow-hidden relative rounded-2xl mx-6 mb-6">
                 {/* Code View */}
                 {viewMode === 'code' ? (
                     <CodeView
@@ -867,72 +902,34 @@ export function PreviewPanel({
                     /* Preview View */
                     <div
                         ref={iframeContainerRef}
-                        className={cn(
-                            'overflow-hidden transition-all duration-500 ease-out w-full h-full',
-                            (isLoading || loadState === 'loading' || loadState === 'error')
-                                ? 'bg-transparent'
-                                : ''
-                        )}
+                        className="overflow-hidden w-full h-full bg-white rounded-2xl"
                     >
-                        {/* Loading overlay - Show while waiting for AI OR while server is starting up */}
+                        {/* Phase Loader - show during any loading state */}
                         {(isLoading || (previewUrl && (!isServerReady || loadState === 'loading'))) && (
-                            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-transparent">
-                                <div ref={logoRef} className="mb-6">
-                                    <Image
-                                        src="/automatelogo.png"
-                                        alt="AutoMate"
-                                        width={80}
-                                        height={80}
-                                        className="drop-shadow-2xl object-contain"
-                                    />
-                                </div>
-                                <p className="text-gray-900 text-sm font-medium drop-shadow-sm">
-                                    {!previewUrl ? 'Waiting for AI...' : (!isServerReady ? 'Building your site...' : 'Loading preview...')}
-                                </p>
-                                {!previewUrl && (
-                                    <p className="text-gray-600 text-xs mt-2 drop-shadow-sm">
-                                        AI is creating your content
-                                    </p>
-                                )}
-                                {previewUrl && !isServerReady && (
-                                    <p className="text-gray-600 text-xs mt-2 drop-shadow-sm">
-                                        Starting preview server...
-                                    </p>
-                                )}
-                                {previewUrl && isServerReady && retryCount > 0 && (
-                                    <p className="text-gray-700 text-xs mt-2 drop-shadow-sm">
-                                        Retry {retryCount}/{MAX_RETRIES}
-                                    </p>
-                                )}
-                                {/* Progress bar - only show when building */}
-                                {previewUrl && !isServerReady && (
-                                    <div className="mt-4 w-48 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full animate-pulse"
-                                            style={{
-                                                width: `${Math.min((serverCheckCount / 15) * 100, 95)}%`,
-                                                transition: 'width 0.5s ease-out'
-                                            }}
-                                        />
-                                    </div>
-                                )}
-                            </div>
+                            <PhaseLoader
+                                logoRef={logoRef}
+                                wcStatus={wcStatus}
+                                previewUrl={previewUrl}
+                                isServerReady={isServerReady}
+                                retryCount={retryCount}
+                                serverCheckCount={serverCheckCount}
+                            />
                         )}
 
                         {/* Error state - Only show on error */}
                         {loadState === 'error' && previewUrl && (
-                            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/95 backdrop-blur-sm">
-                                <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
-                                <p className="text-gray-900 font-semibold mb-2">Preview Server Not Ready</p>
-                                <p className="text-gray-600 text-sm mb-2 text-center px-8 max-w-md">
+                            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#2c2418]/80 backdrop-blur-sm rounded-2xl">
+                                <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
+                                <p className="text-[#b69161] font-semibold mb-2">Preview Server Not Ready</p>
+                                <p className="text-[#b69161]/60 text-sm mb-2 text-center px-8 max-w-md">
                                     The preview server is still starting up or stopped.
                                 </p>
-                                <p className="text-gray-500 text-xs mb-6 text-center px-8 max-w-md">
+                                <p className="text-[#b69161]/40 text-xs mb-6 text-center px-8 max-w-md">
                                     Send a message to the AI to trigger changes, or manually refresh after a few seconds.
                                 </p>
                                 <button
                                     onClick={handleManualRefresh}
-                                    className="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 shadow-md"
+                                    className="px-5 py-2.5 bg-[#b69161] text-white rounded-lg hover:bg-[#c9a474] transition-colors flex items-center gap-2 shadow-md"
                                 >
                                     <RefreshCw className="w-4 h-4" />
                                     Retry Preview
@@ -941,47 +938,38 @@ export function PreviewPanel({
                         )}
 
                         {previewUrl ? (
-                            <div className={cn(
-                                "relative w-full h-full flex items-center justify-center",
-                                (!isServerReady || loadState === 'loading' || loadState === 'error') && "invisible"
-                            )}>
+                            <div
+                                className="relative w-full h-full flex items-center justify-center transition-opacity duration-500 ease-out"
+                                style={{
+                                    opacity: (isServerReady && loadState !== 'loading' && loadState !== 'error') ? 1 : 0,
+                                    pointerEvents: (isServerReady && loadState !== 'loading' && loadState !== 'error') ? 'auto' : 'none',
+                                }}
+                            >
                                 {/* Desktop View */}
                                 <div
-                                    className="absolute inset-0 flex items-center justify-center p-4"
+                                    className="absolute inset-0 rounded-2xl"
                                     style={{
                                         opacity: deviceMode === 'desktop' ? 1 : 0,
-                                        transform: deviceMode === 'desktop' ? 'scale(1)' : 'scale(0.98)',
                                         pointerEvents: deviceMode === 'desktop' ? 'auto' : 'none',
                                         overflow: 'hidden',
-                                        transition: 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                        willChange: 'opacity, transform',
+                                        transition: 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                                     }}
                                 >
-                                    <div
+                                    <iframe
+                                        ref={deviceMode === 'desktop' ? iframeRef : undefined}
+                                        key={`desktop-${iframeKey}`}
+                                        src={getFullPreviewUrl()}
                                         style={{
                                             width: '100%',
                                             height: '100%',
-                                            borderRadius: '16px',
-                                            overflow: 'hidden',
-                                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.15)',
+                                            border: 'none',
+                                            borderRadius: '1rem',
+                                            background: 'white',
                                         }}
-                                    >
-                                        <iframe
-                                            ref={deviceMode === 'desktop' ? iframeRef : undefined}
-                                            key={`desktop-${iframeKey}`}
-                                            src={getFullPreviewUrl()}
-                                            style={{
-                                                width: '111.11%',
-                                                height: '111.11%',
-                                                transform: 'scale(0.9)',
-                                                transformOrigin: 'top left',
-                                                border: 'none',
-                                            }}
-                                            title="Preview Desktop"
-                                            onLoad={deviceMode === 'desktop' ? handleIframeLoad : undefined}
-                                            onError={deviceMode === 'desktop' ? handleIframeError : undefined}
-                                        />
-                                    </div>
+                                        title="Preview Desktop"
+                                        onLoad={deviceMode === 'desktop' ? handleIframeLoad : undefined}
+                                        onError={deviceMode === 'desktop' ? handleIframeError : undefined}
+                                    />
                                 </div>
 
                                 {/* Mobile View */}
@@ -1003,6 +991,7 @@ export function PreviewPanel({
                                             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)',
                                             overflow: 'hidden',
                                             position: 'relative',
+                                            background: 'white',
                                         }}
                                     >
                                         <iframe
@@ -1016,6 +1005,7 @@ export function PreviewPanel({
                                                 transformOrigin: 'top left',
                                                 border: 'none',
                                                 borderRadius: '40px',
+                                                background: 'white',
                                             }}
                                             title="Preview Mobile"
                                             onLoad={deviceMode === 'mobile' ? handleIframeLoad : undefined}
@@ -1025,11 +1015,16 @@ export function PreviewPanel({
                                 </div>
                             </div>
                         ) : !isLoading ? (
-                            /* Only show empty state when NOT loading - otherwise the loading overlay handles it */
-                            <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                                <Monitor className="w-16 h-16 mb-4 opacity-20" />
-                                <p className="text-sm font-medium text-gray-700">Preview not available</p>
-                                <p className="text-xs mt-1 text-gray-500">Send a message to start preview</p>
+                            /* Empty state - only when genuinely no project loading */
+                            <div className="flex flex-col items-center justify-center h-full text-[#b69161]/40">
+                                <Image
+                                    src="/automatelogo.png"
+                                    alt="Automate"
+                                    width={48}
+                                    height={48}
+                                    className="object-contain opacity-20 mb-4"
+                                />
+                                <p className="text-sm font-medium text-[#b69161]/60">Send a message to start building</p>
                             </div>
                         ) : null}
                     </div>
@@ -1038,7 +1033,7 @@ export function PreviewPanel({
 
             {/* Terminal Drawer - Fixed at bottom of preview */}
             {showTerminal && (
-                <div className="absolute bottom-0 left-0 right-0 h-72 z-[100] border-t border-gray-200 bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.1)] animate-in slide-in-from-bottom duration-300">
+                <div className="absolute bottom-0 left-0 right-0 h-72 z-[100] border-t border-[#b69161]/20 bg-[#f2efed] shadow-[0_-4px_20px_rgba(0,0,0,0.4)] animate-in slide-in-from-bottom duration-300 rounded-b-2xl">
                     <Terminal
                         onTerminalReady={async (term: any) => {
                             try {

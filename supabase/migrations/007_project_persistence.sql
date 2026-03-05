@@ -23,6 +23,7 @@ DROP POLICY IF EXISTS "Service role full access - project_files" ON public.proje
 CREATE POLICY "Service role full access - project_files" ON public.project_files FOR ALL USING (auth.role() = 'service_role');
 
 -- 5. Updated_at trigger
+DROP TRIGGER IF EXISTS update_project_files_updated_at ON public.project_files;
 CREATE TRIGGER update_project_files_updated_at
   BEFORE UPDATE ON public.project_files
   FOR EACH ROW

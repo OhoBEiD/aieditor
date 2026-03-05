@@ -5,7 +5,7 @@ import { WebContainer } from '@webcontainer/api';
 import { supabase } from '@/lib/supabase/client';
 
 interface WebContainerState {
-    status: 'idle' | 'booting' | 'installing' | 'running' | 'error';
+    status: 'idle' | 'booting' | 'mounting' | 'installing' | 'starting' | 'running' | 'error';
     previewUrl: string | null;
     error: string | null;
 }
@@ -232,14 +232,14 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
     const boot = useCallback(async () => {
         // If we already have an instance, just return it
         if (webcontainerInstance) {
-            setState(s => ({ ...s, status: 'running' }));
+            setState(s => s.status === 'running' ? s : { ...s, status: 'running' });
             return webcontainerInstance;
         }
 
         // If boot is in progress, wait for it
         if (bootPromise) {
             const instance = await bootPromise;
-            setState(s => ({ ...s, status: 'running' }));
+            setState(s => s.status === 'running' ? s : { ...s, status: 'running' });
             return instance;
         }
 
@@ -589,25 +589,58 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
         return { success: errors.length === 0, applied, errors };
     }, [boot, mapToProjectPath]);
 
-    // Install dependencies
-    const installDependencies = useCallback(async () => {
+    // Install dependencies with retry
+    const installDependencies = useCallback(async (maxRetries = 2) => {
         setState(s => ({ ...s, status: 'installing' }));
 
-        const installProcess = await runCommand('npm', ['install']);
-        const exitCode = await installProcess.exit;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`📦 Installing dependencies (attempt ${attempt + 1}/${maxRetries + 1})...`);
+                const wc = await boot();
+                const output: string[] = [];
 
-        if (exitCode !== 0) {
-            throw new Error('npm install failed');
+                const installProcess = await wc.spawn('npm', ['install', '--prefer-offline']);
+
+                // Capture output for debugging
+                await installProcess.output.pipeTo(new WritableStream({
+                    write(data) {
+                        const cleaned = data.replace(/\x1b\[[0-9;]*[a-zA-Z]|\[[\d;]*[GKH]/g, '').trim();
+                        if (cleaned) {
+                            output.push(cleaned);
+                            console.log('[npm install]', cleaned);
+                        }
+                    }
+                }));
+
+                const exitCode = await installProcess.exit;
+
+                if (exitCode === 0) {
+                    console.log('📦 Dependencies installed successfully');
+                    return;
+                }
+
+                const errorOutput = output.slice(-10).join('\n');
+                console.warn(`⚠️ npm install attempt ${attempt + 1} failed (exit ${exitCode}):`, errorOutput);
+
+                if (attempt < maxRetries) {
+                    console.log('🔄 Retrying npm install...');
+                    await new Promise(r => setTimeout(r, 2000));
+                } else {
+                    throw new Error(`npm install failed after ${maxRetries + 1} attempts: ${errorOutput.slice(0, 200)}`);
+                }
+            } catch (err: any) {
+                if (attempt === maxRetries) throw err;
+                console.warn(`⚠️ npm install error on attempt ${attempt + 1}:`, err.message);
+                await new Promise(r => setTimeout(r, 2000));
+            }
         }
-
-        console.log('📦 Dependencies installed');
-    }, [runCommand]);
+    }, [boot]);
 
     // Start dev server
     const startDevServer = useCallback(async () => {
         const wc = await boot();
 
-        setState(s => ({ ...s, status: 'running' }));
+        setState(s => ({ ...s, status: 'starting' }));
 
         // Start Next.js dev server
         serverProcess.current = await runCommand('npm', ['run', 'dev']);
@@ -619,6 +652,27 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
             onReady?.(url);
         });
     }, [boot, runCommand, onReady]);
+
+    // Install a single npm package
+    const installPackage = useCallback(async (packageName: string) => {
+        console.log(`📦 Installing package: ${packageName}`);
+        const process = await runCommand('npm', ['install', packageName]);
+        const exitCode = await process.exit;
+        if (exitCode !== 0) {
+            throw new Error(`Failed to install ${packageName}`);
+        }
+        console.log(`✅ Installed ${packageName}`);
+    }, [runCommand]);
+
+    // Restart the dev server (kill existing, re-spawn)
+    const restartDevServer = useCallback(async () => {
+        console.log('🔄 Restarting dev server...');
+        if (serverProcess.current) {
+            serverProcess.current.kill();
+            serverProcess.current = null;
+        }
+        await startDevServer();
+    }, [startDevServer]);
 
     // Initialize from GitHub repo - fetch ALL files for complete project
     const initFromGitHub = useCallback(async (repoUrl: string, token?: string, branch: string = 'main') => {
@@ -632,6 +686,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
             if (!repoUrl) {
                 console.log('📂 No GitHub repo linked (Local Project). Using starter template.');
 
+                setState(s => ({ ...s, status: 'mounting' }));
                 // Import and mount starter template
                 const { STARTER_TEMPLATE } = await import('@/lib/webcontainer/starterTemplate');
                 await mountFiles(STARTER_TEMPLATE);
@@ -647,6 +702,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                 setState(s => ({ ...s, status: 'installing' }));
                 console.log('📦 Installing dependencies...');
                 await installDependencies();
+                setState(s => ({ ...s, status: 'starting' }));
                 console.log('🚀 Starting dev server...');
                 await startDevServer();
                 console.log('✅ Started local project');
@@ -657,9 +713,28 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
             const repo = repoUrl.match(/github\.com\/[^/]+\/([^/]+)/)?.[1]?.replace('.git', '');
 
             if (!owner || !repo) {
-                // Determine if this is a "local" project that just has a bad URL, or actual error
-                // For now, assume error if URL is provided but invalid
-                throw new Error('Invalid GitHub URL');
+                // Non-GitHub URL or invalid URL — fall back to local project mode
+                console.warn('⚠️ Not a valid GitHub URL, falling back to starter template:', repoUrl);
+
+                setState(s => ({ ...s, status: 'mounting' }));
+                const { STARTER_TEMPLATE } = await import('@/lib/webcontainer/starterTemplate');
+                await mountFiles(STARTER_TEMPLATE);
+
+                await detectProjectLayout(wc);
+
+                if (projectIdRef.current && wc) {
+                    console.log('🔄 Restoring persisted files on top of starter template...');
+                    await restoreFilesFromSupabase(wc);
+                }
+
+                setState(s => ({ ...s, status: 'installing' }));
+                console.log('📦 Installing dependencies...');
+                await installDependencies();
+                setState(s => ({ ...s, status: 'starting' }));
+                console.log('🚀 Starting dev server...');
+                await startDevServer();
+                console.log('✅ Started local project (fallback from invalid URL)');
+                return;
             }
 
             const headers: Record<string, string> = {
@@ -680,6 +755,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                 // Check if it's a 404 - repo might be empty (no commits yet)
                 if (treeRes.status === 404) {
                     console.log('📂 Repo is empty (no commits yet), using starter template');
+                    setState(s => ({ ...s, status: 'mounting' }));
                     // Import and mount starter template instead
                     const { STARTER_TEMPLATE } = await import('@/lib/webcontainer/starterTemplate');
                     await mountFiles(STARTER_TEMPLATE);
@@ -695,6 +771,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                     setState(s => ({ ...s, status: 'installing' }));
                     console.log('📦 Installing dependencies...');
                     await installDependencies();
+                    setState(s => ({ ...s, status: 'starting' }));
                     console.log('🚀 Starting dev server...');
                     await startDevServer();
                     console.log('✅ Started with starter template (repo was empty)');
@@ -750,6 +827,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                 }));
             }
 
+            setState(s => ({ ...s, status: 'mounting' }));
             console.log('📁 Mounting files to WebContainer...');
             await mountFiles(files);
 
@@ -766,6 +844,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
             console.log('📦 Installing dependencies...');
             await installDependencies();
 
+            setState(s => ({ ...s, status: 'starting' }));
             console.log('🚀 Starting dev server...');
             await startDevServer();
 
@@ -852,7 +931,10 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
     }, []);
 
     // Apply batch file operations
-    const applyFileOperations = useCallback(async (operations: any[]) => {
+    const applyFileOperations = useCallback(async (
+        operations: any[],
+        versionInfo?: { clientId: string; sessionId: string; messageId: string }
+    ) => {
         const wc = await boot();
         let appliedCount = 0;
         const effectiveProjectId = projectIdRef.current;
@@ -861,9 +943,24 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
 
         for (const op of operations) {
             try {
+                // Capture previous content for code version tracking
+                let previousContent: string | null = null;
+                if (versionInfo && (op.type === 'write' || op.type === 'modify')) {
+                    try {
+                        previousContent = await readFile(op.path);
+                    } catch {
+                        previousContent = null; // File doesn't exist yet
+                    }
+                }
+
+                let newContent: string | null = null;
+                let action: 'create' | 'modify' | 'delete' = 'modify';
+
                 if (op.type === 'write') {
                     await writeFile(op.path, op.content);
                     console.log(`✏️ Wrote file: ${op.path}`);
+                    newContent = op.content;
+                    action = previousContent ? 'modify' : 'create';
                     appliedCount++;
                 } else if (op.type === 'modify') {
                     // Read, replace, write
@@ -871,25 +968,29 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                         let content = await readFile(op.path);
                         if (op.oldText && op.newText && content.includes(op.oldText)) {
                             content = content.replace(op.oldText, op.newText);
-                            await writeFile(op.path, content); // This will trigger saveFileToSupabase
+                            await writeFile(op.path, content);
                             console.log(`🔄 Modified file: ${op.path}`);
+                            newContent = content;
+                            action = 'modify';
                             appliedCount++;
                         } else if (op.oldText && !content.includes(op.oldText)) {
                             console.warn(`⚠️ Could not find text to replace in ${op.path}`);
-                            // Try to write anyway if it's a new file
                             if (!content || content.trim().length === 0) {
                                 await writeFile(op.path, op.newText);
                                 console.log(`✏️ Created new file: ${op.path}`);
+                                newContent = op.newText;
+                                action = 'create';
                                 appliedCount++;
                             }
                         }
                     } catch (e) {
                         console.error(`❌ Failed to modify file ${op.path}`, e);
-                        // If file doesn't exist, create it
                         if (op.newText) {
                             try {
                                 await writeFile(op.path, op.newText);
                                 console.log(`✏️ Created file (fallback): ${op.path}`);
+                                newContent = op.newText;
+                                action = 'create';
                                 appliedCount++;
                             } catch (writeErr) {
                                 console.error(`❌ Failed to create file ${op.path}`, writeErr);
@@ -898,11 +999,19 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                     }
                 } else if (op.type === 'delete') {
                     try {
+                        // Capture content before delete for version tracking
+                        if (versionInfo) {
+                            try {
+                                previousContent = await readFile(op.path);
+                            } catch {
+                                previousContent = null;
+                            }
+                        }
                         const mappedPath = mapToProjectPath(op.path);
                         if (!mappedPath) continue;
                         await wc.fs.rm(mappedPath, { recursive: true, force: true });
                         console.log(`🗑️ Deleted file: ${op.path}`);
-                        // Delete from Supabase
+                        action = 'delete';
                         if (effectiveProjectId) {
                             deleteFileFromSupabase(effectiveProjectId, mappedPath);
                         }
@@ -911,14 +1020,33 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                         console.warn(`⚠️ Failed to delete file ${op.path}`, rmErr);
                     }
                 }
+
+                // Save code version for tracking
+                if (versionInfo && appliedCount > 0 && (newContent !== null || action === 'delete')) {
+                    try {
+                        await supabase.from('code_versions').insert({
+                            client_id: versionInfo.clientId,
+                            session_id: versionInfo.sessionId,
+                            message_id: versionInfo.messageId,
+                            file_path: op.path,
+                            action,
+                            previous_content: previousContent,
+                            new_content: newContent,
+                            change_description: `${action} ${op.path}`,
+                            is_applied: true,
+                            is_reverted: false,
+                        });
+                    } catch (verErr) {
+                        console.error('Failed to save code version:', verErr);
+                    }
+                }
             } catch (e) {
                 console.error(`❌ Failed to apply operation ${op.type} on ${op.path}`, e);
             }
         }
 
         console.log(`✅ Applied ${appliedCount}/${operations.length} file operations successfully`);
-        
-        // Return success status for caller to know when to refresh
+
         return { success: appliedCount > 0, applied: appliedCount, total: operations.length };
     }, [boot, writeFile, readFile, mapToProjectPath]);
 
@@ -937,7 +1065,9 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
         runBuild, // Build validation
         spawn,
         installDependencies,
+        installPackage,
         startDevServer,
+        restartDevServer,
         initFromGitHub,
         terminalOutput: terminalOutput.current,
     };

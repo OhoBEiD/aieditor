@@ -199,10 +199,10 @@ export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false,
     if (loading) return (
         <div className="w-full max-w-5xl mx-auto mt-12 px-4 pb-12">
             <div className="animate-pulse space-y-4">
-                <div className="h-8 bg-gray-200 rounded w-1/4"></div>
+                <div className="h-8 bg-[#c9a474]/30 rounded w-1/4"></div>
                 <div className="space-y-2">
                     {[...Array(5)].map((_, i) => (
-                        <div key={i} className="h-16 bg-gray-100 rounded-xl w-full"></div>
+                        <div key={i} className="h-16 bg-[#d6cfc9]/20 rounded-xl w-full"></div>
                     ))}
                 </div>
             </div>
@@ -216,12 +216,11 @@ export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false,
             {/* Section Header */}
             {!showPagination && (
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-semibold text-gray-800">Recent Projects</h2>
-                    {/* View All button removed as requested for table view on homepage? User said "just display 5 on homepage", usually implies View All goes to projects page. Keeping View All link if there are more. */}
+                    <h2 className="text-xl font-semibold text-[#b69161]">Recent Projects</h2>
                     <div className="flex items-center gap-3">
                         <Link
                             href="/projects"
-                            className="px-4 py-1.5 text-sm font-medium text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-full transition-all"
+                            className="px-4 py-1.5 text-sm font-medium text-[#b69161] hover:text-[#c9a474] hover:bg-[#b69161]/10 rounded-full transition-all"
                         >
                             View All
                         </Link>
@@ -235,15 +234,21 @@ export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false,
                     className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
                     style={{ animation: 'fadeIn 0.2s ease-out' }}
                 >
-                    <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 pointer-events-auto">
-                        <h3 className="text-xl font-bold text-gray-900 mb-2">Delete Project?</h3>
-                        <p className="text-gray-500 mb-6">
-                            This will permanently delete <span className="font-semibold text-gray-800">{projects.find(p => p.id === deleteConfirmId)?.name}</span> and its GitHub repository.
+                    <div
+                        className="relative w-full max-w-md rounded-2xl p-6 pointer-events-auto backdrop-blur-xl border border-[#b69161]/40"
+                        style={{
+                            background: 'linear-gradient(135deg, rgba(182, 145, 97, 0.15) 0%, rgba(201, 164, 116, 0.1) 50%, rgba(182, 145, 97, 0.15) 100%)',
+                            boxShadow: '0 20px 60px rgba(44, 36, 24, 0.1), 0 8px 32px rgba(44, 36, 24, 0.08)',
+                        }}
+                    >
+                        <h3 className="text-xl font-bold text-[#2c2418] mb-2">Delete Project?</h3>
+                        <p className="text-[#2c2418]/70 mb-6">
+                            This will permanently delete <span className="font-semibold text-[#2c2418]">{projects.find(p => p.id === deleteConfirmId)?.name}</span> and its GitHub repository.
                         </p>
                         <div className="flex justify-end gap-3">
                             <button
                                 onClick={() => setDeleteConfirmId(null)}
-                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                className="px-4 py-2 text-[#2c2418]/70 hover:bg-[#d6cfc9]/40 rounded-lg transition-colors"
                             >
                                 Cancel
                             </button>
@@ -260,27 +265,33 @@ export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false,
             )}
 
             {/* Table Layout */}
-            <div className="bg-white/80 backdrop-blur-xl border border-white/60 rounded-3xl shadow-sm overflow-hidden">
+            <div
+                className="backdrop-blur-xl border border-[#b69161]/40 rounded-3xl overflow-hidden"
+                style={{
+                    background: 'linear-gradient(135deg, rgba(182, 145, 97, 0.1) 0%, rgba(201, 164, 116, 0.08) 50%, rgba(182, 145, 97, 0.1) 100%)',
+                    boxShadow: '0 20px 60px rgba(44, 36, 24, 0.06), 0 8px 32px rgba(44, 36, 24, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.5)',
+                }}
+            >
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="border-b border-gray-100">
-                                <th className="py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/2">Project Name</th>
-                                <th className="py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Updated</th>
-                                <th className="py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                            <tr className="border-b border-black/10">
+                                <th className="py-4 px-6 text-xs font-semibold text-[#2c2418]/60 uppercase tracking-wider w-1/2">Project Name</th>
+                                <th className="py-4 px-6 text-xs font-semibold text-[#2c2418]/60 uppercase tracking-wider">Last Updated</th>
+                                <th className="py-4 px-6 text-xs font-semibold text-[#2c2418]/60 uppercase tracking-wider text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {projects.map((project) => (
                                 <tr
                                     key={project.id}
-                                    className="group hover:bg-blue-50/30 transition-colors border-b border-gray-50 last:border-none cursor-pointer"
+                                    className="group hover:bg-[#d6cfc9]/30 transition-colors border-b border-black/5 last:border-none cursor-pointer"
                                     onClick={() => !editingId && !menuOpenId && handleOpen(project)}
                                 >
                                     <td className="py-4 px-6">
                                         <div className="flex items-center gap-3">
-                                            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100/50">
-                                                <Box className="w-5 h-5 text-blue-600" />
+                                            <div className="p-2 rounded-lg bg-[#b69161]/20 border border-[#b69161]/30">
+                                                <Box className="w-5 h-5 text-[#2c2418]" />
                                             </div>
                                             {editingId === project.id ? (
                                                 <div className="flex items-center gap-2 flex-1" onClick={(e) => e.stopPropagation()}>
@@ -288,7 +299,7 @@ export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false,
                                                         type="text"
                                                         value={editName}
                                                         onChange={(e) => setEditName(e.target.value)}
-                                                        className="flex-1 text-sm font-bold text-gray-800 bg-white border border-gray-200 rounded px-2 py-1 outline-none focus:border-blue-400"
+                                                        className="flex-1 text-sm font-bold text-[#2c2418] bg-[#d6cfc9]/40 border border-[#b69161]/40 rounded px-2 py-1 outline-none focus:border-[#b69161]"
                                                         autoFocus
                                                         onKeyDown={(e) => {
                                                             if (e.key === 'Enter') handleRename(project.id);
@@ -298,22 +309,22 @@ export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false,
                                                             }
                                                         }}
                                                     />
-                                                    <button onClick={() => handleRename(project.id)} className="p-1 text-green-600 hover:bg-green-50 rounded"><Check className="w-4 h-4" /></button>
-                                                    <button onClick={() => { setEditingId(null); setEditName(''); }} className="p-1 text-gray-500 hover:bg-gray-100 rounded"><X className="w-4 h-4" /></button>
+                                                    <button onClick={() => handleRename(project.id)} className="p-1 text-green-700 hover:bg-[#d6cfc9]/40 rounded"><Check className="w-4 h-4" /></button>
+                                                    <button onClick={() => { setEditingId(null); setEditName(''); }} className="p-1 text-[#2c2418]/60 hover:bg-[#d6cfc9]/40 rounded"><X className="w-4 h-4" /></button>
                                                 </div>
                                             ) : (
-                                                <span className="font-semibold text-gray-800 group-hover:text-blue-700 transition-colors">{project.name}</span>
+                                                <span className="font-semibold text-[#2c2418] group-hover:text-[#2c2418] transition-colors">{project.name}</span>
                                             )}
                                         </div>
                                     </td>
                                     <td className="py-4 px-6">
-                                        <span className="text-sm text-gray-500">{getTimeAgo(project.updated_at)}</span>
+                                        <span className="text-sm text-[#2c2418]/60">{getTimeAgo(project.updated_at)}</span>
                                     </td>
                                     <td className="py-4 px-6 text-right">
                                         <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                                             <button
                                                 onClick={() => handleOpen(project)}
-                                                className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                                                className="px-3 py-1.5 text-xs font-medium text-[#2c2418] bg-[#d6cfc9]/30 hover:bg-[#d6cfc9]/40 rounded-full transition-colors opacity-0 group-hover:opacity-100"
                                             >
                                                 Open
                                             </button>
@@ -324,12 +335,18 @@ export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false,
                                                         e.stopPropagation();
                                                         setMenuOpenId(menuOpenId === project.id ? null : project.id);
                                                     }}
-                                                    className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                                                    className="p-1.5 rounded-lg hover:bg-[#d6cfc9]/40 text-[#2c2418]/50 hover:text-[#2c2418] transition-colors"
                                                 >
                                                     <MoreVertical className="w-4 h-4" />
                                                 </button>
                                                 {menuOpenId === project.id && (
-                                                    <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-100 rounded-xl shadow-xl z-50 overflow-hidden">
+                                                    <div
+                                                        className="absolute right-0 top-full mt-1 w-36 border border-[#b69161]/40 rounded-xl shadow-xl z-50 overflow-hidden backdrop-blur-xl"
+                                                        style={{
+                                                            background: 'linear-gradient(135deg, rgba(242, 239, 237, 0.97) 0%, rgba(246, 244, 242, 0.95) 100%)',
+                                                            boxShadow: '0 8px 32px rgba(44, 36, 24, 0.1)',
+                                                        }}
+                                                    >
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -337,7 +354,7 @@ export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false,
                                                                 setEditName(project.name);
                                                                 setMenuOpenId(null);
                                                             }}
-                                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
+                                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[#2c2418] hover:bg-[#d6cfc9]/40 text-left"
                                                         >
                                                             <Pencil className="w-3.5 h-3.5" />
                                                             Rename
@@ -348,7 +365,7 @@ export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false,
                                                                 setDeleteConfirmId(project.id);
                                                                 setMenuOpenId(null);
                                                             }}
-                                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
+                                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-700 hover:bg-red-500/20 text-left"
                                                         >
                                                             <Trash2 className="w-3.5 h-3.5" />
                                                             Delete
@@ -366,22 +383,22 @@ export function RecentProjectsTable({ onOpen, limit = 5, showPagination = false,
 
                 {/* Pagination Controls */}
                 {showPagination && totalProjects > limit && (
-                    <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+                    <div className="px-6 py-4 border-t border-black/10 flex items-center justify-between">
                         <button
                             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                             disabled={currentPage === 1}
-                            className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-[#2c2418]/70 hover:text-[#2c2418] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                             <ArrowLeft className="w-4 h-4" />
                             Previous
                         </button>
-                        <span className="text-sm text-gray-500">
+                        <span className="text-sm text-[#2c2418]/60">
                             Page {currentPage} of {Math.ceil(totalProjects / limit)}
                         </span>
                         <button
                             onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalProjects / limit), p + 1))}
                             disabled={currentPage === Math.ceil(totalProjects / limit)}
-                            className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-[#2c2418]/70 hover:text-[#2c2418] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                             Next
                             <ArrowRight className="w-4 h-4" />

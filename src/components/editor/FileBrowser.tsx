@@ -104,7 +104,7 @@ function FileTreeNode({
             case 'md':
                 return <FileText className="w-4 h-4 text-[#455061]" />;
             default:
-                return <File className="w-4 h-4 text-gray-500" />;
+                return <File className="w-4 h-4 text-[#a89d8e]" />;
         }
     };
 
@@ -124,17 +124,17 @@ function FileTreeNode({
                     'w-full flex items-center gap-1.5 px-2 py-[3px] rounded-sm text-left group border border-transparent',
                     'text-[13px] transition-colors duration-75 font-mono',
                     isSelected
-                        ? 'bg-[#1f2428] text-white border-[#30363d]'
-                        : 'text-gray-400 hover:bg-[#161b22] hover:text-gray-200'
+                        ? 'bg-[#d6cfc9]/40 text-[#2c2418] border-[#b69161]/30'
+                        : 'text-[#7a6f60] hover:bg-[#d6cfc9]/30 hover:text-[#2c2418]'
                 )}
                 style={{ paddingLeft: `${12 + level * 12}px` }}
             >
                 {isFolder ? (
                     <div className="flex items-center gap-1.5 opacity-80 group-hover:opacity-100">
                         {isOpen ? (
-                            <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+                            <ChevronDown className="w-3.5 h-3.5 text-[#a89d8e]" />
                         ) : (
-                            <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+                            <ChevronRight className="w-3.5 h-3.5 text-[#a89d8e]" />
                         )}
                         {isOpen ? (
                             <FolderOpen className="w-4 h-4 text-[#7ee787]" />

@@ -251,6 +251,11 @@ const FOLDER_ICON_MAP: Record<string, string> = {
     'sounds': 'folder-audio',
 };
 
+// Public helper to get a file icon URL by filename
+export function getFileIconUrl(filename: string): string {
+    return getIconUrl(filename, false, false);
+}
+
 // Map extensions/names to icon filenames
 function getIconUrl(filename: string, isDirectory: boolean, isOpen: boolean): string {
     if (isDirectory) {
@@ -535,7 +540,7 @@ function FileIcon({ url, alt, className }: { url: string; alt: string; className
 
     if (hasError) {
         // Fallback to lucide icon
-        return <File className={cn("w-4 h-4 text-gray-500", className)} />;
+        return <File className={cn("w-4 h-4 text-[#b69161]/60", className)} />;
     }
 
     return (
@@ -554,8 +559,8 @@ function FolderIcon({ url, alt, isOpen, className }: { url: string; alt: string;
     if (hasError) {
         // Fallback to lucide folder icon
         return isOpen
-            ? <FolderOpen className={cn("w-4 h-4 text-amber-500", className)} />
-            : <Folder className={cn("w-4 h-4 text-amber-500", className)} />;
+            ? <FolderOpen className={cn("w-4 h-4 text-[#b69161]", className)} />
+            : <Folder className={cn("w-4 h-4 text-[#b69161]", className)} />;
     }
 
     return (
@@ -588,19 +593,19 @@ function TreeNode({ node, depth, selectedFile, onFileSelect, expandedPaths, onTo
         <div>
             <div
                 className={cn(
-                    "group flex items-center gap-1.5 py-1 cursor-pointer transition-all font-medium text-[13px] relative w-max min-w-full hover:bg-black/5 rounded-r-lg pr-4",
+                    "group flex items-center gap-1.5 py-1 cursor-pointer transition-all font-medium text-[13px] relative w-max min-w-full hover:bg-[#d6cfc9]/30 rounded-r-lg pr-4",
                 )}
                 style={{ paddingLeft: `${depth * 16 + 12}px` }}
                 onClick={handleClick}
             >
                 {/* Selection Background Pill */}
                 {isSelected && (
-                    <div className="absolute inset-y-0 left-0 right-0 bg-blue-100/50 rounded-r-lg -z-10 border-l-2 border-blue-500" />
+                    <div className="absolute inset-y-0 left-0 right-0 bg-[#b69161]/10 rounded-r-lg -z-10 border-l-2 border-[#b69161]" />
                 )}
 
                 {isDirectory ? (
                     <div className="flex items-center gap-1.5">
-                        <span className="text-gray-400 group-hover:text-gray-600 transition-colors w-3.5 flex justify-center">
+                        <span className="text-[#b69161]/40 group-hover:text-[#b69161]/70 transition-colors w-3.5 flex justify-center">
                             {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                         </span>
                         <FolderIcon
@@ -609,7 +614,7 @@ function TreeNode({ node, depth, selectedFile, onFileSelect, expandedPaths, onTo
                             isOpen={isExpanded}
                             className="opacity-90"
                         />
-                        <span className={cn("truncate", isSelected ? "text-blue-700 font-semibold" : "text-gray-700")}>
+                        <span className={cn("truncate", isSelected ? "text-[#b69161] font-semibold" : "text-[#b69161]/70")}>
                             {node.name}
                         </span>
                     </div>
@@ -620,7 +625,7 @@ function TreeNode({ node, depth, selectedFile, onFileSelect, expandedPaths, onTo
                             alt="file"
                             className="opacity-90"
                         />
-                        <span className={cn("truncate", isSelected ? "text-blue-700 font-semibold" : "text-gray-700")}>
+                        <span className={cn("truncate", isSelected ? "text-[#b69161] font-semibold" : "text-[#b69161]/70")}>
                             {node.name}
                         </span>
                     </div>

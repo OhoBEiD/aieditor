@@ -5,8 +5,8 @@ import { createClient } from '@supabase/supabase-js';
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';
 
 // Supabase client for polling thinking_steps
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://jjrbnjubjiswvxeradzw.supabase.co';
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function POST(request: NextRequest) {

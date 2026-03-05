@@ -19,9 +19,9 @@ const oxanium = Oxanium({
 });
 
 export const metadata: Metadata = {
-  title: "AutoMate | AI-Powered Code Editor",
+  title: "Automate | AI-Powered Code Editor",
   description: "Build extraordinary apps by chatting with AI",
-  keywords: ["AI", "code editor", "frontend", "website builder", "AutoMate"],
+  keywords: ["AI", "code editor", "frontend", "website builder", "Automate"],
 };
 
 export default function RootLayout({
@@ -30,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} ${oxanium.variable} antialiased bg-[var(--bg-primary)] text-[var(--text-primary)]`}
       >

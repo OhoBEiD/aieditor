@@ -16,6 +16,11 @@ import { LandingPage } from '@/components/landing/LandingPage';
 import { gsap } from 'gsap';
 import Image from 'next/image';
 import { useWebContainer } from '@/hooks/useWebContainer';
+import { useSupabaseConnection } from '@/hooks/useSupabaseConnection';
+import { getSupabaseClientTemplate, getSupabaseEnvTemplate } from '@/lib/webcontainer/supabaseTemplate';
+import VantaFogBackground from '@/components/common/VantaFogBackground';
+import { useAIChat } from '@/hooks/useAIChat';
+import { useContextUsage } from '@/hooks/useContextUsage';
 
 // Configuration - Can be overridden by active project
 const DEFAULT_CLIENT_ID = '00000000-0000-0000-0000-000000000001';
@@ -58,109 +63,14 @@ function LoadingScreen() {
 
     return (
         <div className="h-screen w-full relative overflow-hidden flex items-center justify-center">
-            {/* Animated SVG Background */}
-            <svg
-                className="absolute inset-0 w-full h-full"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 1920 1080"
-                preserveAspectRatio="xMidYMid slice"
-            >
-                <defs>
-                    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
-                        <feGaussianBlur in="SourceGraphic" stdDeviation="80" />
-                    </filter>
-
-                    <radialGradient id="blob1" cx="50%" cy="50%">
-                        <stop offset="0%" stopColor="#6366f1" stopOpacity="0.9">
-                            <animate attributeName="stop-color" values="#6366f1;#8b5cf6;#ec4899;#6366f1" dur="8s" repeatCount="indefinite" />
-                        </stop>
-                        <stop offset="100%" stopColor="#6366f1" stopOpacity="0">
-                            <animate attributeName="stop-color" values="#6366f1;#8b5cf6;#ec4899;#6366f1" dur="8s" repeatCount="indefinite" />
-                        </stop>
-                    </radialGradient>
-
-                    <radialGradient id="blob2" cx="50%" cy="50%">
-                        <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.9">
-                            <animate attributeName="stop-color" values="#8b5cf6;#ec4899;#f59e0b;#8b5cf6" dur="10s" repeatCount="indefinite" />
-                        </stop>
-                        <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0">
-                            <animate attributeName="stop-color" values="#8b5cf6;#ec4899;#f59e0b;#8b5cf6" dur="10s" repeatCount="indefinite" />
-                        </stop>
-                    </radialGradient>
-
-                    <radialGradient id="blob3" cx="50%" cy="50%">
-                        <stop offset="0%" stopColor="#ec4899" stopOpacity="0.9">
-                            <animate attributeName="stop-color" values="#ec4899;#f59e0b;#10b981;#ec4899" dur="12s" repeatCount="indefinite" />
-                        </stop>
-                        <stop offset="100%" stopColor="#ec4899" stopOpacity="0">
-                            <animate attributeName="stop-color" values="#ec4899;#f59e0b;#10b981;#ec4899" dur="12s" repeatCount="indefinite" />
-                        </stop>
-                    </radialGradient>
-
-                    <radialGradient id="blob4" cx="50%" cy="50%">
-                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.9">
-                            <animate attributeName="stop-color" values="#f59e0b;#10b981;#06b6d4;#f59e0b" dur="9s" repeatCount="indefinite" />
-                        </stop>
-                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0">
-                            <animate attributeName="stop-color" values="#f59e0b;#10b981;#06b6d4;#f59e0b" dur="9s" repeatCount="indefinite" />
-                        </stop>
-                    </radialGradient>
-
-                    <radialGradient id="blob5" cx="50%" cy="50%">
-                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.9">
-                            <animate attributeName="stop-color" values="#10b981;#06b6d4;#6366f1;#10b981" dur="11s" repeatCount="indefinite" />
-                        </stop>
-                        <stop offset="100%" stopColor="#10b981" stopOpacity="0">
-                            <animate attributeName="stop-color" values="#10b981;#06b6d4;#6366f1;#10b981" dur="11s" repeatCount="indefinite" />
-                        </stop>
-                    </radialGradient>
-                </defs>
-
-                <rect width="100%" height="100%" fill="#ffffff" />
-
-                <g filter="url(#blur)">
-                    <ellipse cx="20%" cy="35%" rx="450" ry="380" fill="url(#blob1)">
-                        <animate attributeName="cx" values="20%;35%;15%;20%" dur="15s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="35%;50%;30%;35%" dur="12s" repeatCount="indefinite" />
-                        <animate attributeName="rx" values="450;480;450" dur="10s" repeatCount="indefinite" />
-                        <animate attributeName="ry" values="380;410;380" dur="11s" repeatCount="indefinite" />
-                    </ellipse>
-
-                    <ellipse cx="75%" cy="45%" rx="420" ry="350" fill="url(#blob2)">
-                        <animate attributeName="cx" values="75%;65%;80%;75%" dur="18s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="45%;60%;40%;45%" dur="14s" repeatCount="indefinite" />
-                        <animate attributeName="rx" values="420;450;420" dur="12s" repeatCount="indefinite" />
-                        <animate attributeName="ry" values="350;380;350" dur="13s" repeatCount="indefinite" />
-                    </ellipse>
-
-                    <ellipse cx="50%" cy="65%" rx="480" ry="400" fill="url(#blob3)">
-                        <animate attributeName="cx" values="50%;55%;45%;50%" dur="16s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="65%;55%;70%;65%" dur="11s" repeatCount="indefinite" />
-                        <animate attributeName="rx" values="480;510;480" dur="14s" repeatCount="indefinite" />
-                        <animate attributeName="ry" values="400;430;400" dur="15s" repeatCount="indefinite" />
-                    </ellipse>
-
-                    <ellipse cx="30%" cy="70%" rx="400" ry="330" fill="url(#blob4)">
-                        <animate attributeName="cx" values="30%;40%;25%;30%" dur="17s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="70%;60%;75%;70%" dur="13s" repeatCount="indefinite" />
-                        <animate attributeName="rx" values="400;430;400" dur="11s" repeatCount="indefinite" />
-                        <animate attributeName="ry" values="330;360;330" dur="12s" repeatCount="indefinite" />
-                    </ellipse>
-
-                    <ellipse cx="80%" cy="25%" rx="380" ry="320" fill="url(#blob5)">
-                        <animate attributeName="cx" values="80%;70%;85%;80%" dur="14s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="25%;35%;20%;25%" dur="16s" repeatCount="indefinite" />
-                        <animate attributeName="rx" values="380;410;380" dur="13s" repeatCount="indefinite" />
-                        <animate attributeName="ry" values="320;350;320" dur="14s" repeatCount="indefinite" />
-                    </ellipse>
-                </g>
-            </svg>
+            {/* Animated Vanta Fog Background */}
+            <VantaFogBackground />
 
             {/* Animated Logo */}
             <div ref={logoRef} className="relative z-10">
                 <Image
                     src="/automatelogo.png"
-                    alt="AutoMate"
+                    alt="Automate"
                     width={120}
                     height={120}
                     className="drop-shadow-2xl object-contain"
@@ -224,6 +134,9 @@ export default function Home() {
     const [agentThinking, setAgentThinking] = useState<string[]>([]); // Real thinking from n8n
     const [isStreaming, setIsStreaming] = useState(false);
 
+    // Per-message thinking steps map — persists steps after AI finishes
+    const [messageStepsMap, setMessageStepsMap] = useState<Record<string, ThinkingStep[]>>({});
+
     // Merge SSE and Supabase thinking steps
     // If we have SSE steps, use them; otherwise fall back to Supabase steps
     // After completion, keep showing steps from Supabase (they persist)
@@ -261,6 +174,9 @@ export default function Home() {
     // Default to 'mastra' (Automate Editor) instead of Claude Code
     const [executorMode, setExecutorMode] = useState<ExecutorMode>('mastra');
 
+    // Cached file context for context usage indicator
+    const [cachedFileContext, setCachedFileContext] = useState<Record<string, string>>({});
+
     // External file selection (from chat panel clicking on file names in thinking steps)
     const [selectedFileFromChat, setSelectedFileFromChat] = useState<string | null>(null);
 
@@ -279,6 +195,11 @@ export default function Home() {
         getFileContext,
         applyFileOperations,
         runBuild,
+        writeFile: wcWriteFile,
+        readFile: wcReadFile,
+        deleteFile: wcDeleteFile,
+        installPackage,
+        restartDevServer,
     } = useWebContainer({
         projectId: activeProjectId,
         onReady: (url) => {
@@ -295,6 +216,114 @@ export default function Home() {
             setPreviewUrl(wcPreviewUrl);
         }
     }, [wcPreviewUrl, wcStatus]);
+
+    // Stable ref for getFileContext to avoid infinite re-render loops
+    const getFileContextRef = useRef(getFileContext);
+    getFileContextRef.current = getFileContext;
+
+    // Refresh cached file context when WebContainer is running
+    useEffect(() => {
+        if (wcStatus !== 'running') return;
+        const refresh = async () => {
+            try {
+                const ctx = await getFileContextRef.current();
+                setCachedFileContext(ctx);
+            } catch { /* ignore */ }
+        };
+        refresh();
+        const interval = setInterval(refresh, 30_000);
+        return () => clearInterval(interval);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [wcStatus]);
+
+    // Context usage tracking for the indicator bar
+    const contextUsage = useContextUsage({
+        messages: messages.map(m => ({ role: m.role, content: m.content })),
+        fileContext: cachedFileContext,
+    });
+
+    // Supabase connection for user's project
+    const supabaseConn = useSupabaseConnection(activeProject?.id);
+
+    // When Supabase connection becomes active, inject client files into WebContainer
+    const supabaseInjectedRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!supabaseConn.isConnected || !supabaseConn.projectUrl || !supabaseConn.anonKey) return;
+        if (wcStatus !== 'running') return;
+        // Don't re-inject for same project URL
+        if (supabaseInjectedRef.current === supabaseConn.projectUrl) return;
+
+        const injectSupabase = async () => {
+            try {
+                console.log('[Supabase] Injecting client files into WebContainer...');
+
+                // Write .env.local with user's Supabase credentials
+                await wcWriteFile('.env.local', getSupabaseEnvTemplate(supabaseConn.projectUrl!, supabaseConn.anonKey!));
+
+                // Write supabase client helper
+                await wcWriteFile('src/lib/supabase.ts', getSupabaseClientTemplate());
+
+                // Install @supabase/supabase-js
+                await installPackage('@supabase/supabase-js');
+
+                // Restart dev server to pick up new .env.local
+                await restartDevServer();
+
+                supabaseInjectedRef.current = supabaseConn.projectUrl;
+                console.log('[Supabase] Client files injected successfully');
+            } catch (err) {
+                console.error('[Supabase] Failed to inject client files:', err);
+            }
+        };
+
+        injectSupabase();
+    }, [supabaseConn.isConnected, supabaseConn.projectUrl, supabaseConn.anonKey, wcStatus, wcWriteFile, installPackage, restartDevServer]);
+
+    // AI Chat hook (Vercel AI SDK) - handles streaming for mastra mode
+    const aiChat = useAIChat({
+        sessionId: activeSessionId,
+        siteId: activeProject?.siteKey || DEFAULT_CLIENT_ID,
+        projectId: activeProjectId,
+        getFileContext,
+        applyFileOperations,
+        onRequestIdChange: (id) => setCurrentRequestId(id),
+        onBeforeFinish: async (_requestId) => {
+            // Query thinking steps directly from Supabase (realtime subscription may lag)
+            try {
+                const { data: steps } = await supabase
+                    .from('thinking_steps')
+                    .select('*')
+                    .eq('request_id', _requestId)
+                    .order('step_number', { ascending: true });
+                if (steps && steps.length > 0) {
+                    const mapped: ThinkingStep[] = steps.map((s: any) => ({
+                        id: s.id,
+                        tool_name: s.tool_name,
+                        toolName: s.tool_name,
+                        status: s.status,
+                        message: s.message,
+                        details: s.details,
+                        created_at: s.created_at,
+                    }));
+                    const lastAiMsg = [...messages].reverse().find(m => m.role === 'assistant');
+                    const msgId = lastAiMsg?.id || _requestId;
+                    setMessageStepsMap(prev => ({ ...prev, [msgId]: mapped }));
+                }
+            } catch (err) {
+                console.error('[onBeforeFinish] Failed to query thinking steps:', err);
+            }
+        },
+        onStreamingChange: (streaming) => setIsStreaming(streaming),
+        onFileOpsApplied: (count) => {
+            console.log(`[AI SDK] ${count} file ops applied`);
+            setPreviewRefreshKey(prev => prev + 1);
+        },
+        supabaseContext: supabaseConn.isConnected ? {
+            projectUrl: supabaseConn.projectUrl!,
+            schema: supabaseConn.schema,
+            hasServiceRoleKey: supabaseConn.hasServiceRoleKey,
+        } : null,
+    });
 
     // No inactivity timeout - preview stays running until page closes or preview mode is off
 
@@ -444,13 +473,12 @@ export default function Home() {
         }
     };
 
-    // Exit preview and stop orchestrator
+    // Exit preview - hide panel but keep WebContainer running for instant re-open
     const handleExitPreview = useCallback(async () => {
         setShowPreview(false);
-        setPreviewUrl(undefined);
-        // Clear preview URL from localStorage when exiting
-        localStorage.removeItem('previewUrl');
-        console.log('[Preview] Preview closed');
+        // Don't clear previewUrl or kill WebContainer - keep server running
+        // so reopening the same project is instant
+        console.log('[Preview] Preview hidden (WebContainer still running)');
     }, []);
 
     // No longer need to stop external preview server - WebContainers run in browser
@@ -505,9 +533,13 @@ export default function Home() {
             return;
         }
 
-        // Skip if we've already initialized for this project AND have a preview URL
-        if (wcInitializedForProjectRef.current === activeProject.id && previewUrl) {
+        // Skip if we've already initialized for this project AND WebContainer is running
+        if (wcInitializedForProjectRef.current === activeProject.id && (previewUrl || wcStatus === 'running')) {
             console.log('[Preview] Already initialized for project:', activeProject.id);
+            // Restore preview URL from WebContainer state if we lost it
+            if (!previewUrl && wcPreviewUrl) {
+                setPreviewUrl(wcPreviewUrl);
+            }
             return;
         }
 
@@ -580,13 +612,10 @@ export default function Home() {
         if (savedPanelOpen !== null) {
             setIsPanelOpen(savedPanelOpen === 'true');
         }
-        // Restore preview URL from localStorage (only WebContainer URLs)
-        const savedPreviewUrl = localStorage.getItem('previewUrl');
-        if (savedPreviewUrl && !savedPreviewUrl.includes('.preview.automatelb.com')) {
-            // Only restore WebContainer URLs, not old fly.io URLs
-            setPreviewUrl(savedPreviewUrl);
-        }
-        // Note: No fly.io fallback - WebContainer will generate its own URL when it boots
+        // Don't restore previewUrl from localStorage - WebContainer URLs are ephemeral
+        // and won't work after page refresh (WebContainer needs to re-boot).
+        // The WebContainer will provide a fresh URL via onReady callback when it boots.
+        localStorage.removeItem('previewUrl');
 
 
 
@@ -640,10 +669,8 @@ export default function Home() {
             localStorage.setItem('showPreview', String(showPreview));
             localStorage.setItem('isPanelOpen', String(isPanelOpen));
 
-            // Save preview URL when it changes
-            if (previewUrl) {
-                localStorage.setItem('previewUrl', previewUrl);
-            }
+            // Don't save previewUrl to localStorage - it's ephemeral (WebContainer URL)
+            // and won't work after page refresh. WebContainer will provide a fresh URL on boot.
 
             // Save active project (or clear if null/undefined? No, only save truthy to persist)
             if (activeProject) {
@@ -690,6 +717,41 @@ export default function Home() {
                 }
             });
             setRequestContexts(contexts);
+
+            // Load thinking steps for each assistant message
+            const assistantMsgs = (data || []).filter(
+                (m: Message) => m.role === 'assistant' && m.metadata?.requestId
+            );
+            if (assistantMsgs.length > 0) {
+                const stepsMap: Record<string, ThinkingStep[]> = {};
+                await Promise.all(
+                    assistantMsgs.map(async (msg: Message) => {
+                        try {
+                            const { data: steps } = await supabase
+                                .from('thinking_steps')
+                                .select('*')
+                                .eq('request_id', msg.metadata!.requestId as string)
+                                .order('step_number', { ascending: true });
+                            if (steps && steps.length > 0) {
+                                stepsMap[msg.id] = steps.map((s: any) => ({
+                                    id: s.id,
+                                    tool_name: s.tool_name,
+                                    toolName: s.tool_name,
+                                    status: s.status,
+                                    message: s.message,
+                                    details: s.details,
+                                    created_at: s.created_at,
+                                }));
+                            }
+                        } catch {
+                            // Skip failed step loads
+                        }
+                    })
+                );
+                if (Object.keys(stepsMap).length > 0) {
+                    setMessageStepsMap(stepsMap);
+                }
+            }
         } catch (err) {
             console.error('Failed to load messages:', err);
         } finally {
@@ -766,7 +828,10 @@ export default function Home() {
 
     // Handle stop button - abort the current request and stop execution
     const handleStop = useCallback(async () => {
-        // 1. Abort the fetch request (client-side)
+        // 1. Stop AI SDK stream (for mastra mode)
+        aiChat.stopGeneration();
+
+        // 2. Abort the fetch request (client-side, for legacy mode)
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
@@ -819,6 +884,14 @@ export default function Home() {
 
     const handleSendMessage = useCallback(async (content: string, image?: File, projectOverride?: Project) => {
         if (!content.trim() && !image) return;
+
+        // Auto-boot preview in parallel with AI generation
+        const targetProjectForBoot = projectOverride || activeProject;
+        if (!showPreview && targetProjectForBoot) {
+            console.log('[Preview] Auto-booting preview on first message');
+            setShowPreview(true);
+            localStorage.setItem('showPreview', 'true');
+        }
 
         // Auto-stop previous request if running
         if (abortControllerRef.current) {
@@ -977,23 +1050,22 @@ export default function Home() {
                 let response;
 
                 if (executorMode === 'mastra') {
-                    // Call Mastra API
-                    response = await fetch('/api/mastra', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: content.trim(),
-                            files: fileContents,
-                            conversationHistory: messages.map(m => ({
-                                role: m.role === 'user' ? 'user' : 'assistant',
-                                content: m.content
-                            })),
-                            mode: 'mastra',
-                            maxSteps: 20,
-                            requestId,
-                            siteId: targetSiteId
-                        }),
-                    });
+                    // Use AI SDK streaming via useAIChat hook
+                    // The hook handles: streaming, file_op processing, WebContainer apply,
+                    // and Supabase message persistence (via onFinish callback)
+                    await aiChat.sendMessage(content.trim(), image || undefined);
+
+                    // The hook's onFinish callback persists the assistant message to Supabase
+                    // and calls onStreamingChange(false) + onFileOpsApplied
+
+                    setIsStreaming(false);
+                    if (refreshThinkingSteps) {
+                        refreshThinkingSteps(requestId).catch(console.error);
+                    }
+
+                    // Skip the legacy fetch path below
+                    setIsSending(false);
+                    return;
                 } else {
                     // Call Standard Chat API (Claude Code or Hybrid Auto)
                     // Hybrid mode uses the same API but with internal intent-based routing
@@ -1007,7 +1079,7 @@ export default function Home() {
                             message: content.trim(),
                             image: imageData,
                             requestId,
-                            executorMode: executorMode === 'hybrid' ? 'hybrid' : executorMode,
+                            executorMode,
                             fileContents // Pass full file context
                         }),
                     });
@@ -1017,12 +1089,13 @@ export default function Home() {
                     throw new Error(`API error: ${response.status}`);
                 }
 
+                // --- Parse JSON response (Chat API) ---
                 const result = await response.json();
 
-                console.log('N8N Response:', result);
+                console.log('AI Response:', { summary: result.summary || result.text, ops: result.fileOperations?.length || 0, streamed: result._streamApplied || 0 });
 
-                // Format and save AI response
-                const aiContent = result.summary || 'Changes processed.';
+                // Format and save AI response (handle both summary and text fields)
+                const aiContent = result.summary || result.text || 'Changes processed.';
 
                 const { data: aiMsg, error: aiError } = await supabase
                     .from('messages')
@@ -1031,7 +1104,7 @@ export default function Home() {
                         role: 'assistant',
                         content: aiContent,
                         metadata: {
-                            requestId: result.requestId,
+                            requestId: result.requestId || requestId,
                             status: result.status || 'pending',
                             previewUrl: result.previewUrl,
                             diff: result.diff,
@@ -1054,20 +1127,44 @@ export default function Home() {
                     messageId: aiMsg.id,
                 }));
 
+                // Query thinking steps directly from Supabase for this message
+                try {
+                    const { data: stepsData } = await supabase
+                        .from('thinking_steps')
+                        .select('*')
+                        .eq('request_id', requestId)
+                        .order('step_number', { ascending: true });
+                    if (stepsData && stepsData.length > 0) {
+                        const mapped: ThinkingStep[] = stepsData.map((s: any) => ({
+                            id: s.id,
+                            tool_name: s.tool_name,
+                            toolName: s.tool_name,
+                            status: s.status,
+                            message: s.message,
+                            details: s.details,
+                            created_at: s.created_at,
+                        }));
+                        setMessageStepsMap(prev => ({ ...prev, [aiMsg.id]: mapped }));
+                    }
+                } catch (err) {
+                    console.error('[SSE] Failed to query thinking steps:', err);
+                }
+
                 // Don't clear thinking steps immediately - keep them visible for review
-                // Only clear after a longer delay (30 seconds) or when user starts new request
                 setIsStreaming(false);
-                // Refresh thinking steps to ensure we have the complete list (recovers from Realtime drops)
                 if (refreshThinkingSteps) {
                     refreshThinkingSteps(requestId).catch(console.error);
                 }
-                // Keep requestId and steps visible so user can review what happened
-                // They'll be cleared when a new request starts
 
-                // Handle file operations via WebContainer if present
+                // Handle file operations via WebContainer (only for non-streamed responses)
+                // Streamed responses already applied ops in real-time above
                 if (result.fileOperations && Array.isArray(result.fileOperations) && result.fileOperations.length > 0) {
                     console.log('🔧 Applying ' + result.fileOperations.length + ' file operations...');
-                    const applyResult = await applyFileOperations(result.fileOperations);
+                    const applyResult = await applyFileOperations(result.fileOperations, {
+                        clientId: activeProjectId,
+                        sessionId: sessionId!,
+                        messageId: aiMsg.id,
+                    });
 
                     if (applyResult && applyResult.success && applyResult.applied > 0) {
                         console.log(`✅ Successfully applied ${applyResult.applied}/${applyResult.total} file operations`);
@@ -1075,8 +1172,6 @@ export default function Home() {
                         // Run build validation if requested by the AI
                         if (result.requiresBuildValidation) {
                             console.log('🔨 Running build validation...');
-
-                            // Add a thinking step for build validation
                             const buildStepId = 'build-validation-step';
                             setSseThinkingSteps(prev => [
                                 ...prev,
@@ -1094,7 +1189,6 @@ export default function Home() {
 
                             if (buildResult.success) {
                                 console.log('✅ Build validation passed!');
-                                // Update thinking step to complete
                                 setSseThinkingSteps(prev => prev.map(step =>
                                     step.id === buildStepId
                                         ? { ...step, status: 'complete' as const, message: 'Build succeeded! Project compiles correctly.' }
@@ -1102,19 +1196,11 @@ export default function Home() {
                                 ));
                             } else {
                                 console.log('❌ Build validation failed:', buildResult.errors);
-                                // Update thinking step to show error
                                 setSseThinkingSteps(prev => prev.map(step =>
                                     step.id === buildStepId
-                                        ? {
-                                            ...step,
-                                            status: 'error' as const,
-                                            message: 'Build failed with errors',
-                                            details: { content: buildResult.errors.join('\n') }
-                                        }
+                                        ? { ...step, status: 'error' as const, message: 'Build failed with errors', details: { content: buildResult.errors.join('\n') } }
                                         : step
                                 ));
-
-                                // Add error step with details
                                 setSseThinkingSteps(prev => [
                                     ...prev,
                                     {
@@ -1129,20 +1215,18 @@ export default function Home() {
                             }
                         }
 
-                        // Force preview refresh after AI file changes to show new content
-                        // Wait longer to ensure HMR has processed all file changes
+                        // Force preview refresh after batch file changes
                         console.log('🔄 Refreshing preview to show new content...');
                         setTimeout(() => {
                             setPreviewRefreshKey(prev => prev + 1);
                             console.log('🔄 Preview refresh triggered (refreshKey incremented)');
-                        }, 1500); // Increased delay to allow HMR to process all changes
+                        }, 500);
                     } else {
                         console.warn('⚠️ File operations may have failed. Applied:', applyResult?.applied || 0);
-                        // Still try to refresh preview in case some files were written
                         setTimeout(() => {
                             setPreviewRefreshKey(prev => prev + 1);
                             console.log('🔄 Preview refresh triggered (fallback)');
-                        }, 1500);
+                        }, 500);
                     }
                 }
 
@@ -1195,23 +1279,144 @@ export default function Home() {
     }, [activeSessionId, messages.length, refreshThinkingSteps]);
 
     const handleRevert = useCallback(async (messageId: string) => {
-        console.log('Revert not implemented for in-app agent.');
-    }, []);
+        if (!activeSessionId) return;
 
-    const handleDeploy = useCallback(async () => {
-        const pendingContext = Array.from(requestContexts.values())
-            .filter(ctx => ctx.status === 'preview_ready')
-            .pop();
+        try {
+            // Find the message being reverted (user message)
+            const targetMessage = messages.find(m => m.id === messageId);
+            if (!targetMessage) {
+                console.error('Message not found for revert:', messageId);
+                return;
+            }
 
-        if (pendingContext) {
+            // Get all code_versions for this session created at or after this message
+            const { data: versions, error: versionsError } = await supabase
+                .from('code_versions')
+                .select('*')
+                .eq('session_id', activeSessionId)
+                .gte('created_at', targetMessage.created_at)
+                .eq('is_reverted', false)
+                .order('created_at', { ascending: false });
+
+            if (versionsError) {
+                console.error('Failed to fetch code versions:', versionsError);
+                return;
+            }
+
+            // Restore files in reverse chronological order
+            if (versions && versions.length > 0) {
+                for (const version of versions) {
+                    try {
+                        if (version.action === 'create') {
+                            // File was created — delete it
+                            await wcDeleteFile(version.file_path);
+                        } else if (version.action === 'modify') {
+                            // File was modified — restore previous content
+                            if (version.previous_content !== null) {
+                                await wcWriteFile(version.file_path, version.previous_content);
+                            }
+                        } else if (version.action === 'delete') {
+                            // File was deleted — recreate with previous content
+                            if (version.previous_content !== null) {
+                                await wcWriteFile(version.file_path, version.previous_content);
+                            }
+                        }
+                    } catch (fileErr) {
+                        console.error(`Failed to revert file ${version.file_path}:`, fileErr);
+                    }
+                }
+
+                // Mark all versions as reverted
+                const versionIds = versions.map(v => v.id);
+                await supabase
+                    .from('code_versions')
+                    .update({ is_reverted: true, is_applied: false })
+                    .in('id', versionIds);
+            }
+
+            // Remove messages from this point onward (the user message and all subsequent)
+            const messageIndex = messages.findIndex(m => m.id === messageId);
+            const messagesToRemove = messages.slice(messageIndex);
+            const messageIdsToRemove = messagesToRemove.map(m => m.id);
+
+            // Delete from Supabase
+            if (messageIdsToRemove.length > 0) {
+                await supabase
+                    .from('messages')
+                    .delete()
+                    .in('id', messageIdsToRemove);
+            }
+
+            // Update local state
+            setMessages(prev => prev.slice(0, messageIndex));
+
+            // Clear request contexts for removed messages
             setRequestContexts(prev => {
                 const updated = new Map(prev);
-                updated.set(pendingContext.messageId, { ...pendingContext, status: 'applied' });
+                messageIdsToRemove.forEach(id => updated.delete(id));
                 return updated;
             });
-            console.log('Marked changes as applied locally.');
+
+            // Refresh preview
+            setPreviewRefreshKey(prev => prev + 1);
+
+            console.log(`Reverted ${versions?.length || 0} file changes and removed ${messageIdsToRemove.length} messages`);
+        } catch (err) {
+            console.error('Revert failed:', err);
         }
-    }, [requestContexts]);
+    }, [activeSessionId, messages, wcWriteFile, wcDeleteFile]);
+
+    const handleDeploy = useCallback(async () => {
+        setIsDeploying(true);
+        try {
+            // Gather all files from WebContainer
+            const files = await getFileContext();
+            if (!files || Object.keys(files).length === 0) {
+                console.error('No files to deploy');
+                return;
+            }
+
+            const response = await fetch('/api/deploy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    files,
+                    projectName: activeProject?.name || 'automate-deploy',
+                }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Deployment failed');
+            }
+
+            console.log('Deployed to Vercel:', data.url);
+
+            // Mark pending contexts as applied
+            const pendingContext = Array.from(requestContexts.values())
+                .filter(ctx => ctx.status === 'preview_ready')
+                .pop();
+
+            if (pendingContext) {
+                setRequestContexts(prev => {
+                    const updated = new Map(prev);
+                    updated.set(pendingContext.messageId, { ...pendingContext, status: 'applied' });
+                    return updated;
+                });
+            }
+
+            // Open the deployed URL
+            if (data.url) {
+                window.open(data.url, '_blank');
+            }
+        } catch (err) {
+            console.error('Deploy failed:', err);
+            alert(`Deploy failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        } finally {
+            setIsDeploying(false);
+        }
+    }, [getFileContext, activeProject, requestContexts]);
 
     // Create a new project from a message
     const createNewProject = useCallback(async (initialMessage: string) => {
@@ -1342,126 +1547,37 @@ export default function Home() {
 
     return (
         <div className="h-screen overflow-hidden relative">
-            {/* Global SVG Background */}
-            <svg
-                className="absolute inset-0 w-full h-full z-0"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 1920 1080"
-                preserveAspectRatio="xMidYMid slice"
-            >
-                <defs>
-                    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
-                        <feGaussianBlur in="SourceGraphic" stdDeviation="80" />
-                    </filter>
-
-                    <radialGradient id="blob1" cx="50%" cy="50%">
-                        <stop offset="0%" stopColor="#6366f1" stopOpacity="0.9">
-                            <animate attributeName="stop-color" values="#6366f1;#8b5cf6;#ec4899;#6366f1" dur="8s" repeatCount="indefinite" />
-                        </stop>
-                        <stop offset="100%" stopColor="#6366f1" stopOpacity="0">
-                            <animate attributeName="stop-color" values="#6366f1;#8b5cf6;#ec4899;#6366f1" dur="8s" repeatCount="indefinite" />
-                        </stop>
-                    </radialGradient>
-
-                    <radialGradient id="blob2" cx="50%" cy="50%">
-                        <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.9">
-                            <animate attributeName="stop-color" values="#8b5cf6;#ec4899;#f59e0b;#8b5cf6" dur="10s" repeatCount="indefinite" />
-                        </stop>
-                        <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0">
-                            <animate attributeName="stop-color" values="#8b5cf6;#ec4899;#f59e0b;#8b5cf6" dur="10s" repeatCount="indefinite" />
-                        </stop>
-                    </radialGradient>
-
-                    <radialGradient id="blob3" cx="50%" cy="50%">
-                        <stop offset="0%" stopColor="#ec4899" stopOpacity="0.9">
-                            <animate attributeName="stop-color" values="#ec4899;#f59e0b;#10b981;#ec4899" dur="12s" repeatCount="indefinite" />
-                        </stop>
-                        <stop offset="100%" stopColor="#ec4899" stopOpacity="0">
-                            <animate attributeName="stop-color" values="#ec4899;#f59e0b;#10b981;#ec4899" dur="12s" repeatCount="indefinite" />
-                        </stop>
-                    </radialGradient>
-
-                    <radialGradient id="blob4" cx="50%" cy="50%">
-                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.9">
-                            <animate attributeName="stop-color" values="#f59e0b;#10b981;#06b6d4;#f59e0b" dur="9s" repeatCount="indefinite" />
-                        </stop>
-                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0">
-                            <animate attributeName="stop-color" values="#f59e0b;#10b981;#06b6d4;#f59e0b" dur="9s" repeatCount="indefinite" />
-                        </stop>
-                    </radialGradient>
-
-                    <radialGradient id="blob5" cx="50%" cy="50%">
-                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.9">
-                            <animate attributeName="stop-color" values="#10b981;#06b6d4;#6366f1;#10b981" dur="11s" repeatCount="indefinite" />
-                        </stop>
-                        <stop offset="100%" stopColor="#10b981" stopOpacity="0">
-                            <animate attributeName="stop-color" values="#10b981;#06b6d4;#6366f1;#10b981" dur="11s" repeatCount="indefinite" />
-                        </stop>
-                    </radialGradient>
-                </defs>
-
-                <rect width="100%" height="100%" fill="#ffffff" />
-
-                <g filter="url(#blur)">
-                    <ellipse cx="20%" cy="35%" rx="450" ry="380" fill="url(#blob1)">
-                        <animate attributeName="cx" values="20%;35%;15%;20%" dur="15s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="35%;50%;30%;35%" dur="12s" repeatCount="indefinite" />
-                        <animate attributeName="rx" values="450;480;450" dur="10s" repeatCount="indefinite" />
-                        <animate attributeName="ry" values="380;410;380" dur="11s" repeatCount="indefinite" />
-                    </ellipse>
-
-                    <ellipse cx="75%" cy="45%" rx="420" ry="350" fill="url(#blob2)">
-                        <animate attributeName="cx" values="75%;65%;80%;75%" dur="18s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="45%;60%;40%;45%" dur="14s" repeatCount="indefinite" />
-                        <animate attributeName="rx" values="420;450;420" dur="12s" repeatCount="indefinite" />
-                        <animate attributeName="ry" values="350;380;350" dur="13s" repeatCount="indefinite" />
-                    </ellipse>
-
-                    <ellipse cx="50%" cy="65%" rx="480" ry="400" fill="url(#blob3)">
-                        <animate attributeName="cx" values="50%;55%;45%;50%" dur="16s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="65%;55%;70%;65%" dur="11s" repeatCount="indefinite" />
-                        <animate attributeName="rx" values="480;510;480" dur="14s" repeatCount="indefinite" />
-                        <animate attributeName="ry" values="400;430;400" dur="15s" repeatCount="indefinite" />
-                    </ellipse>
-
-                    <ellipse cx="30%" cy="70%" rx="400" ry="330" fill="url(#blob4)">
-                        <animate attributeName="cx" values="30%;40%;25%;30%" dur="17s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="70%;60%;75%;70%" dur="13s" repeatCount="indefinite" />
-                        <animate attributeName="rx" values="400;430;400" dur="11s" repeatCount="indefinite" />
-                        <animate attributeName="ry" values="330;360;330" dur="12s" repeatCount="indefinite" />
-                    </ellipse>
-
-                    <ellipse cx="80%" cy="25%" rx="380" ry="320" fill="url(#blob5)">
-                        <animate attributeName="cx" values="80%;70%;85%;80%" dur="14s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="25%;35%;20%;25%" dur="16s" repeatCount="indefinite" />
-                        <animate attributeName="rx" values="380;410;380" dur="13s" repeatCount="indefinite" />
-                        <animate attributeName="ry" values="320;350;320" dur="14s" repeatCount="indefinite" />
-                    </ellipse>
-                </g>
-            </svg>
+            {/* Global Vanta Fog Background */}
+            <VantaFogBackground />
 
             {showPreview ? (
                 <div className="flex h-full relative z-10 p-4 gap-4">
-                    {/* Side Panel - Floating Liquid Glass */}
-                    <div className={cn(
-                        'flex flex-col backdrop-blur-xl bg-white/30 border border-white/20 transition-all duration-300 ease-in-out rounded-3xl shadow-[0_8px_32px_0_rgba(31,38,135,0.37)]',
-                        isPanelOpen ? 'w-[360px] opacity-100' : 'w-0 opacity-0 overflow-hidden p-0 border-0'
-                    )}>
+                    {/* Side Panel - Warm Light Glass */}
+                    <div
+                        className={cn(
+                            'flex flex-col backdrop-blur-xl border border-[#b69161]/20 transition-all duration-300 ease-in-out rounded-3xl',
+                            isPanelOpen ? 'w-[360px] opacity-100' : 'w-0 opacity-0 overflow-hidden p-0 border-0'
+                        )}
+                        style={{
+                            background: 'linear-gradient(180deg, rgba(242, 239, 237, 0.92) 0%, rgba(236, 232, 228, 0.95) 50%, rgba(242, 239, 237, 0.93) 100%)',
+                            boxShadow: '0 20px 60px rgba(44, 36, 24, 0.12), 0 8px 32px rgba(44, 36, 24, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.5)',
+                        }}
+                    >
                         {/* Header */}
-                        <div className="flex-shrink-0 px-4 py-3 flex items-center justify-between border-b border-white/10">
+                        <div className="flex-shrink-0 px-4 py-3 flex items-center justify-between border-b border-[#b69161]/10">
                             {showSettings ? (
-                                <span className="text-sm font-medium text-gray-900/80">Settings</span>
+                                <span className="text-sm font-medium text-[#84745b]">Settings</span>
                             ) : (
                                 <div className="flex items-center gap-2">
                                     <Image
                                         src="/automatelogo.png"
-                                        alt="AutoMate"
+                                        alt="Automate"
                                         width={24}
                                         height={24}
-                                        className="object-contain opacity-90"
+                                        className="object-contain"
                                     />
-                                    <span className="text-sm font-bold text-gray-900/90 tracking-tight" style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}>
-                                        AutoMate
+                                    <span className="text-sm font-bold text-[#84745b] tracking-tight" style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}>
+                                        Automate
                                     </span>
                                 </div>
                             )}
@@ -1471,8 +1587,8 @@ export default function Home() {
                                     className={cn(
                                         'p-2 rounded-xl transition-all duration-200',
                                         showSettings
-                                            ? 'bg-blue-500/90 text-white shadow-md'
-                                            : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
+                                            ? 'bg-[#b69161] text-white shadow-md'
+                                            : 'text-[#84745b]/60 hover:text-[#84745b] hover:bg-[#b69161]/10'
                                     )}
                                     title={showSettings ? 'Back to Chat' : 'Settings'}
                                 >
@@ -1516,6 +1632,8 @@ export default function Home() {
                                         agentThinking={agentThinking}
                                         executorMode={executorMode}
                                         onModeChange={setExecutorMode}
+                                        contextUsage={contextUsage}
+                                        messageStepsMap={messageStepsMap}
                                     />
                                 </div>
                             </>
@@ -1532,11 +1650,12 @@ export default function Home() {
                             hasChanges={hasPendingChanges}
                             isDeploying={isDeploying}
                             availablePages={availablePages}
-                            isLoading={isPreviewLoading || wcStatus === 'booting' || wcStatus === 'installing'}
+                            isLoading={isPreviewLoading || wcStatus === 'booting' || wcStatus === 'mounting' || wcStatus === 'installing' || wcStatus === 'starting'}
                             refreshKey={previewRefreshKey}
                             repoUrl={activeProject?.repoUrl}
                             projectId={activeProject?.id}
                             externalSelectedFile={selectedFileFromChat}
+                            wcStatus={wcStatus}
                         />
                     </div>
                 </div>
@@ -1551,15 +1670,24 @@ export default function Home() {
                     onCreateProject={createNewProject}
                     onImportRepo={importGitHubRepo}
                     onOpenPreview={(project?: Project) => {
-                        // When opening a recent project, set it as active and switch to Editor view
                         if (project) {
+                            const isSameProject = project.id === activeProject?.id;
+                            const isWcRunning = wcStatus === 'running' && wcPreviewUrl;
+
+                            // If same project and WebContainer is still running, reopen instantly
+                            if (isSameProject && isWcRunning) {
+                                console.log('[Project] Same project still running, reopening instantly');
+                                setShowPreview(true);
+                                if (!previewUrl) setPreviewUrl(wcPreviewUrl);
+                                return;
+                            }
+
+                            // Different project - need to switch
                             setActiveProject(project);
-                            setPreviewUrl(undefined); // Clear previous URL to ensure correct boot/load
-                            // Don't set fly.io URL - WebContainer will boot and provide its own URL
+                            setPreviewUrl(undefined);
                             console.log('[Project] Opening project, WebContainer will boot for preview');
                         }
                         setShowPreview(true);
-                        // Start the preview (WebContainer will boot)
                         startPreview(project);
                     }}
                     isLoading={isPreviewLoading || isSending}

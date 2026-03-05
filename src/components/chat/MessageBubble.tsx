@@ -2,53 +2,189 @@
 
 import React, { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Copy, Check, Bot, Undo2 } from 'lucide-react';
+import { Copy, Check, Undo2 } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Message } from '@/lib/supabase/types';
+import { ProposalSelector } from './ProposalSelector';
+import { ArtifactCard } from './ArtifactCard';
+import type { Artifact } from '@/lib/ai/artifacts/types';
+
+// Simple markdown-to-JSX renderer for AI messages
+function renderMarkdown(text: string): React.ReactNode[] {
+    const lines = text.split('\n');
+    const elements: React.ReactNode[] = [];
+    let listItems: React.ReactNode[] = [];
+    let listKey = 0;
+
+    const flushList = () => {
+        if (listItems.length > 0) {
+            elements.push(
+                <ul key={`list-${listKey++}`} className="space-y-1 my-1.5">
+                    {listItems}
+                </ul>
+            );
+            listItems = [];
+        }
+    };
+
+    // Inline formatting: **bold**, *italic*, `code`, [links]
+    const formatInline = (line: string): React.ReactNode[] => {
+        const parts: React.ReactNode[] = [];
+        // Match **bold**, *italic*, `code`
+        const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+?)`)/g;
+        let lastIndex = 0;
+        let match;
+        let k = 0;
+
+        while ((match = regex.exec(line)) !== null) {
+            // Text before match
+            if (match.index > lastIndex) {
+                parts.push(line.slice(lastIndex, match.index));
+            }
+            if (match[2]) {
+                // **bold**
+                parts.push(<strong key={k++} className="font-semibold text-[#2c2418]">{match[2]}</strong>);
+            } else if (match[3]) {
+                // *italic*
+                parts.push(<em key={k++} className="italic text-[#4a3f32]">{match[3]}</em>);
+            } else if (match[4]) {
+                // `inline code`
+                parts.push(<code key={k++} className="px-1.5 py-0.5 rounded bg-[#b69161]/10 text-[#b69161] text-[11px] font-mono">{match[4]}</code>);
+            }
+            lastIndex = match.index + match[0].length;
+        }
+        if (lastIndex < line.length) {
+            parts.push(line.slice(lastIndex));
+        }
+        return parts.length > 0 ? parts : [line];
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        // Skip empty lines (but flush lists)
+        if (!trimmed) {
+            flushList();
+            continue;
+        }
+
+        // Headings: ### or ##
+        const headingMatch = trimmed.match(/^(#{1,3})\s+(.+)/);
+        if (headingMatch) {
+            flushList();
+            const level = headingMatch[1].length;
+            const content = headingMatch[2];
+            elements.push(
+                <p key={`h-${i}`} className={cn(
+                    "font-semibold text-[#2c2418] mt-2 mb-1",
+                    level === 1 ? "text-sm" : level === 2 ? "text-[13px]" : "text-xs"
+                )}>
+                    {formatInline(content)}
+                </p>
+            );
+            continue;
+        }
+
+        // Bullet list items: - item or * item or number. item
+        const listMatch = trimmed.match(/^[-*•]\s+(.+)|^(\d+)\.\s+(.+)/);
+        if (listMatch) {
+            const content = listMatch[1] || listMatch[3];
+            const indent = line.search(/\S/) >= 4; // nested indent
+            listItems.push(
+                <li key={`li-${i}`} className={cn("flex items-start gap-2 text-sm text-[#4a3f32]", indent && "ml-4")}>
+                    <span className="text-[#b69161]/50 mt-1 shrink-0 text-[8px]">●</span>
+                    <span className="leading-relaxed">{formatInline(content)}</span>
+                </li>
+            );
+            continue;
+        }
+
+        // Regular paragraph
+        flushList();
+        elements.push(
+            <p key={`p-${i}`} className="text-sm text-[#4a3f32] leading-relaxed">
+                {formatInline(trimmed)}
+            </p>
+        );
+    }
+
+    flushList();
+    return elements;
+}
 
 interface MessageBubbleProps {
     message: Message;
     onRevert?: (messageId: string) => void;
+    onSendMessage?: (message: string) => void;
     isStreaming?: boolean;
 }
 
-export function MessageBubble({ message, onRevert, isStreaming = false }: MessageBubbleProps) {
+export function MessageBubble({ message, onRevert, onSendMessage, isStreaming = false }: MessageBubbleProps) {
     const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
     const [copiedMessage, setCopiedMessage] = React.useState(false);
     const [isNew, setIsNew] = useState(true);
+    const [selectedProposal, setSelectedProposal] = useState<number | null>(null);
     const isUser = message.role === 'user';
 
-    // Parse code blocks from content
-    const parseContent = (content: string) => {
-        const parts: Array<{ type: 'text' | 'code'; content: string; language?: string }> = [];
-        const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+    type ContentPart =
+        | { type: 'text'; content: string }
+        | { type: 'code'; content: string; language?: string }
+        | { type: 'artifact'; artifact: Artifact }
+        | { type: 'proposal'; data: any };
+
+    const parseContent = (content: string): ContentPart[] => {
+        const parts: ContentPart[] = [];
+
+        // Combined regex: match code blocks, artifacts, proposal options, and other markers to strip
+        const combinedRegex = /```(\w+)?\n([\s\S]*?)```|\n?<!--ARTIFACT:([\s\S]*?)-->\n?|\n?<!--PROPOSAL_OPTIONS:([\s\S]*?)-->\n?|\n?<!--(?:FILE_OP|DONE|REQUEST_SCREENSHOT):[\s\S]*?-->\n?/g;
         let lastIndex = 0;
         let match;
 
-        while ((match = codeBlockRegex.exec(content)) !== null) {
+        while ((match = combinedRegex.exec(content)) !== null) {
+            // Text before this match
             if (match.index > lastIndex) {
-                parts.push({
-                    type: 'text',
-                    content: content.slice(lastIndex, match.index),
-                });
+                const text = content.slice(lastIndex, match.index);
+                if (text.trim()) parts.push({ type: 'text', content: text });
             }
-            parts.push({
-                type: 'code',
-                content: match[2].trim(),
-                language: match[1] || 'javascript',
-            });
+
+            if (match[2] !== undefined) {
+                // Code block
+                parts.push({ type: 'code', content: match[2].trim(), language: match[1] || 'javascript' });
+            } else if (match[3] !== undefined) {
+                // Artifact
+                try {
+                    const artifact = JSON.parse(match[3]) as Artifact;
+                    // Proposals with type 'proposal' get rendered as ProposalSelector
+                    if (artifact.type === 'proposal' && artifact.data) {
+                        parts.push({ type: 'proposal', data: artifact.data });
+                    } else {
+                        parts.push({ type: 'artifact', artifact });
+                    }
+                } catch {
+                    // Malformed JSON — skip
+                }
+            } else if (match[4] !== undefined) {
+                // Proposal options
+                try {
+                    const data = JSON.parse(match[4]);
+                    parts.push({ type: 'proposal', data });
+                } catch {
+                    // Malformed JSON — skip
+                }
+            }
+            // FILE_OP, DONE, REQUEST_SCREENSHOT markers are silently stripped
+
             lastIndex = match.index + match[0].length;
         }
 
         if (lastIndex < content.length) {
-            parts.push({
-                type: 'text',
-                content: content.slice(lastIndex),
-            });
+            const text = content.slice(lastIndex);
+            if (text.trim()) parts.push({ type: 'text', content: text });
         }
 
-        return parts.length > 0 ? parts : [{ type: 'text' as const, content }];
+        return parts.length > 0 ? parts : [{ type: 'text', content }];
     };
 
     const handleCopy = async (text: string, index: number) => {
@@ -64,12 +200,7 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
     };
 
     const parts = parseContent(message.content);
-    const timeString = new Date(message.created_at).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-    });
 
-    // Text reveal animation - remove after animation completes
     useEffect(() => {
         if (!isUser && isNew) {
             const timer = setTimeout(() => setIsNew(false), 500);
@@ -93,25 +224,24 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
             setCopiedImage(true);
             setTimeout(() => setCopiedImage(false), 2000);
         } catch {
-            // Fallback: copy as data URL
             await navigator.clipboard.writeText(messageImage);
             setCopiedImage(true);
             setTimeout(() => setCopiedImage(false), 2000);
         }
     };
 
-    // User message - rounded bubble style
+    // ── User message ──
     if (isUser) {
         return (
             <>
                 {/* Image Popup Modal */}
                 {showImagePopup && messageImage && (
                     <div
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-[#2c2418]/70 backdrop-blur-sm"
                         onClick={() => setShowImagePopup(false)}
                     >
                         <div
-                            className="relative max-w-[90vw] max-h-[90vh] bg-white rounded-xl shadow-2xl p-4"
+                            className="relative max-w-[90vw] max-h-[90vh] bg-[#f2efed] rounded-xl shadow-2xl p-4 border border-[#b69161]/15"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <img
@@ -122,14 +252,14 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                             <div className="flex items-center justify-center gap-3 mt-3">
                                 <button
                                     onClick={handleCopyImage}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors"
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#b69161]/15 text-[#2c2418] text-sm font-medium hover:bg-[#b69161]/25 transition-colors"
                                 >
                                     {copiedImage ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                     {copiedImage ? 'Copied!' : 'Copy Image'}
                                 </button>
                                 <button
                                     onClick={() => setShowImagePopup(false)}
-                                    className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-300 transition-colors"
+                                    className="px-4 py-2 rounded-lg bg-[#d6cfc9]/50 text-[#7a6f60] text-sm font-medium hover:bg-[#d6cfc9] transition-colors"
                                 >
                                     Close
                                 </button>
@@ -138,129 +268,131 @@ export function MessageBubble({ message, onRevert, isStreaming = false }: Messag
                     </div>
                 )}
 
-                <div className="group flex justify-end p-3">
-                    <div className="max-w-[80%]">
-                        <div className="relative bg-blue-500 text-white rounded-2xl rounded-br-sm px-4 py-2.5 shadow-md">
-                            {/* Attached Image - Small Thumbnail */}
-                            {messageImage && (
-                                <div className="mb-2">
-                                    <img
-                                        src={messageImage}
-                                        alt="Attached"
-                                        className="h-16 rounded-lg object-contain cursor-pointer hover:opacity-80 transition-opacity border border-white/20"
-                                        onClick={() => setShowImagePopup(true)}
-                                    />
-                                </div>
-                            )}
-                            {/* Message Text */}
-                            {message.content && message.content !== 'Sent an image' && (
-                                <p className="text-xs text-white whitespace-pre-wrap leading-relaxed">
-                                    {message.content}
-                                </p>
-                            )}
-                            {/* Revert Button - Bottom Right Corner */}
-                            {onRevert && (
-                                <button
-                                    onClick={() => onRevert(message.id)}
-                                    className="absolute -bottom-1 -right-1 flex items-center justify-center w-5 h-5 rounded-full bg-white text-blue-500 hover:bg-blue-50 transition-colors shadow-md"
-                                    title="Revert this request"
-                                >
-                                    <Undo2 className="w-2.5 h-2.5" />
-                                </button>
-                            )}
+                <div className="group px-4 py-2">
+                    <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                            <div className="relative bg-[#d6cfc9] rounded-2xl px-4 py-3">
+                                {/* Attached Image */}
+                                {messageImage && (
+                                    <div className="mb-2">
+                                        <img
+                                            src={messageImage}
+                                            alt="Attached"
+                                            className="h-16 rounded-lg object-contain cursor-pointer hover:opacity-80 transition-opacity border border-[#b69161]/15"
+                                            onClick={() => setShowImagePopup(true)}
+                                        />
+                                    </div>
+                                )}
+                                {/* Message Text */}
+                                {message.content && message.content !== 'Sent an image' && (
+                                    <p className="text-sm text-[#2c2418]/90 whitespace-pre-wrap leading-relaxed">
+                                        {message.content}
+                                    </p>
+                                )}
+                            </div>
                         </div>
-                        <div className="flex items-center justify-end gap-2 mt-1 px-1">
+                        {/* Revert Button */}
+                        {onRevert && (
                             <button
-                                onClick={handleCopyMessage}
-                                className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[10px] text-gray-500 hover:text-blue-600 transition-all"
-                                title="Copy message"
+                                onClick={() => onRevert(message.id)}
+                                className="flex-shrink-0 mt-2 flex items-center justify-center w-7 h-7 rounded-full text-[#7a6f60] hover:text-[#2c2418] hover:bg-[#b69161]/10 transition-colors"
+                                title="Revert"
                             >
-                                {copiedMessage ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                <Undo2 className="w-3.5 h-3.5" />
                             </button>
-                            <span className="text-[10px] text-gray-500">{timeString}</span>
-                        </div>
+                        )}
                     </div>
                 </div>
             </>
         );
     }
 
-    // AI message - light purple gradient background
+    // ── AI message ──
     return (
-        <div className="group p-3">
-            <div className="flex gap-2.5 p-3 bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl">
-                <div className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
-                    <Bot className="w-3 h-3 text-white" />
-                </div>
-
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium text-purple-600">AutoMate Web Editor</span>
-                    </div>
-
-                    <div className="space-y-2">
-                        {parts.map((part, index) => (
-                            <React.Fragment key={index}>
-                                {part.type === 'text' ? (
-                                    <p
-                                        className={cn(
-                                            'text-xs text-gray-800 font-medium whitespace-pre-wrap leading-relaxed',
-                                            isNew && 'animate-text-reveal',
-                                            isStreaming && index === parts.length - 1 && 'typing-cursor'
-                                        )}
-                                    >
-                                        {part.content}
-                                    </p>
-                                ) : (
-                                    <div className="rounded-lg overflow-hidden border border-gray-200">
-                                        <div className="flex items-center justify-between px-2 py-1 bg-gray-100 border-b border-gray-200">
-                                            <span className="text-[10px] text-gray-600 font-mono">
-                                                {part.language}
-                                            </span>
-                                            <button
-                                                onClick={() => handleCopy(part.content, index)}
-                                                className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-900 transition-colors"
-                                            >
-                                                {copiedIndex === index ? (
-                                                    <><Check className="w-3 h-3" /> Copied</>
-                                                ) : (
-                                                    <><Copy className="w-3 h-3" /> Copy</>
-                                                )}
-                                            </button>
-                                        </div>
-                                        <SyntaxHighlighter
-                                            language={part.language}
-                                            style={oneLight}
-                                            customStyle={{
-                                                margin: 0,
-                                                padding: '8px 10px',
-                                                background: '#ffffff',
-                                                fontSize: '11px',
-                                            }}
-                                        >
-                                            {part.content}
-                                        </SyntaxHighlighter>
-                                    </div>
+        <div className="group px-4 py-3">
+            <div className="space-y-3">
+                {parts.map((part, index) => (
+                    <React.Fragment key={index}>
+                        {part.type === 'text' ? (
+                            <div
+                                className={cn(
+                                    'space-y-1',
+                                    isNew && 'animate-text-reveal',
+                                    isStreaming && index === parts.length - 1 && 'typing-cursor'
                                 )}
-                            </React.Fragment>
-                        ))}
-                    </div>
+                            >
+                                {renderMarkdown(part.content)}
+                            </div>
+                        ) : part.type === 'proposal' ? (
+                            <ProposalSelector
+                                options={part.data.options || []}
+                                recommendation={part.data.recommendation || 1}
+                                recommendationReason={part.data.recommendationReason || ''}
+                                researchSummary={part.data.researchSummary || ''}
+                                selectedId={selectedProposal}
+                                onSelect={(id) => {
+                                    setSelectedProposal(id);
+                                    onSendMessage?.(`Option ${id}`);
+                                }}
+                            />
+                        ) : part.type === 'artifact' ? (
+                            <ArtifactCard artifact={part.artifact} />
+                        ) : (
+                            <div className="rounded-xl overflow-hidden border border-[#b69161]/10 bg-[#f2efed]">
+                                <div className="flex items-center justify-between px-3 py-1.5 bg-[#e6e0dd] border-b border-[#b69161]/10">
+                                    <span className="text-[10px] text-[#7a6f60] font-mono">
+                                        {part.language}
+                                    </span>
+                                    <button
+                                        onClick={() => handleCopy(part.content, index)}
+                                        className="flex items-center gap-1 text-[10px] text-[#7a6f60] hover:text-[#4a3f32] transition-colors"
+                                    >
+                                        {copiedIndex === index ? (
+                                            <><Check className="w-3 h-3" /> Copied</>
+                                        ) : (
+                                            <><Copy className="w-3 h-3" /> Copy</>
+                                        )}
+                                    </button>
+                                </div>
+                                <SyntaxHighlighter
+                                    language={part.language}
+                                    style={oneDark}
+                                    showLineNumbers
+                                    customStyle={{
+                                        margin: 0,
+                                        padding: '12px 14px',
+                                        background: '#f2efed',
+                                        fontSize: '12px',
+                                        lineHeight: '1.6',
+                                    }}
+                                    lineNumberStyle={{
+                                        color: '#a89d8e',
+                                        fontSize: '11px',
+                                        minWidth: '2em',
+                                        paddingRight: '12px',
+                                    }}
+                                >
+                                    {part.content}
+                                </SyntaxHighlighter>
+                            </div>
+                        )}
+                    </React.Fragment>
+                ))}
+            </div>
 
-                    <div className="flex items-center justify-between mt-2">
-                        <span className="text-[10px] text-gray-500">{timeString}</span>
-                        <button
-                            onClick={handleCopyMessage}
-                            className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:text-purple-600 transition-all"
-                            title="Copy message"
-                        >
-                            {copiedMessage ? (
-                                <><Check className="w-3 h-3" /> Copied</>
-                            ) : (
-                                <><Copy className="w-3 h-3" /> Copy</>
-                            )}
-                        </button>
-                    </div>
-                </div>
+            {/* Copy button on hover */}
+            <div className="flex items-center mt-2">
+                <button
+                    onClick={handleCopyMessage}
+                    className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-[#7a6f60] hover:text-[#4a3f32] hover:bg-[#b69161]/10 transition-all"
+                    title="Copy message"
+                >
+                    {copiedMessage ? (
+                        <><Check className="w-3 h-3" /> Copied</>
+                    ) : (
+                        <><Copy className="w-3 h-3" /> Copy</>
+                    )}
+                </button>
             </div>
         </div>
     );

@@ -107,6 +107,36 @@ export const TOOLS: ToolDefinition[] = [
     {
         type: 'function',
         function: {
+            name: 'web_search',
+            description: 'Search the web for current information using Tavily. Use this when you need up-to-date documentation, API references, tutorials, or to research a topic before implementing.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'Search query (e.g., "Next.js 14 server actions tutorial")' },
+                    maxResults: { type: 'number', description: 'Maximum number of results to return (default: 5, max: 10)' }
+                },
+                required: ['query']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'web_scrape',
+            description: 'Fetch and extract readable text content from a URL. Use after web_search to read a specific page in detail, or when the user provides a URL to reference.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    url: { type: 'string', description: 'Full URL to scrape (must be http:// or https://)' },
+                    maxLength: { type: 'number', description: 'Maximum content length in characters (default: 5000)' }
+                },
+                required: ['url']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'validate_build',
             description: 'REQUIRED: Call this as your FINAL step after all file changes. Triggers npm run build to verify the project compiles correctly. If build fails, you will receive errors to fix.',
             parameters: {

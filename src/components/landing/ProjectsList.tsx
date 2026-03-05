@@ -68,8 +68,8 @@ export function ProjectsList({ onSelectProject, onCreateNew, userId }: ProjectsL
     if (isLoading) {
         return (
             <div className="mt-12 w-full max-w-4xl">
-                <div className="flex items-center gap-2 text-gray-500">
-                    <div className="animate-spin w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full" />
+                <div className="flex items-center gap-2 text-[#7a6f60]">
+                    <div className="animate-spin w-5 h-5 border-2 border-[#d6cfc9] border-t-blue-500 rounded-full" />
                     <span>Loading projects...</span>
                 </div>
             </div>
@@ -91,7 +91,7 @@ export function ProjectsList({ onSelectProject, onCreateNew, userId }: ProjectsL
     return (
         <div className="mt-12 w-full max-w-4xl">
             <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-[#3d3122] flex items-center gap-2">
                     <FolderOpen className="w-5 h-5" />
                     Your Projects
                 </h3>
@@ -114,7 +114,7 @@ export function ProjectsList({ onSelectProject, onCreateNew, userId }: ProjectsL
                         {/* Source badge */}
                         <div className="absolute top-3 right-3">
                             {project.sourceType === 'imported' ? (
-                                <span className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-full">
+                                <span className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-[#5a4f3e] bg-[#e6e0dd] rounded-full">
                                     <Github className="w-3 h-3" />
                                     Imported
                                 </span>
@@ -126,18 +126,18 @@ export function ProjectsList({ onSelectProject, onCreateNew, userId }: ProjectsL
                         </div>
 
                         {/* Project info */}
-                        <h4 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors pr-20 truncate">
+                        <h4 className="font-semibold text-[#2c2418] group-hover:text-blue-600 transition-colors pr-20 truncate">
                             {project.name}
                         </h4>
 
                         {project.description && (
-                            <p className="mt-1 text-sm text-gray-500 line-clamp-2">
+                            <p className="mt-1 text-sm text-[#7a6f60] line-clamp-2">
                                 {project.description}
                             </p>
                         )}
 
                         {/* Footer */}
-                        <div className="mt-4 flex items-center justify-between text-xs text-gray-400">
+                        <div className="mt-4 flex items-center justify-between text-xs text-[#a89d8e]">
                             <span className="flex items-center gap-1">
                                 <Clock className="w-3 h-3" />
                                 {formatDate(project.updatedAt)}

@@ -176,7 +176,7 @@ function StatusBadge({ status }: { status: ConnectionStatus }) {
     const config = {
         not_configured: {
             label: 'Not configured',
-            className: 'bg-gray-100 text-gray-600',
+            className: 'bg-[#e6e0dd] text-[#5a4f3e]',
             icon: <Settings className="w-3 h-3" />,
         },
         configured: {
@@ -220,7 +220,7 @@ function Toggle({
                 onClick={() => onChange(!checked)}
                 className={cn(
                     'relative w-10 h-6 rounded-full transition-colors',
-                    checked ? 'bg-[var(--accent-primary)]' : 'bg-gray-200'
+                    checked ? 'bg-[var(--accent-primary)]' : 'bg-[#d6cfc9]'
                 )}
             >
                 <span
@@ -354,7 +354,7 @@ export function DeploymentSettings() {
                                     type="text"
                                     value={config.gitRepository}
                                     readOnly
-                                    className="w-full pl-10 pr-3 py-2 text-sm rounded-lg border border-[var(--border-default)] bg-gray-50 text-[var(--text-muted)] cursor-not-allowed"
+                                    className="w-full pl-10 pr-3 py-2 text-sm rounded-lg border border-[var(--border-default)] bg-[#f2efed] text-[var(--text-muted)] cursor-not-allowed"
                                 />
                             </div>
                         </FormField>
@@ -419,7 +419,7 @@ export function DeploymentSettings() {
                         'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all',
                         canDeploy
                             ? 'bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary-hover)] shadow-lg'
-                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-[#d6cfc9] text-[#a89d8e] cursor-not-allowed'
                     )}
                 >
                     {isDeploying ? (
@@ -437,7 +437,7 @@ export function DeploymentSettings() {
 
                 {/* Tooltip */}
                 {!canDeploy && (
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-[#2c2418] text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                         {!selectedProvider
                             ? 'Select a deployment provider first'
                             : 'Complete the configuration to deploy'}
@@ -450,7 +450,7 @@ export function DeploymentSettings() {
             <section className="border border-[var(--border-default)] rounded-xl overflow-hidden">
                 <button
                     onClick={() => setShowAdvanced(!showAdvanced)}
-                    className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-gray-50 transition-colors"
+                    className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-[#f2efed] transition-colors"
                 >
                     <span className="text-sm font-medium text-[var(--text-primary)]">
                         Advanced Settings

@@ -133,19 +133,19 @@ export function RepoSelectorModal({ isOpen, onClose, onSelectRepo }: RepoSelecto
         >
             <div className="relative w-full max-w-2xl mx-4 bg-white rounded-3xl shadow-2xl overflow-hidden max-h-[80vh] flex flex-col">
                 {/* Header */}
-                <div className="flex items-center justify-between p-6 border-b border-gray-100">
+                <div className="flex items-center justify-between p-6 border-b border-[#e6e0dd]">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-gray-100 rounded-xl">
-                            <Github className="w-6 h-6 text-gray-700" />
+                        <div className="p-2 bg-[#e6e0dd] rounded-xl">
+                            <Github className="w-6 h-6 text-[#4a3f32]" />
                         </div>
                         <div>
-                            <h3 className="text-xl font-bold text-gray-900">Select Repository</h3>
-                            <p className="text-sm text-gray-500">Choose a repo to import</p>
+                            <h3 className="text-xl font-bold text-[#2c2418]">Select Repository</h3>
+                            <p className="text-sm text-[#7a6f60]">Choose a repo to import</p>
                         </div>
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-2 text-gray-400 hover:text-gray-600 transition-colors rounded-full hover:bg-gray-100"
+                        className="p-2 text-[#a89d8e] hover:text-[#5a4f3e] transition-colors rounded-full hover:bg-[#e6e0dd]"
                     >
                         <X className="w-5 h-5" />
                     </button>
@@ -155,18 +155,18 @@ export function RepoSelectorModal({ isOpen, onClose, onSelectRepo }: RepoSelecto
                 <div className="flex-1 overflow-hidden flex flex-col">
                     {needsConnection ? (
                         <div className="flex-1 flex flex-col items-center justify-center p-8">
-                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                                <Github className="w-8 h-8 text-gray-400" />
+                            <div className="w-16 h-16 bg-[#e6e0dd] rounded-full flex items-center justify-center mb-4">
+                                <Github className="w-8 h-8 text-[#a89d8e]" />
                             </div>
-                            <h4 className="text-lg font-semibold text-gray-900 mb-2">
+                            <h4 className="text-lg font-semibold text-[#2c2418] mb-2">
                                 Connect your GitHub
                             </h4>
-                            <p className="text-gray-500 text-center mb-6 max-w-sm">
-                                Grant access to your repositories to import and edit them with AutoMate
+                            <p className="text-[#7a6f60] text-center mb-6 max-w-sm">
+                                Grant access to your repositories to import and edit them with Automate
                             </p>
                             <button
                                 onClick={handleConnectGitHub}
-                                className="flex items-center gap-2 px-6 py-3 bg-gray-900 hover:bg-gray-800 text-white font-medium rounded-xl transition-all"
+                                className="flex items-center gap-2 px-6 py-3 bg-[#2c2418] hover:bg-[#3d3122] text-white font-medium rounded-xl transition-all"
                             >
                                 <Github className="w-5 h-5" />
                                 Connect GitHub
@@ -181,7 +181,7 @@ export function RepoSelectorModal({ isOpen, onClose, onSelectRepo }: RepoSelecto
                             <p className="text-red-500 mb-4">{error}</p>
                             <button
                                 onClick={() => window.location.reload()}
-                                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                                className="px-4 py-2 bg-[#e6e0dd] hover:bg-[#d6cfc9] rounded-lg transition-colors"
                             >
                                 Try Again
                             </button>
@@ -189,15 +189,15 @@ export function RepoSelectorModal({ isOpen, onClose, onSelectRepo }: RepoSelecto
                     ) : (
                         <>
                             {/* Search */}
-                            <div className="p-4 border-b border-gray-100">
+                            <div className="p-4 border-b border-[#e6e0dd]">
                                 <div className="relative">
-                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#a89d8e]" />
                                     <input
                                         type="text"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         placeholder="Search repositories..."
-                                        className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-gray-900"
+                                        className="w-full pl-12 pr-4 py-3 bg-[#f2efed] border border-[#d6cfc9] rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-[#2c2418]"
                                     />
                                 </div>
                             </div>
@@ -205,7 +205,7 @@ export function RepoSelectorModal({ isOpen, onClose, onSelectRepo }: RepoSelecto
                             {/* Repo List */}
                             <div className="flex-1 overflow-y-auto p-4">
                                 {filteredRepos.length === 0 ? (
-                                    <div className="text-center py-8 text-gray-500">
+                                    <div className="text-center py-8 text-[#7a6f60]">
                                         No repositories found
                                     </div>
                                 ) : (
@@ -214,26 +214,26 @@ export function RepoSelectorModal({ isOpen, onClose, onSelectRepo }: RepoSelecto
                                             <button
                                                 key={repo.id}
                                                 onClick={() => onSelectRepo(repo)}
-                                                className="w-full p-4 text-left bg-gray-50 hover:bg-blue-50 rounded-xl transition-colors group"
+                                                className="w-full p-4 text-left bg-[#f2efed] hover:bg-blue-50 rounded-xl transition-colors group"
                                             >
                                                 <div className="flex items-start justify-between">
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2">
-                                                            <span className="font-medium text-gray-900 group-hover:text-blue-600 truncate">
+                                                            <span className="font-medium text-[#2c2418] group-hover:text-blue-600 truncate">
                                                                 {repo.fullName}
                                                             </span>
                                                             {repo.isPrivate ? (
-                                                                <Lock className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                                                <Lock className="w-4 h-4 text-[#a89d8e] flex-shrink-0" />
                                                             ) : (
-                                                                <Globe className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                                                <Globe className="w-4 h-4 text-[#a89d8e] flex-shrink-0" />
                                                             )}
                                                         </div>
                                                         {repo.description && (
-                                                            <p className="text-sm text-gray-500 mt-1 truncate">
+                                                            <p className="text-sm text-[#7a6f60] mt-1 truncate">
                                                                 {repo.description}
                                                             </p>
                                                         )}
-                                                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                                                        <div className="flex items-center gap-4 mt-2 text-xs text-[#a89d8e]">
                                                             {repo.language && (
                                                                 <span className="flex items-center gap-1">
                                                                     <span className="w-2 h-2 rounded-full bg-blue-500" />

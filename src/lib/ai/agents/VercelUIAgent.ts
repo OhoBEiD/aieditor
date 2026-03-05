@@ -1,7 +1,7 @@
 // Vercel AI SDK Agent for UI/Design tasks
 // Uses Gemini via OpenRouter for frontend-focused code generation
 
-import { generateText, tool } from 'ai';
+import { generateText, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
 import { emitStep } from '../AIService';
@@ -12,69 +12,78 @@ const openrouter = createOpenAI({
     apiKey: process.env.OPENROUTER_API_KEY,
 });
 
-const UI_SYSTEM_PROMPT = `You are an expert UI/UX developer focused on creating beautiful, modern React interfaces.
+const UI_SYSTEM_PROMPT = `You are a world-class UI/UX engineer creating stunning, premium React interfaces with a signature liquid glass style.
 
 ## Technical Stack
-- React 18+ with functional components and hooks
+- React 18+ with functional components and hooks ("use client" for interactive components)
 - TypeScript with proper types
 - Tailwind CSS for styling
 - Next.js App Router
+- **GSAP + ScrollTrigger** for animations
+- **Lucide React** for icons
 
 ## Constraints & Project Structure
 - **File Extensions**: ALWAYS use \`.tsx\` for React components.
-- **Source Folder**: All components MUST be in \`src/\` directory (e.g., \`src/components/\`, \`src/app/\`).
-- **Styling**: Use Tailwind CSS classes. Create visually stunning, premium designs.
-- **Efficiency**: Minimize tool calls. Complete the UI in as few steps as possible.
+- **Source Folder**: All components MUST be in \`src/\` directory.
+- **Efficiency**: Minimize tool calls. Write complete files.
 
-## Design Principles
-- Modern, clean aesthetic with proper spacing
-- Responsive layouts (mobile-first)
-- Smooth animations and transitions
-- Accessible components (proper ARIA labels)
-- Dark mode support when applicable
+## Signature Design System
+- **Glass morphism**: \`backdrop-blur-xl bg-white/[0.05] border border-white/[0.08] rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)]\`
+- **Floating gradient orbs**: 3-5 blurred gradient circles as background decoration
+- **Typography**: Space Grotesk for headings (font-bold tracking-tight), Inter for body text
+- **Spacing**: Generous padding (py-24 lg:py-32), max-w-7xl containers, gap-6 lg:gap-8
+- **Colors**: CSS custom properties. Dark theme default for tech/SaaS.
+
+## Animation Requirements (GSAP)
+- ALWAYS add GSAP ScrollTrigger animations — every section fades up on scroll
+- Staggered reveals for card grids and lists
+- Guard with \`typeof window !== "undefined"\` before registering ScrollTrigger
+- Hero: word-by-word text reveal with gsap.from stagger
+- Cards: hover scale + shadow transitions via Tailwind + GSAP
+- Stats: counter animation with snap
+
+## Images & Media
+- **ALWAYS use real Unsplash images**: \`https://images.unsplash.com/photo-{REAL_ID}?w=800&q=80&fit=crop\`
+- Team photos: \`https://randomuser.me/api/portraits/men/{n}.jpg\` or \`/women/{n}.jpg\`
+- Icons: Lucide React exclusively. Never emoji for UI elements.
+- **NEVER leave empty placeholders**. Every \`<img>\` must have a working URL.
 
 ## Your Focus
-You handle ONLY frontend/UI tasks:
-- React components (.tsx)
-- Page layouts
-- Styling and CSS
-- UI animations
-- Form components
-- Navigation and routing UI`;
+Frontend/UI tasks only: React components, page layouts, CSS, animations, forms, navigation.`;
 
-// Define tools for file operations
-const writeFileTool = tool({
-    description: 'Write content to a file. Creates the file if it does not exist.',
-    parameters: z.object({
-        path: z.string().describe('File path starting with src/'),
-        content: z.string().describe('File content to write'),
-    }),
-    execute: async ({ path, content }) => {
-        return { success: true, path, operation: 'write', content };
+// Define tools as plain objects (avoids AI SDK v6 tool() type overload issues)
+const uiTools: Record<string, any> = {
+    write_file: {
+        description: 'Write content to a file. Creates the file if it does not exist.',
+        parameters: z.object({
+            path: z.string().describe('File path starting with src/'),
+            content: z.string().describe('File content to write'),
+        }),
+        execute: async ({ path, content }: { path: string; content: string }) => {
+            return { success: true, path, operation: 'write', content };
+        },
     },
-});
-
-const readFileTool = tool({
-    description: 'Read the contents of a file.',
-    parameters: z.object({
-        path: z.string().describe('File path to read'),
-    }),
-    execute: async ({ path }) => {
-        return { success: true, path, operation: 'read' };
+    read_file: {
+        description: 'Read the contents of a file.',
+        parameters: z.object({
+            path: z.string().describe('File path to read'),
+        }),
+        execute: async ({ path }: { path: string }) => {
+            return { success: true, path, operation: 'read' };
+        },
     },
-});
-
-const modifyFileTool = tool({
-    description: 'Modify a file by replacing text.',
-    parameters: z.object({
-        path: z.string().describe('File path to modify'),
-        oldText: z.string().describe('Text to find and replace'),
-        newText: z.string().describe('Replacement text'),
-    }),
-    execute: async ({ path, oldText, newText }) => {
-        return { success: true, path, operation: 'modify', oldText, newText };
+    modify_file: {
+        description: 'Modify a file by replacing text.',
+        parameters: z.object({
+            path: z.string().describe('File path to modify'),
+            oldText: z.string().describe('Text to find and replace'),
+            newText: z.string().describe('Replacement text'),
+        }),
+        execute: async ({ path, oldText, newText }: { path: string; oldText: string; newText: string }) => {
+            return { success: true, path, operation: 'modify', oldText, newText };
+        },
     },
-});
+};
 
 export interface VercelUIAgentResult {
     output: string;
@@ -114,22 +123,18 @@ export async function executeVercelUIAgent(context: VercelUIAgentContext): Promi
 
     try {
         const result = await generateText({
-            model: openrouter('google/gemini-3-flash-preview'),
+            model: openrouter.chat('google/gemini-3-flash-preview'),
             system: UI_SYSTEM_PROMPT,
             prompt: userPrompt,
-            tools: {
-                write_file: writeFileTool,
-                read_file: readFileTool,
-                modify_file: modifyFileTool,
-            },
-            maxSteps: 10,
+            tools: uiTools,
+            stopWhen: stepCountIs(10),
             onStepFinish: async (step) => {
                 iterations++;
 
                 if (step.toolCalls) {
                     for (const toolCall of step.toolCalls) {
                         const name = toolCall.toolName;
-                        const args = toolCall.args as any;
+                        const args = (toolCall as any).input || (toolCall as any).args || {};
 
                         // Track file operations
                         if (name === 'write_file') {
@@ -149,11 +154,12 @@ export async function executeVercelUIAgent(context: VercelUIAgentContext): Promi
 
                         // Emit step for UI
                         if (context.onStep) {
+                            const fileName = args.path?.split('/').pop() || 'file';
                             const stepMessage = name === 'write_file'
-                                ? `Writing ${args.path.split('/').pop()}`
+                                ? `Writing ${fileName}`
                                 : name === 'modify_file'
-                                    ? `Modifying ${args.path.split('/').pop()}`
-                                    : `Reading ${args.path.split('/').pop()}`;
+                                    ? `Modifying ${fileName}`
+                                    : `Reading ${fileName}`;
 
                             const details: Record<string, any> = {};
                             if (args.content) {
@@ -174,10 +180,6 @@ export async function executeVercelUIAgent(context: VercelUIAgentContext): Promi
         };
     } catch (error: any) {
         console.error('[VercelUIAgent] Error:', error);
-        return {
-            output: `Error: ${error.message}`,
-            fileOperations,
-            iterations,
-        };
+        throw error;
     }
 }
