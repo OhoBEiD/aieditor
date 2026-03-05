@@ -119,20 +119,18 @@ export function useAIChat({
                 }
             }
 
-            // Persist assistant message to Supabase
+            // Persist assistant message to Supabase (always persist, even if empty)
             if (sessionId) {
-                const cleanText = cleanDisplayText(text);
-                if (cleanText) {
-                    try {
-                        await supabase.from('messages').insert({
-                            session_id: sessionId,
-                            role: 'assistant',
-                            content: cleanText,
-                            metadata: { requestId: requestId, status: 'completed' },
-                        });
-                    } catch (err) {
-                        console.error('[useAIChat] Failed to persist assistant message:', err);
-                    }
+                const cleanText = cleanDisplayText(text) || "[No response generated]";
+                try {
+                    await supabase.from('messages').insert({
+                        session_id: sessionId,
+                        role: 'assistant',
+                        content: cleanText,
+                        metadata: { requestId: requestId, status: 'completed' },
+                    });
+                } catch (err) {
+                    console.error('[useAIChat] Failed to persist assistant message:', err);
                 }
             }
 
@@ -148,9 +146,36 @@ export function useAIChat({
                 onFileOpsApplied?.(appliedOpsRef.current);
             }
         },
-        onError: (err) => {
+        onError: async (err) => {
             console.error('[useAIChat] Error:', err);
+
+            // Persist partial assistant message on error so it doesn't vanish
+            if (sessionId && messages.length > 0) {
+                const lastMsg = messages[messages.length - 1];
+                if (lastMsg.role === 'assistant') {
+                    const text = getMessageText(lastMsg);
+                    const cleanText = cleanDisplayText(text);
+                    if (cleanText) {
+                        try {
+                            await supabase.from('messages').insert({
+                                session_id: sessionId,
+                                role: 'assistant',
+                                content: cleanText,
+                                metadata: { requestId, status: 'error', error: err.message },
+                            });
+                        } catch (e) {
+                            console.error('[useAIChat] Failed to persist error message:', e);
+                        }
+                    }
+                }
+            }
+
             onStreamingChange?.(false);
+            if (requestId) {
+                await onBeforeFinish?.(requestId);
+            }
+            setRequestId(null);
+            onRequestIdChange?.(null);
         },
     });
 

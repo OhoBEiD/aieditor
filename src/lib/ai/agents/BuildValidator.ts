@@ -23,15 +23,17 @@ const FIXER_SYSTEM_PROMPT = `You are an expert code fixer. You receive specific 
 
 ## RULES
 1. Fix ONLY the errors listed. Do not refactor or improve other code.
-2. Read the file first to understand the full context before editing.
+2. File contents are provided with each error — use them to understand context immediately.
 3. For import errors: grep for the correct export, then fix the import path.
 4. For type errors: read the type definition, then align the usage.
-5. For syntax errors: read the exact line and surrounding context, then fix.
+5. For syntax errors: fix the exact issue at the reported line.
 6. For missing files: check if the file was renamed, or create it if truly missing.
 7. After fixing, read the file again to verify your fix is correct.
 
+IMPORTANT: You MUST use write_file or edit_file tools to apply fixes. Do NOT just describe fixes in text — actually apply them using the tools.
+
 ## RESPONSE
-After fixing, respond with a brief summary of what was fixed.`;
+After fixing all errors with tools, respond with a brief summary of what was fixed.`;
 
 // --- Main Build Validation Loop ---
 
@@ -42,58 +44,87 @@ export async function runBuildValidationLoop(
   stepBase: number,
   maxIterations: number = 3,
 ): Promise<BuildValidationResult> {
-  let iteration = 0;
   let allFixOps: FileOperation[] = [];
   let currentErrors: ClassifiedError[] = [];
   let stepCounter = stepBase;
+  const maxFixAttempts = Math.max(1, maxIterations - 1);
 
-  while (iteration < maxIterations) {
-    iteration++;
+  // Initial validation
+  await emitStep(stepCounter++, "build_check", "running", "Running build validation...");
+  currentErrors = validateBuild(virtualFS);
 
-    await emitStep(stepCounter++, "build_check", "running", `Build check (attempt ${iteration}/${maxIterations})...`);
+  if (currentErrors.length === 0) {
+    await emitStep(stepCounter++, "build_check", "complete", "Build validation passed");
+    return {
+      passed: true,
+      errors: [],
+      fixesApplied: 0,
+      iterations: 1,
+      fileOperations: [],
+    };
+  }
 
-    // Validate the current state of virtualFS
-    currentErrors = validateBuild(virtualFS);
+  await emitStep(
+    stepCounter++, "build_check", "error",
+    `Found ${currentErrors.length} issues, attempting auto-fix...`,
+    { content: currentErrors.map(e => `${e.type}: ${e.message}`).join("\n") },
+  );
 
-    if (currentErrors.length === 0) {
-      await emitStep(stepCounter++, "build_check", "complete", "Build validation passed");
-      return {
-        passed: true,
-        errors: [],
-        fixesApplied: allFixOps.length,
-        iterations: iteration,
-        fileOperations: allFixOps,
-      };
-    }
-
-    await emitStep(
-      stepCounter++, "build_check", "error",
-      `Found ${currentErrors.length} issues, attempting auto-fix...`,
-      { content: currentErrors.map(e => `${e.type}: ${e.message}`).join("\n") },
-    );
-
-    // Don't try to fix on the last iteration, just report
-    if (iteration >= maxIterations) break;
-
+  // Fix loop: attempt fixes, then re-validate
+  for (let fixAttempt = 0; fixAttempt < maxFixAttempts; fixAttempt++) {
     // Attempt to fix errors using the Fixer Agent
     const fixResult = await runFixerAgent(virtualFS, currentErrors, emitStep, stepCounter);
     stepCounter = fixResult.nextStep;
     allFixOps.push(...fixResult.fileOperations);
 
     if (fixResult.fileOperations.length === 0) {
-      // Fixer couldn't make any changes, no point continuing
-      await emitStep(stepCounter++, "build_fix", "error", "Could not auto-fix remaining issues");
-      break;
+      // Fixer couldn't make any changes — retry once with explicit prompt
+      if (!fixResult.retried) {
+        await emitStep(stepCounter++, "build_fix", "running", "Retrying fix with explicit instructions...");
+        const retryResult = await runFixerAgent(virtualFS, currentErrors, emitStep, stepCounter, true);
+        stepCounter = retryResult.nextStep;
+        allFixOps.push(...retryResult.fileOperations);
+
+        if (retryResult.fileOperations.length === 0) {
+          await emitStep(stepCounter++, "build_fix", "error", "Could not auto-fix remaining issues");
+          break;
+        }
+        await emitStep(stepCounter++, "build_fix", "complete", `Applied ${retryResult.fileOperations.length} fixes (retry)`);
+      } else {
+        await emitStep(stepCounter++, "build_fix", "error", "Could not auto-fix remaining issues");
+        break;
+      }
+    } else {
+      await emitStep(stepCounter++, "build_fix", "complete", `Applied ${fixResult.fileOperations.length} fixes`);
     }
 
-    await emitStep(stepCounter++, "build_fix", "complete", `Applied ${fixResult.fileOperations.length} fixes`);
+    // Re-validate after fixes
+    await emitStep(stepCounter++, "build_check", "running", `Re-validating (attempt ${fixAttempt + 2}/${maxIterations})...`);
+    currentErrors = validateBuild(virtualFS);
+
+    if (currentErrors.length === 0) {
+      await emitStep(stepCounter++, "build_check", "complete", "Build validation passed after auto-fix");
+      return {
+        passed: true,
+        errors: [],
+        fixesApplied: allFixOps.length,
+        iterations: fixAttempt + 2,
+        fileOperations: allFixOps,
+      };
+    }
+
+    await emitStep(
+      stepCounter++, "build_check", "error",
+      `${currentErrors.length} issues remaining${fixAttempt < maxFixAttempts - 1 ? ", retrying..." : ""}`,
+      { content: currentErrors.map(e => `${e.type}: ${e.message}`).join("\n") },
+    );
   }
 
   return {
     passed: currentErrors.length === 0,
     errors: currentErrors,
     fixesApplied: allFixOps.length,
-    iterations: iteration,
+    iterations: maxIterations,
     fileOperations: allFixOps,
   };
 }
@@ -375,32 +406,39 @@ async function runFixerAgent(
   errors: ClassifiedError[],
   emitStep: (stepNum: number, toolName: string, status: string, message: string, details?: any) => Promise<void>,
   stepBase: number,
-): Promise<{ fileOperations: FileOperation[]; nextStep: number }> {
+  forceExplicit: boolean = false,
+): Promise<{ fileOperations: FileOperation[]; nextStep: number; retried: boolean }> {
   const config = selectModel("execute", "moderate");
   const tools = createEnhancedTools(virtualFS);
   const fileOperations: FileOperation[] = [];
   let stepCounter = stepBase;
 
-  // Group errors by file for efficiency
-  const errorsByFile = new Map<string, ClassifiedError[]>();
-  for (const error of errors) {
-    const existing = errorsByFile.get(error.file) || [];
-    existing.push(error);
-    errorsByFile.set(error.file, existing);
-  }
-
-  // Build a targeted fix prompt
+  // Build a targeted fix prompt with file context included
   const errorList = errors
     .filter(e => e.severity === "error")
-    .slice(0, 10) // Limit to prevent prompt bloat
-    .map((e, i) => `${i + 1}. [${e.type}] ${e.file}:${e.line} — ${e.message}\n   Fix: ${e.fixStrategy}`)
+    .slice(0, 10)
+    .map((e, i) => {
+      let context = "";
+      const fileContent = virtualFS.get(e.file);
+      if (fileContent && e.line) {
+        const lines = fileContent.split("\n");
+        const start = Math.max(0, e.line - 6);
+        const end = Math.min(lines.length, e.line + 5);
+        context = `\n   File context (${e.file} lines ${start + 1}-${end}):\n${lines.slice(start, end).map((l, idx) => `   ${start + idx + 1}${start + idx + 1 === e.line ? " >>>" : "    "} ${l}`).join("\n")}`;
+      }
+      return `${i + 1}. [${e.type}] ${e.file}:${e.line} — ${e.message}\n   Fix: ${e.fixStrategy}${context}`;
+    })
     .join("\n\n");
 
   if (!errorList) {
-    return { fileOperations, nextStep: stepCounter };
+    return { fileOperations, nextStep: stepCounter, retried: forceExplicit };
   }
 
-  const prompt = `## Errors to Fix\n${errorList}\n\n## Available Files\n${Array.from(virtualFS.keys()).sort().join("\n")}\n\nFix each error using the strategy provided. Read files first, then apply targeted edits.`;
+  const explicitPrefix = forceExplicit
+    ? "CRITICAL: You MUST call write_file or edit_file tools to fix these errors. Do NOT respond with only text.\n\n"
+    : "";
+
+  const prompt = `${explicitPrefix}## Errors to Fix\n${errorList}\n\n## Available Files\n${Array.from(virtualFS.keys()).sort().join("\n")}\n\nFix each error using the tools. The file context is provided above — apply targeted edits immediately.`;
 
   try {
     await generateText({
@@ -438,7 +476,11 @@ async function runFixerAgent(
     console.error("[FixerAgent] Error:", error.message);
   }
 
-  return { fileOperations, nextStep: stepCounter };
+  if (fileOperations.length === 0) {
+    console.warn("[FixerAgent] AI responded without using any file tools — fix may have been described in text only");
+  }
+
+  return { fileOperations, nextStep: stepCounter, retried: forceExplicit };
 }
 
 // --- Helpers ---

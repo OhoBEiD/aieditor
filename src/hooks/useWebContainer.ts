@@ -645,6 +645,16 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
         // Start Next.js dev server
         serverProcess.current = await runCommand('npm', ['run', 'dev']);
 
+        // Detect dev server crash
+        if (serverProcess.current) {
+            serverProcess.current.exit.then((exitCode: number) => {
+                if (exitCode !== 0) {
+                    console.warn('[WebContainer] Dev server exited with code:', exitCode);
+                    setState(s => ({ ...s, status: 'error', error: `Dev server crashed (exit ${exitCode})` }));
+                }
+            });
+        }
+
         // Wait for server to be ready
         wc.on('server-ready', (port, url) => {
             console.log('🌐 Server ready:', url);

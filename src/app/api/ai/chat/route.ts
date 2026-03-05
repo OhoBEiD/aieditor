@@ -849,11 +849,13 @@ ${fixReflectionContext}`;
           writeDoneMarker(writer, fileOperations.length);
           writer.write({ type: "finish", finishReason: "stop" });
         } catch (error: any) {
+          const errorTextId = `error_${Date.now()}`;
           if (error.message === "EXECUTION_CANCELLED") {
-            const textId = `cancelled_${Date.now()}`;
-            writer.write({ type: "text-start", id: textId });
-            writer.write({ type: "text-delta", id: textId, delta: "Execution stopped by user." });
-            writer.write({ type: "text-end", id: textId });
+            try {
+              writer.write({ type: "text-start", id: errorTextId });
+              writer.write({ type: "text-delta", id: errorTextId, delta: "Execution stopped by user." });
+              writer.write({ type: "text-end", id: errorTextId });
+            } catch { /* stream may be closed */ }
           } else {
             console.error("[AI Chat Error]", error);
             const isProviderError = error?.message?.includes("Invalid JSON response")
@@ -862,9 +864,16 @@ ${fixReflectionContext}`;
             const userMessage = isProviderError
               ? "The AI provider returned an error. Please try again."
               : (error.message || "Internal server error");
-            writer.write({ type: "error", errorText: userMessage });
+            // Always write visible text so onFinish has content to persist
+            try {
+              writer.write({ type: "text-start", id: errorTextId });
+              writer.write({ type: "text-delta", id: errorTextId, delta: userMessage });
+              writer.write({ type: "text-end", id: errorTextId });
+            } catch { /* stream may be closed */ }
           }
-          writer.write({ type: "finish", finishReason: "error" });
+          try {
+            writer.write({ type: "finish", finishReason: "error" });
+          } catch { /* stream may be closed */ }
         }
       },
     }),

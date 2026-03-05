@@ -387,18 +387,23 @@ export function PreviewPanel({
 
     // Health check removed - using WebContainers now
 
-    // Debounced quiet refresh on refreshKey — no loading state flash, just reload after HMR has time to process
+    // Conditional refresh on refreshKey — only hard-refresh when there's a build error
+    // WebContainer's Next.js dev server handles normal updates via HMR natively
     const refreshDebounceRef = useRef<NodeJS.Timeout | null>(null);
     useEffect(() => {
         if (refreshKey !== prevRefreshKey.current && refreshKey > 0) {
             prevRefreshKey.current = refreshKey;
-            if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
-            refreshDebounceRef.current = setTimeout(() => {
-                setIframeKey(prev => prev + 1);
-            }, 2000);
+            // Only hard refresh if there's a build error (HMR handles normal file updates)
+            if (buildError) {
+                if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
+                refreshDebounceRef.current = setTimeout(() => {
+                    setIframeKey(prev => prev + 1);
+                    setBuildError(null);
+                }, 3000);
+            }
         }
         return () => { if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current); };
-    }, [refreshKey]);
+    }, [refreshKey, buildError]);
 
     const handleIframeLoad = () => {
         console.log('[Preview] Iframe loaded successfully (Event)');
@@ -945,74 +950,63 @@ export function PreviewPanel({
                                     pointerEvents: (isServerReady && loadState !== 'loading' && loadState !== 'error') ? 'auto' : 'none',
                                 }}
                             >
-                                {/* Desktop View */}
-                                <div
-                                    className="absolute inset-0 rounded-2xl"
-                                    style={{
-                                        opacity: deviceMode === 'desktop' ? 1 : 0,
-                                        pointerEvents: deviceMode === 'desktop' ? 'auto' : 'none',
-                                        overflow: 'hidden',
-                                        transition: 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                    }}
-                                >
-                                    <iframe
-                                        ref={deviceMode === 'desktop' ? iframeRef : undefined}
-                                        key={`desktop-${iframeKey}`}
-                                        src={getFullPreviewUrl()}
-                                        style={{
-                                            width: '100%',
-                                            height: '100%',
-                                            border: 'none',
-                                            borderRadius: '1rem',
-                                            background: 'white',
-                                        }}
-                                        title="Preview Desktop"
-                                        onLoad={deviceMode === 'desktop' ? handleIframeLoad : undefined}
-                                        onError={deviceMode === 'desktop' ? handleIframeError : undefined}
-                                    />
-                                </div>
-
-                                {/* Mobile View */}
-                                <div
-                                    className="absolute inset-0 flex items-center justify-center"
-                                    style={{
-                                        opacity: deviceMode === 'mobile' ? 1 : 0,
-                                        transform: deviceMode === 'mobile' ? 'scale(1)' : 'scale(0.98)',
-                                        pointerEvents: deviceMode === 'mobile' ? 'auto' : 'none',
-                                        transition: 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                        willChange: 'opacity, transform',
-                                    }}
-                                >
+                                {/* Render only the active device iframe to prevent resource contention */}
+                                {deviceMode === 'desktop' ? (
                                     <div
-                                        style={{
-                                            width: `${MOBILE_WIDTH * mobileScale}px`,
-                                            height: `${MOBILE_HEIGHT * mobileScale}px`,
-                                            borderRadius: `${40 * mobileScale}px`,
-                                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)',
-                                            overflow: 'hidden',
-                                            position: 'relative',
-                                            background: 'white',
-                                        }}
+                                        className="absolute inset-0 rounded-2xl"
+                                        style={{ overflow: 'hidden' }}
                                     >
                                         <iframe
-                                            ref={deviceMode === 'mobile' ? iframeRef : undefined}
-                                            key={`mobile-${iframeKey}`}
+                                            ref={iframeRef}
+                                            key={`desktop-${iframeKey}`}
                                             src={getFullPreviewUrl()}
                                             style={{
-                                                width: `${MOBILE_WIDTH}px`,
-                                                height: `${MOBILE_HEIGHT}px`,
-                                                transform: `scale(${mobileScale})`,
-                                                transformOrigin: 'top left',
+                                                width: '100%',
+                                                height: '100%',
                                                 border: 'none',
-                                                borderRadius: '40px',
+                                                borderRadius: '1rem',
                                                 background: 'white',
                                             }}
-                                            title="Preview Mobile"
-                                            onLoad={deviceMode === 'mobile' ? handleIframeLoad : undefined}
-                                            onError={deviceMode === 'mobile' ? handleIframeError : undefined}
+                                            title="Preview Desktop"
+                                            onLoad={handleIframeLoad}
+                                            onError={handleIframeError}
                                         />
                                     </div>
-                                </div>
+                                ) : (
+                                    <div
+                                        className="absolute inset-0 flex items-center justify-center"
+                                    >
+                                        <div
+                                            style={{
+                                                width: `${MOBILE_WIDTH * mobileScale}px`,
+                                                height: `${MOBILE_HEIGHT * mobileScale}px`,
+                                                borderRadius: `${40 * mobileScale}px`,
+                                                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)',
+                                                overflow: 'hidden',
+                                                position: 'relative',
+                                                background: 'white',
+                                            }}
+                                        >
+                                            <iframe
+                                                ref={iframeRef}
+                                                key={`mobile-${iframeKey}`}
+                                                src={getFullPreviewUrl()}
+                                                style={{
+                                                    width: `${MOBILE_WIDTH}px`,
+                                                    height: `${MOBILE_HEIGHT}px`,
+                                                    transform: `scale(${mobileScale})`,
+                                                    transformOrigin: 'top left',
+                                                    border: 'none',
+                                                    borderRadius: '40px',
+                                                    background: 'white',
+                                                }}
+                                                title="Preview Mobile"
+                                                onLoad={handleIframeLoad}
+                                                onError={handleIframeError}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ) : !isLoading ? (
                             /* Empty state - only when genuinely no project loading */
