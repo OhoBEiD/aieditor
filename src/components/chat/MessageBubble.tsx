@@ -6,7 +6,8 @@ import { Copy, Check, Undo2 } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Message } from '@/lib/supabase/types';
-import { ProposalSelector } from './ProposalSelector';
+import { supabase } from '@/lib/supabase/client';
+import { ProposalSelector, SelectedProposalBadge } from './ProposalSelector';
 import { ArtifactCard } from './ArtifactCard';
 import type { Artifact } from '@/lib/ai/artifacts/types';
 
@@ -44,13 +45,13 @@ function renderMarkdown(text: string): React.ReactNode[] {
             }
             if (match[2]) {
                 // **bold**
-                parts.push(<strong key={k++} className="font-semibold text-[#2c2418]">{match[2]}</strong>);
+                parts.push(<strong key={k++} className="font-semibold text-white/95">{match[2]}</strong>);
             } else if (match[3]) {
                 // *italic*
-                parts.push(<em key={k++} className="italic text-[#4a3f32]">{match[3]}</em>);
+                parts.push(<em key={k++} className="italic text-white/70">{match[3]}</em>);
             } else if (match[4]) {
                 // `inline code`
-                parts.push(<code key={k++} className="px-1.5 py-0.5 rounded bg-[#b69161]/10 text-[#b69161] text-[11px] font-mono">{match[4]}</code>);
+                parts.push(<code key={k++} className="px-1.5 py-0.5 rounded bg-[#c9a474]/15 text-[#dbb98a] text-[11px] font-mono">{match[4]}</code>);
             }
             lastIndex = match.index + match[0].length;
         }
@@ -78,7 +79,7 @@ function renderMarkdown(text: string): React.ReactNode[] {
             const content = headingMatch[2];
             elements.push(
                 <p key={`h-${i}`} className={cn(
-                    "font-semibold text-[#2c2418] mt-2 mb-1",
+                    "font-semibold text-white/95 mt-2 mb-1",
                     level === 1 ? "text-sm" : level === 2 ? "text-[13px]" : "text-xs"
                 )}>
                     {formatInline(content)}
@@ -93,8 +94,8 @@ function renderMarkdown(text: string): React.ReactNode[] {
             const content = listMatch[1] || listMatch[3];
             const indent = line.search(/\S/) >= 4; // nested indent
             listItems.push(
-                <li key={`li-${i}`} className={cn("flex items-start gap-2 text-sm text-[#4a3f32]", indent && "ml-4")}>
-                    <span className="text-[#b69161]/50 mt-1 shrink-0 text-[8px]">●</span>
+                <li key={`li-${i}`} className={cn("flex items-start gap-2 text-sm text-white/80", indent && "ml-4")}>
+                    <span className="text-[#c9a474]/50 mt-1 shrink-0 text-[8px]">●</span>
                     <span className="leading-relaxed">{formatInline(content)}</span>
                 </li>
             );
@@ -104,7 +105,7 @@ function renderMarkdown(text: string): React.ReactNode[] {
         // Regular paragraph
         flushList();
         elements.push(
-            <p key={`p-${i}`} className="text-sm text-[#4a3f32] leading-relaxed">
+            <p key={`p-${i}`} className="text-sm text-white/80 leading-relaxed">
                 {formatInline(trimmed)}
             </p>
         );
@@ -119,13 +120,22 @@ interface MessageBubbleProps {
     onRevert?: (messageId: string) => void;
     onSendMessage?: (message: string) => void;
     isStreaming?: boolean;
+    initialSelectedProposal?: number | null;
 }
 
-export function MessageBubble({ message, onRevert, onSendMessage, isStreaming = false }: MessageBubbleProps) {
+export function MessageBubble({ message, onRevert, onSendMessage, isStreaming = false, initialSelectedProposal = null }: MessageBubbleProps) {
     const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
     const [copiedMessage, setCopiedMessage] = React.useState(false);
     const [isNew, setIsNew] = useState(true);
-    const [selectedProposal, setSelectedProposal] = useState<number | null>(null);
+    const [selectedProposal, setSelectedProposal] = useState<number | null>(initialSelectedProposal);
+
+    // Sync selection state when prop updates (e.g., after chat refresh loads metadata from Supabase)
+    useEffect(() => {
+        if (initialSelectedProposal != null) {
+            setSelectedProposal(initialSelectedProposal);
+        }
+    }, [initialSelectedProposal]);
+
     const isUser = message.role === 'user';
 
     type ContentPart =
@@ -241,7 +251,7 @@ export function MessageBubble({ message, onRevert, onSendMessage, isStreaming = 
                         onClick={() => setShowImagePopup(false)}
                     >
                         <div
-                            className="relative max-w-[90vw] max-h-[90vh] bg-[#f2efed] rounded-xl shadow-2xl p-4 border border-[#b69161]/15"
+                            className="relative max-w-[90vw] max-h-[90vh] dark-glass-strong rounded-xl shadow-2xl p-4"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <img
@@ -252,14 +262,14 @@ export function MessageBubble({ message, onRevert, onSendMessage, isStreaming = 
                             <div className="flex items-center justify-center gap-3 mt-3">
                                 <button
                                     onClick={handleCopyImage}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#b69161]/15 text-[#2c2418] text-sm font-medium hover:bg-[#b69161]/25 transition-colors"
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#c9a474]/20 text-white/90 text-sm font-medium hover:bg-[#c9a474]/30 transition-colors"
                                 >
                                     {copiedImage ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                     {copiedImage ? 'Copied!' : 'Copy Image'}
                                 </button>
                                 <button
                                     onClick={() => setShowImagePopup(false)}
-                                    className="px-4 py-2 rounded-lg bg-[#d6cfc9]/50 text-[#7a6f60] text-sm font-medium hover:bg-[#d6cfc9] transition-colors"
+                                    className="px-4 py-2 rounded-lg bg-white/10 text-white/60 text-sm font-medium hover:bg-white/15 transition-colors"
                                 >
                                     Close
                                 </button>
@@ -271,7 +281,7 @@ export function MessageBubble({ message, onRevert, onSendMessage, isStreaming = 
                 <div className="group px-4 py-2">
                     <div className="flex items-start gap-2">
                         <div className="flex-1 min-w-0">
-                            <div className="relative bg-[#d6cfc9] rounded-2xl px-4 py-3">
+                            <div className="relative dark-glass-subtle rounded-2xl px-4 py-3">
                                 {/* Attached Image */}
                                 {messageImage && (
                                     <div className="mb-2">
@@ -285,7 +295,7 @@ export function MessageBubble({ message, onRevert, onSendMessage, isStreaming = 
                                 )}
                                 {/* Message Text */}
                                 {message.content && message.content !== 'Sent an image' && (
-                                    <p className="text-sm text-[#2c2418]/90 whitespace-pre-wrap leading-relaxed">
+                                    <p className="text-sm text-white/90 whitespace-pre-wrap leading-relaxed">
                                         {message.content}
                                     </p>
                                 )}
@@ -324,28 +334,42 @@ export function MessageBubble({ message, onRevert, onSendMessage, isStreaming = 
                                 {renderMarkdown(part.content)}
                             </div>
                         ) : part.type === 'proposal' ? (
-                            <ProposalSelector
-                                options={part.data.options || []}
-                                recommendation={part.data.recommendation || 1}
-                                recommendationReason={part.data.recommendationReason || ''}
-                                researchSummary={part.data.researchSummary || ''}
-                                selectedId={selectedProposal}
-                                onSelect={(id) => {
-                                    setSelectedProposal(id);
-                                    onSendMessage?.(`Option ${id}`);
-                                }}
-                            />
+                            selectedProposal != null ? (
+                                <SelectedProposalBadge
+                                    option={(part.data.options || []).find((o: any) => o.id === selectedProposal)}
+                                    optionId={selectedProposal}
+                                />
+                            ) : (
+                                <ProposalSelector
+                                    options={part.data.options || []}
+                                    recommendation={part.data.recommendation || 1}
+                                    recommendationReason={part.data.recommendationReason || ''}
+                                    researchSummary={part.data.researchSummary || ''}
+                                    selectedId={selectedProposal}
+                                    onSelect={(id) => {
+                                        setSelectedProposal(id);
+                                        // Persist selection to Supabase message metadata
+                                        const existingMeta = (typeof message.metadata === 'object' && message.metadata !== null ? message.metadata : {}) as Record<string, any>;
+                                        supabase.from('messages').update({
+                                            metadata: { ...existingMeta, selectedOption: id },
+                                        }).eq('id', message.id).then(({ error }) => {
+                                            if (error) console.error('[MessageBubble] Failed to persist proposal selection:', error);
+                                        });
+                                        onSendMessage?.(`Option ${id}`);
+                                    }}
+                                />
+                            )
                         ) : part.type === 'artifact' ? (
                             <ArtifactCard artifact={part.artifact} />
                         ) : (
-                            <div className="rounded-xl overflow-hidden border border-[#b69161]/10 bg-[#f2efed]">
-                                <div className="flex items-center justify-between px-3 py-1.5 bg-[#e6e0dd] border-b border-[#b69161]/10">
-                                    <span className="text-[10px] text-[#7a6f60] font-mono">
+                            <div className="rounded-xl overflow-hidden dark-glass-inset">
+                                <div className="flex items-center justify-between px-3 py-1.5 bg-[rgba(44,36,24,0.5)] border-b border-[rgba(182,145,97,0.15)]">
+                                    <span className="text-[10px] text-[#c9a474]/60 font-mono">
                                         {part.language}
                                     </span>
                                     <button
                                         onClick={() => handleCopy(part.content, index)}
-                                        className="flex items-center gap-1 text-[10px] text-[#7a6f60] hover:text-[#4a3f32] transition-colors"
+                                        className="flex items-center gap-1 text-[10px] text-white/50 hover:text-white/80 transition-colors"
                                     >
                                         {copiedIndex === index ? (
                                             <><Check className="w-3 h-3" /> Copied</>
@@ -361,12 +385,12 @@ export function MessageBubble({ message, onRevert, onSendMessage, isStreaming = 
                                     customStyle={{
                                         margin: 0,
                                         padding: '12px 14px',
-                                        background: '#f2efed',
+                                        background: 'transparent',
                                         fontSize: '12px',
                                         lineHeight: '1.6',
                                     }}
                                     lineNumberStyle={{
-                                        color: '#a89d8e',
+                                        color: 'rgba(182, 145, 97, 0.35)',
                                         fontSize: '11px',
                                         minWidth: '2em',
                                         paddingRight: '12px',
@@ -384,7 +408,7 @@ export function MessageBubble({ message, onRevert, onSendMessage, isStreaming = 
             <div className="flex items-center mt-2">
                 <button
                     onClick={handleCopyMessage}
-                    className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-[#7a6f60] hover:text-[#4a3f32] hover:bg-[#b69161]/10 transition-all"
+                    className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-white/50 hover:text-white/80 hover:bg-white/10 transition-all"
                     title="Copy message"
                 >
                     {copiedMessage ? (

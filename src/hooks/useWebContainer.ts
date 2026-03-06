@@ -102,7 +102,6 @@ async function deleteFileFromSupabase(projectId: string, path: string) {
 // Singleton WebContainer instance (only one per browser tab)
 let webcontainerInstance: WebContainer | null = null;
 let bootPromise: Promise<WebContainer> | null = null;
-let hasBootedOnce = false; // Track if we've ever booted
 
 // SANDBOX_KILL: Tab visibility management constants
 const HIDDEN_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes before killing hidden container
@@ -228,7 +227,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
         }
     }, []);
 
-    // Boot WebContainer (singleton pattern)
+    // Boot WebContainer (singleton pattern — atomic lock via synchronous promise assignment)
     const boot = useCallback(async () => {
         // If we already have an instance, just return it
         if (webcontainerInstance) {
@@ -236,61 +235,56 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
             return webcontainerInstance;
         }
 
-        // If boot is in progress, wait for it
+        // If boot is in progress, wait for the same promise (no duplicate boot)
         if (bootPromise) {
             const instance = await bootPromise;
             setState(s => s.status === 'running' ? s : { ...s, status: 'running' });
             return instance;
         }
 
-        // If we've already booted once but instance is somehow null,
-        // this means there was an issue - don't try to boot again
-        if (hasBootedOnce) {
-            console.warn('⚠️ WebContainer was already booted in this session. Reusing existing promise.');
-            // Wait a bit and check again - might be a race condition
-            await new Promise(resolve => setTimeout(resolve, 100));
-            if (webcontainerInstance) {
-                setState(s => ({ ...s, status: 'running' }));
-                return webcontainerInstance;
-            }
-            throw new Error('WebContainer instance lost after boot. Please refresh the page.');
-        }
-
-        setState(s => ({ ...s, status: 'booting', error: null }));
+        // Atomic lock: assign bootPromise SYNCHRONOUSLY before any await.
+        // This ensures concurrent callers in the same tick see the promise
+        // and await it instead of starting a second WebContainer.boot().
+        bootPromise = (async () => {
+            setState(s => ({ ...s, status: 'booting', error: null }));
+            const instance = await WebContainer.boot();
+            webcontainerInstance = instance;
+            console.log('🚀 WebContainer booted');
+            // File restoration handled by initFromGitHub after mounting template
+            return instance;
+        })();
 
         try {
-            hasBootedOnce = true; // Mark that we're attempting to boot
-            bootPromise = WebContainer.boot();
-            webcontainerInstance = await bootPromise;
-            console.log('🚀 WebContainer booted');
-
-            // Restore persistent files if projectId exists
-            if (projectIdRef.current) {
-                await restoreFilesFromSupabase(webcontainerInstance);
-            }
-
-            return webcontainerInstance;
+            const instance = await bootPromise;
+            return instance;
         } catch (error: any) {
             // Clear the boot promise on error so we can potentially retry
             bootPromise = null;
 
             const errorMsg = error.message || 'Failed to boot WebContainer';
-
-            // If error is about single instance, the container might already be booted
-            if (errorMsg.includes('single') && errorMsg.includes('instance')) {
-                console.warn('⚠️ WebContainer already booted - this is likely a race condition');
-                // Wait and try to get the instance
-                await new Promise(resolve => setTimeout(resolve, 200));
-                if (webcontainerInstance) {
-                    return webcontainerInstance;
-                }
-            }
-
             setState(s => ({ ...s, status: 'error', error: errorMsg }));
             onError?.(errorMsg);
             throw error;
         }
     }, [onError, restoreFilesFromSupabase]);
+
+    // Clear known project files from WebContainer filesystem (preserves node_modules + system dirs)
+    const clearFilesystem = useCallback(async (wc: WebContainer) => {
+        console.log('[WebContainer] Clearing project files for project switch...');
+        projectLayoutRef.current.usesSrcDir = null;
+
+        // Only delete known project directories/files — NOT system dirs (tmp, home, dev, etc.)
+        const projectDirs = ['src', 'app', 'pages', 'public', 'styles', 'components', 'lib', 'hooks', 'context', 'types', 'utils', '.next'];
+        const projectFiles = ['package.json', 'package-lock.json', 'tsconfig.json', 'next.config.js', 'next.config.mjs', 'next.config.ts', 'tailwind.config.js', 'tailwind.config.ts', 'postcss.config.js', 'postcss.config.mjs', '.env.local', 'next-env.d.ts', 'globals.css'];
+
+        for (const name of projectDirs) {
+            try { await wc.fs.rm(`/${name}`, { recursive: true }); } catch { /* doesn't exist */ }
+        }
+        for (const name of projectFiles) {
+            try { await wc.fs.rm(`/${name}`); } catch { /* doesn't exist */ }
+        }
+        console.log('[WebContainer] Project files cleared');
+    }, []);
 
     // Re-restore files when projectId changes (handles localStorage restore timing)
     const previousProjectIdRef = useRef<string | undefined>(projectId);
@@ -302,11 +296,14 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
             webcontainerInstance &&
             previousProjectIdRef.current !== undefined
         ) {
-            console.log(`🔄 ProjectId changed from ${previousProjectIdRef.current} to ${projectId}, restoring files...`);
-            restoreFilesFromSupabase(webcontainerInstance);
+            console.log(`🔄 ProjectId changed from ${previousProjectIdRef.current} to ${projectId}, clearing and restoring files...`);
+            (async () => {
+                await clearFilesystem(webcontainerInstance);
+                await restoreFilesFromSupabase(webcontainerInstance);
+            })();
         }
         previousProjectIdRef.current = projectId;
-    }, [projectId, restoreFilesFromSupabase]);
+    }, [projectId, restoreFilesFromSupabase, clearFilesystem]);
 
     // Mount files to WebContainer
     const mountFiles = useCallback(async (files: Record<string, any>) => {
@@ -692,6 +689,15 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
 
             const wc = await boot();
 
+            // Clear previous project files before mounting new ones
+            await clearFilesystem(wc);
+
+            // Kill existing dev server so the new one can bind to the port
+            if (serverProcess.current) {
+                serverProcess.current.kill();
+                serverProcess.current = null;
+            }
+
             // HANDLE LOCAL PROJECT (No GitHub Repo)
             if (!repoUrl) {
                 console.log('📂 No GitHub repo linked (Local Project). Using starter template.');
@@ -867,7 +873,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
             onError?.(errorMsg);
             throw error;
         }
-    }, [boot, mountFiles, installDependencies, startDevServer, onError, restoreFilesFromSupabase, detectProjectLayout]);
+    }, [boot, mountFiles, installDependencies, startDevServer, onError, restoreFilesFromSupabase, detectProjectLayout, clearFilesystem]);
 
     // SANDBOX_KILL: Handle tab visibility changes
     useEffect(() => {

@@ -3,14 +3,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Send, Loader2, Paperclip, Github, ChevronDown, Check } from 'lucide-react';
+import { Send, Loader2, Paperclip, Github, ChevronDown, Check, Zap, Cpu, Sparkles, Crown } from 'lucide-react';
 import { gsap } from 'gsap';
 import { ClaudeLogo } from '@/components/icons/ClaudeLogo';
 import { RecentProjectsTable } from './RecentProjectsTable';
 import { useAuth } from '@/contexts/AuthContext';
 import { AuthRequiredModal } from '@/components/auth/AuthRequiredModal';
 import { RepoSelectorModal } from '@/components/auth/RepoSelectorModal';
-import type { ExecutorMode } from '@/components/chat/MessageInput';
+import type { ModelOption } from '@/components/chat/MessageInput';
 import { cn } from '@/lib/utils';
 import VantaFogBackground from '@/components/common/VantaFogBackground';
 
@@ -20,11 +20,11 @@ interface LandingPageProps {
     onImportRepo?: (repoUrl: string) => Promise<void>;
     onOpenPreview?: (project?: any) => void;
     isLoading?: boolean;
-    executorMode?: ExecutorMode;
-    onModeChange?: (mode: ExecutorMode) => void;
+    selectedModel?: ModelOption;
+    onModelChange?: (model: ModelOption) => void;
 }
 
-export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOpenPreview, isLoading, executorMode = 'mastra', onModeChange }: LandingPageProps) {
+export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOpenPreview, isLoading, selectedModel = 'flash', onModelChange }: LandingPageProps) {
     const [message, setMessage] = useState('');
     const [showImportModal, setShowImportModal] = useState(false);
     const [showAuthModal, setShowAuthModal] = useState(false);
@@ -567,87 +567,61 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                     ref={modeBtnRef}
                                     type="button"
                                     onClick={() => setIsModeDropdownOpen(!isModeDropdownOpen)}
-                                    className={cn(
-                                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border border-[#b69161]/40 backdrop-blur-md",
-                                        executorMode === 'mastra'
-                                            ? "bg-[#e6e0dd]/60 text-[#2c2418]"
-                                            : "bg-[#e6e0dd]/60 text-[#2c2418]"
-                                    )}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border border-[#b69161]/40 backdrop-blur-md bg-[#e6e0dd]/60 text-[#2c2418]"
                                 >
-                                    {executorMode === 'mastra' ? (
-                                        <>
-                                            <Image src="/automatelogo.png" alt="Automate" width={14} height={14} className="object-contain" />
-                                            <span>Automate Editor</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <ClaudeLogo className="w-3.5 h-3.5 text-[#2c2418]" />
-                                            <span>Claude Code</span>
-                                        </>
-                                    )}
+                                    {selectedModel === 'flash' && <Zap className="w-3.5 h-3.5" />}
+                                    {selectedModel === 'pro' && <Cpu className="w-3.5 h-3.5" />}
+                                    {selectedModel === 'sonnet' && <Sparkles className="w-3.5 h-3.5" />}
+                                    {selectedModel === 'opus' && <Crown className="w-3.5 h-3.5" />}
+                                    <span>
+                                        {selectedModel === 'flash' ? 'Gemini Flash' :
+                                         selectedModel === 'pro' ? 'Gemini Pro' :
+                                         selectedModel === 'sonnet' ? 'Claude Sonnet' : 'Claude Opus'}
+                                    </span>
                                     <ChevronDown className={cn(
                                         "w-3 h-3 transition-transform",
                                         isModeDropdownOpen && "rotate-180"
                                     )} />
                                 </button>
 
-                                {/* Dropdown Menu */}
+                                {/* Model Dropdown Menu */}
                                 {isModeDropdownOpen && (
                                     <div
                                         ref={dropdownMenuRef}
-                                        className="absolute bottom-full left-0 mb-2 w-48 rounded-xl shadow-xl border border-[#b69161]/30 overflow-hidden backdrop-blur-xl"
+                                        className="absolute bottom-full left-0 mb-2 w-52 rounded-xl shadow-xl border border-[#b69161]/30 overflow-hidden backdrop-blur-xl"
                                         style={{
                                             background: 'linear-gradient(135deg, rgba(242, 239, 237, 0.92) 0%, rgba(230, 224, 221, 0.88) 100%)',
                                             boxShadow: '0 8px 32px rgba(132, 116, 91, 0.2)',
                                         }}
                                     >
-                                        {/* Claude Code Option */}
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                onModeChange?.('thinking');
-                                                setIsModeDropdownOpen(false);
-                                            }}
-                                            className={cn(
-                                                "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
-                                                executorMode !== 'mastra'
-                                                    ? "bg-[#b69161]/15"
-                                                    : "hover:bg-[#b69161]/10"
-                                            )}
-                                        >
-                                            <ClaudeLogo className="w-4 h-4 text-[#2c2418]" />
-                                            <div className="flex-1">
-                                                <div className="text-sm font-medium text-[#2c2418]">Claude Code</div>
-                                                <div className="text-xs text-[#7a6f60]">Anthropic Claude</div>
-                                            </div>
-                                            {executorMode !== 'mastra' && (
-                                                <Check className="w-4 h-4 text-[#2c2418]" />
-                                            )}
-                                        </button>
-
-                                        {/* Automate Editor Option */}
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                onModeChange?.('mastra');
-                                                setIsModeDropdownOpen(false);
-                                            }}
-                                            className={cn(
-                                                "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
-                                                executorMode === 'mastra'
-                                                    ? "bg-[#b69161]/15"
-                                                    : "hover:bg-[#b69161]/10"
-                                            )}
-                                        >
-                                            <Image src="/automatelogo.png" alt="Automate" width={16} height={16} className="object-contain" />
-                                            <div className="flex-1">
-                                                <div className="text-sm font-medium text-[#2c2418]">Automate Editor</div>
-                                                <div className="text-xs text-[#7a6f60]">Mastra Agent (GPT-4o)</div>
-                                            </div>
-                                            {executorMode === 'mastra' && (
-                                                <Check className="w-4 h-4 text-[#2c2418]" />
-                                            )}
-                                        </button>
+                                        {([
+                                            { key: 'flash' as const, label: 'Gemini Flash', desc: 'Fast & efficient', icon: <Zap className="w-4 h-4" /> },
+                                            { key: 'pro' as const, label: 'Gemini Pro', desc: 'Advanced reasoning', icon: <Cpu className="w-4 h-4" /> },
+                                            { key: 'sonnet' as const, label: 'Claude Sonnet', desc: 'Balanced quality', icon: <Sparkles className="w-4 h-4" /> },
+                                            { key: 'opus' as const, label: 'Claude Opus', desc: 'Maximum quality', icon: <Crown className="w-4 h-4" /> },
+                                        ]).map(({ key, label, desc, icon }) => (
+                                            <button
+                                                key={key}
+                                                type="button"
+                                                onClick={() => {
+                                                    onModelChange?.(key);
+                                                    setIsModeDropdownOpen(false);
+                                                }}
+                                                className={cn(
+                                                    "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
+                                                    selectedModel === key ? "bg-[#b69161]/15" : "hover:bg-[#b69161]/10"
+                                                )}
+                                            >
+                                                <span className="text-[#2c2418]">{icon}</span>
+                                                <div className="flex-1">
+                                                    <div className="text-sm font-medium text-[#2c2418]">{label}</div>
+                                                    <div className="text-xs text-[#7a6f60]">{desc}</div>
+                                                </div>
+                                                {selectedModel === key && (
+                                                    <Check className="w-4 h-4 text-[#2c2418]" />
+                                                )}
+                                            </button>
+                                        ))}
                                     </div>
                                 )}
                             </div>

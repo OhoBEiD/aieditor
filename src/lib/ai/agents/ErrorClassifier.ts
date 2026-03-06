@@ -84,6 +84,20 @@ export function classifyErrors(buildOutput: string): ClassifiedError[] {
       continue;
     }
 
+    // Unsupported Server Component type (undefined export)
+    const unsupportedComponent = line.match(/Unsupported Server Component type:\s*(\w+)/i);
+    if (unsupportedComponent) {
+      errors.push({
+        type: "runtime_error",
+        file: "unknown",
+        line: 1,
+        message: `Unsupported Server Component type: ${unsupportedComponent[1]} — a component's default export is undefined`,
+        fixStrategy: `A component's default export is undefined. Check all component files imported by page.tsx — one of them has a missing or broken "export default". Search for "export default" in each component file and ensure every component is properly defined and exported.`,
+        severity: "error",
+      });
+      continue;
+    }
+
     // Generic error with file path
     const genericError = line.match(/(?:Error|error)\s*(?:in\s+)?([^\s:]+\.(?:ts|tsx|js|jsx)):?\s*(?:line\s*)?(\d+)?:?\s*(.*)/i);
     if (genericError) {

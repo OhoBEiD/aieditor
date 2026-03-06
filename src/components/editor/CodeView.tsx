@@ -152,29 +152,29 @@ export function CodeView({ listFiles, readFile, writeFile, className, externalSe
         return () => ctx.revert();
     }, []);
 
-    const darkGlassStyle = "backdrop-blur-xl bg-[#f2efed]/90 border border-[#b69161]/20 rounded-2xl shadow-[0_8px_32px_0_rgba(44,36,24,0.1)]";
+    const darkGlassStyle = "backdrop-blur-[32px] bg-[rgba(44,36,24,0.82)] border border-[rgba(182,145,97,0.22)] rounded-2xl shadow-[0_16px_48px_rgba(0,0,0,0.35),0_4px_16px_rgba(0,0,0,0.2)]";
 
     return (
         <div className={cn("flex h-full font-sans bg-transparent py-4 px-4 gap-4", className)}>
             {/* Sidebar - File Tree - Dark Glass */}
             <div className={cn("w-80 flex-shrink-0 flex flex-col file-sidebar overflow-hidden", darkGlassStyle)}>
                 {/* Search */}
-                <div className="p-4 border-b border-[#b69161]/10">
-                    <div className="flex items-center gap-2 px-3 py-2 bg-[#d6cfc9]/20 border border-[#b69161]/20 rounded-xl transition-all focus-within:border-[#b69161]/40">
-                        <Search className="w-4 h-4 text-[#b69161]/60" />
+                <div className="p-4 border-b border-[rgba(182,145,97,0.12)]">
+                    <div className="flex items-center gap-2 px-3 py-2 bg-[rgba(30,24,16,0.5)] border border-[rgba(182,145,97,0.12)] rounded-xl transition-all focus-within:border-[rgba(182,145,97,0.35)]">
+                        <Search className="w-4 h-4 text-[#c9a474]/50" />
                         <input
                             type="text"
                             placeholder="Search..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="bg-transparent text-[#b69161] placeholder-[#a89d8e] outline-none flex-1 text-sm font-medium"
+                            className="bg-transparent text-white/90 placeholder-white/30 outline-none flex-1 text-sm font-medium"
                         />
                     </div>
                 </div>
 
                 {/* File Tree */}
                 {isLoading ? (
-                    <div className="flex items-center justify-center p-4 text-[#b69161]/60 text-sm font-medium">
+                    <div className="flex items-center justify-center p-4 text-[#c9a474]/50 text-sm font-medium">
                         Loading files...
                     </div>
                 ) : (
@@ -193,20 +193,20 @@ export function CodeView({ listFiles, readFile, writeFile, className, externalSe
                     <>
                         {/* Editor Header / Breadcrumbs - Dark Glass */}
                         <div className={cn("editor-breadcrumbs flex items-center px-6 h-14 shrink-0 shadow-sm", darkGlassStyle)}>
-                            <div className="flex items-center gap-2 text-sm text-[#b69161] font-medium">
-                                <Search className="w-4 h-4 text-[#b69161]/60" />
-                                <span className="text-[#b69161]/30 mx-1">/</span>
+                            <div className="flex items-center gap-2 text-sm text-white/60 font-medium">
+                                <Search className="w-4 h-4 text-[#c9a474]/50" />
+                                <span className="text-white/20 mx-1">/</span>
                                 {selectedFile.split('/').map((part, i, arr) => (
                                     <div key={i} className="flex items-center gap-1">
                                         <span className={cn(
                                             "transition-colors px-2 py-0.5 rounded-lg",
                                             i === arr.length - 1
-                                                ? "text-[#b69161] font-bold bg-[#b69161]/10 border border-[#b69161]/20"
-                                                : "text-[#b69161]/60 hover:text-[#b69161] cursor-pointer hover:bg-[#d6cfc9]/30"
+                                                ? "text-[#dbb98a] font-bold bg-[#c9a474]/12 border border-[#c9a474]/20"
+                                                : "text-white/50 hover:text-white/80 cursor-pointer hover:bg-white/5"
                                         )}>
                                             {part}
                                         </span>
-                                        {i < arr.length - 1 && <span className="text-[#b69161]/20">/</span>}
+                                        {i < arr.length - 1 && <span className="text-white/20">/</span>}
                                     </div>
                                 ))}
                             </div>

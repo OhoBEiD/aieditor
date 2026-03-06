@@ -7,6 +7,7 @@ import { selectModel, type Complexity } from "../router";
 import { getExecutorTools, type FileOperation, type DatabaseContext } from "../tools/enhanced-tools";
 import type { ExecutionPlan, PlanTask } from "./PlanAgent";
 import { compactToolResults } from "../context/compaction";
+import { ANIMATION_SKILLS } from "../prompts/skills";
 
 // --- Types ---
 
@@ -56,6 +57,12 @@ const EXECUTOR_SYSTEM_PROMPT = `You are an expert full-stack developer executing
 - When modifying layout.tsx, PRESERVE <html> and <body> tags.
 - After writing important files, use read_file to verify the content.
 
+## MODIFICATION RULES
+When modifying existing files:
+- ONLY change what the task explicitly describes. Do not alter unrelated code.
+- Preserve brand names, content text, layout structure, and image URLs unless the task says otherwise.
+- Prefer edit_file (surgical edits) over write_file (full rewrite) for existing files.
+
 ## RESPONSE FORMAT
 After completing the task, respond with a ONE-SENTENCE summary of what was done.`;
 
@@ -88,7 +95,7 @@ export async function executeFastPath(
   try {
     const result = await generateText({
       model: config.model,
-      system: EXECUTOR_SYSTEM_PROMPT,
+      system: EXECUTOR_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS,
       prompt,
       tools,
       stopWhen: stepCountIs(config.maxSteps),
@@ -250,7 +257,7 @@ Execute this task using the tools. Remember: search/read first, then write, then
   try {
     const result = await generateText({
       model: config.model,
-      system: EXECUTOR_SYSTEM_PROMPT,
+      system: EXECUTOR_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS,
       prompt,
       tools,
       stopWhen: stepCountIs(Math.min(config.maxSteps, 8)), // Cap at 8 steps per task

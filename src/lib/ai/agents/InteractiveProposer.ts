@@ -6,6 +6,7 @@ import { generateText } from "ai";
 import { selectModel } from "../router";
 import type { ExplorationResult } from "./ExploreAgent";
 import type { BrainEntry } from "../context/brain";
+import { ANIMATION_SKILLS_BRIEF } from "../prompts/skills";
 
 // --- Types ---
 
@@ -85,6 +86,12 @@ You MUST output valid JSON in this EXACT structure:
 }
 \`\`\`
 
+## CRITICAL: USER INTENT
+- ALL 3 options MUST directly address the user's request. Read it carefully.
+- If the user asks for an "ecommerce furniture store", ALL options must be for an ecommerce furniture store — not a SaaS, dashboard, or any other type.
+- Ignore any "learned patterns" that contradict the user's request. Those patterns are from previous projects and may be irrelevant.
+- The options should differ in SCOPE and COMPLEXITY, not in what they build.
+
 ## RULES
 - Each option must be MEANINGFULLY different (different file count, different patterns, different scope)
 - Be specific in the "approach" field — the planner agent will use this to create the execution plan
@@ -106,7 +113,7 @@ export async function generateProposals(
 ): Promise<ProposalResult> {
   const config = selectModel("plan", "moderate");
 
-  let prompt = `## User Request\n${userRequest}\n\n`;
+  let prompt = `## USER INTENT (CRITICAL — ALL proposals must directly address this)\nTHE USER WANTS: ${userRequest}\n\n`;
 
   // Add exploration context
   if (exploration) {
@@ -134,12 +141,19 @@ export async function generateProposals(
   }
 
   // Add brain context for informed proposals
+  // Only include code-pattern and mistake entries — skip architecture/preference
+  // entries as they may be from a different project type and could mislead the AI
   if (brainEntries.length > 0) {
-    prompt += `## Learned Patterns (from previous sessions)\n`;
-    for (const entry of brainEntries.slice(0, 5)) {
-      prompt += `- [${entry.category}] ${entry.content}\n`;
+    const safeEntries = brainEntries.filter(e =>
+      e.category === 'mistake' || e.category === 'pattern' || e.category === 'component'
+    );
+    if (safeEntries.length > 0) {
+      prompt += `## Code Patterns (from previous sessions — may not apply to current request)\n`;
+      for (const entry of safeEntries.slice(0, 3)) {
+        prompt += `- [${entry.category}] ${entry.content}\n`;
+      }
+      prompt += "\n";
     }
-    prompt += "\n";
   }
 
   prompt += `Now generate 3 implementation approaches as JSON.`;
@@ -147,7 +161,7 @@ export async function generateProposals(
   try {
     const result = await generateText({
       model: config.model,
-      system: PROPOSER_SYSTEM_PROMPT,
+      system: PROPOSER_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS_BRIEF,
       prompt,
       temperature: 0.4, // Slightly creative for diverse options
     });
@@ -243,8 +257,8 @@ function createFallbackProposal(userRequest: string): ProposalResult {
       {
         id: 3,
         title: "Premium & Animated",
-        description: "Full premium implementation with GSAP animations, glass morphism, floating orbs, and cinematic layout.",
-        approach: `Implement "${userRequest}" with premium design: GSAP scroll animations, glass morphism effects, floating gradient orbs, grain texture overlay, parallax images, word-by-word hero reveal, counter stats with animation, and full responsive design. Create 8-10 separate components.`,
+        description: "Full premium implementation with GSAP scroll animations, cinematic layout, and polished visual effects.",
+        approach: `Implement "${userRequest}" with premium design: GSAP scroll animations with ScrollTrigger, parallax images, staggered card reveals, word-by-word hero text animation, counter stats with animation, and full responsive design. Choose a design style (solid, gradient, or glass) that best fits the site type. Create 8-10 separate components.`,
         complexity: "complex",
         estimatedFiles: 10,
         tradeoffs: {
@@ -293,17 +307,16 @@ export function parseOptionSelection(message: string): number | null {
 
 /**
  * Determine if a task should use interactive mode.
- * Only for complex/moderate tasks that benefit from user input.
+ * Based on classification type and complexity — not conversation history.
  */
 export function shouldUseInteractiveMode(
-  complexity: string,
-  isFollowUp: boolean,
+  classification: { type: string; complexity: string },
 ): boolean {
   // Don't ask for options on simple tasks
-  if (complexity === "simple") return false;
+  if (classification.complexity === "simple") return false;
 
-  // Don't ask on follow-up messages (user already made a choice)
-  if (isFollowUp) return false;
+  // Simple edits and debug tasks skip proposals regardless of complexity
+  if (classification.type === "simple_edit" || classification.type === "debug") return false;
 
   // Use interactive mode for moderate and complex tasks
   return true;

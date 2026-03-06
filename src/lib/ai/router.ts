@@ -1,6 +1,6 @@
-// Model Router - selects the right Gemini model and thinking level per task
-// Uses Gemini 3.1 Pro for complex reasoning, Gemini 3 Flash for fast execution
-// Enhanced with: fallback chains, temperature tuning, model-switching retry
+// Model Router - selects the right model and thinking level per task
+// User picks a model for Plan + Execute (quality-critical stages)
+// Utility stages (classify, explore, verify, fix) always use Flash for token efficiency
 
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText as generateTextBase } from "ai";
@@ -21,6 +21,24 @@ const openrouter = createOpenAI({
 export type TaskType = "classify" | "explore" | "plan" | "execute" | "verify" | "replan" | "reflect" | "fix";
 export type Complexity = "simple" | "moderate" | "complex";
 export type ThinkingLevel = "minimal" | "low" | "medium" | "high";
+export type UserModel = "flash" | "pro" | "sonnet" | "opus";
+
+// --- Model Registry ---
+
+const MODEL_REGISTRY: Record<UserModel, string> = {
+  flash: "google/gemini-3-flash-preview",
+  pro: "google/gemini-3.1-pro-preview",
+  sonnet: "anthropic/claude-sonnet-4-6",
+  opus: "anthropic/claude-opus-4-6",
+};
+
+// Fallback order: opus → sonnet → pro → flash → null
+const MODEL_FALLBACK: Record<UserModel, UserModel | null> = {
+  opus: "sonnet",
+  sonnet: "pro",
+  pro: "flash",
+  flash: null,
+};
 
 export interface ModelConfig {
   model: ReturnType<typeof openrouter.chat>;
@@ -50,8 +68,20 @@ const TEMPERATURE: Record<string, number> = {
 
 // --- Router ---
 
-export function selectModel(task: TaskType, complexity: Complexity = "moderate"): ModelConfig {
+export function selectModel(task: TaskType, complexity: Complexity = "moderate", userModel?: UserModel): ModelConfig {
   const temp = TEMPERATURE[task] ?? 0.2;
+
+  // For plan + execute: use user's selected model if provided
+  if (userModel && userModel !== "flash" && (task === "plan" || task === "execute")) {
+    const modelId = MODEL_REGISTRY[userModel];
+    return {
+      model: openrouter.chat(modelId),
+      modelId,
+      thinkingLevel: task === "plan" ? "high" : "medium",
+      maxSteps: task === "plan" ? 10 : 20,
+      temperature: temp,
+    };
+  }
 
   switch (task) {
     case "classify":
@@ -157,16 +187,23 @@ export function selectModel(task: TaskType, complexity: Complexity = "moderate")
 
 // --- Fallback Chain ---
 
-export function selectModelWithFallback(task: TaskType, complexity: Complexity = "moderate"): ModelChain {
-  const primary = selectModel(task, complexity);
+export function selectModelWithFallback(task: TaskType, complexity: Complexity = "moderate", userModel?: UserModel): ModelChain {
+  const primary = selectModel(task, complexity, userModel);
 
-  // If primary is Pro, fallback to Flash
-  if (primary.modelId === PRO_MODEL) {
+  // Build fallback based on what the primary model is
+  // Find which UserModel matches the primary, then use its fallback
+  const primaryUserModel = (Object.entries(MODEL_REGISTRY) as [UserModel, string][])
+    .find(([, id]) => id === primary.modelId)?.[0];
+
+  const fallbackKey = primaryUserModel ? MODEL_FALLBACK[primaryUserModel] : null;
+
+  if (fallbackKey) {
+    const fallbackModelId = MODEL_REGISTRY[fallbackKey];
     return {
       primary,
       fallback: {
-        model: openrouter.chat(FLASH_MODEL),
-        modelId: FLASH_MODEL,
+        model: openrouter.chat(fallbackModelId),
+        modelId: fallbackModelId,
         thinkingLevel: primary.thinkingLevel === "high" ? "medium" : primary.thinkingLevel,
         maxSteps: primary.maxSteps,
         temperature: primary.temperature,
@@ -174,7 +211,7 @@ export function selectModelWithFallback(task: TaskType, complexity: Complexity =
     };
   }
 
-  // Flash has no fallback (it's already the cheapest)
+  // Flash (or unknown) has no fallback
   return { primary, fallback: null };
 }
 
@@ -233,3 +270,4 @@ export function getProModel() {
 
 // Export model IDs for logging
 export const MODEL_IDS = { PRO: PRO_MODEL, FLASH: FLASH_MODEL };
+export { MODEL_REGISTRY };

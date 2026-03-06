@@ -20,7 +20,9 @@ export const STARTER_TEMPLATE = {
                     "react": "18.3.1",
                     "react-dom": "18.3.1",
                     "gsap": "^3.12.5",
-                    "lucide-react": "^0.344.0"
+                    "lucide-react": "^0.344.0",
+                    "motion": "^12.0.0",
+                    "lenis": "^1.1.0"
                 },
                 "devDependencies": {
                     "typescript": "5.4.5",
@@ -43,6 +45,9 @@ const nextConfig = {
         remotePatterns: [
             { protocol: 'https', hostname: 'images.unsplash.com' },
             { protocol: 'https', hostname: 'randomuser.me' },
+            { protocol: 'https', hostname: 'picsum.photos' },
+            { protocol: 'https', hostname: 'fastly.picsum.photos' },
+            { protocol: 'https', hostname: 'i.pravatar.cc' },
         ],
     },
 }
@@ -192,17 +197,17 @@ export default function RootLayout({
 
 @layer base {
     :root {
-        --background: 0 0% 3%;
-        --foreground: 0 0% 98%;
+        --background: 0 0% 100%;
+        --foreground: 0 0% 5%;
         --primary: 262 83% 58%;
         --primary-foreground: 0 0% 100%;
-        --muted: 0 0% 10%;
-        --muted-foreground: 0 0% 60%;
+        --muted: 0 0% 96%;
+        --muted-foreground: 0 0% 40%;
         --accent: 262 83% 58%;
         --accent-foreground: 0 0% 100%;
-        --card: 0 0% 5%;
-        --card-foreground: 0 0% 98%;
-        --border: 0 0% 14%;
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 5%;
+        --border: 0 0% 90%;
     }
 }
 

@@ -2,9 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
-import { Loader2, Check, AlertCircle, ChevronDown, Brain, Wrench, FileCode, Search, Globe, Layout, Palette, Terminal, Zap, ExternalLink, Settings2, File, RefreshCw, ShieldCheck, Trash2, FolderOpen } from 'lucide-react';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Loader2, Check, AlertCircle, ChevronDown, Brain, Wrench, FileCode, Search, Globe, Layout, Zap, Settings2, File, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 import { getFileIconUrl } from '@/components/editor/FileTree';
 
 // File icon with fallback
@@ -45,11 +43,32 @@ interface ThinkingStepsProps {
     onFileClick?: (filePath: string) => void;
 }
 
-// Extract file path from step text
+// --- Step classification helpers ---
+
+const PHASE_TOOLS = new Set(['thinking', 'classifying', 'exploring', 'planning', 'replanning', 'routing', 'verifying', 'replan', 'executing']);
+const TASK_TOOLS = new Set(['task_start', 'task_started', 'task_complete', 'task_completed', 'task_failed']);
+const BUILD_TOOLS = new Set(['build_check', 'build_fix', 'build_validation', 'validate_build', 'fix_write', 'fix_edit', 'fix_read', 'fix_search']);
+const LOOKUP_TOOLS = new Set(['list_files', 'grep_search', 'glob_search', 'check_syntax', 'repo_map']);
+const QUALITY_TOOLS = new Set(['quality_check', 'test_gen', 'brain_save']);
+const COMPLETE_TOOLS = new Set(['complete']);
+
+function getStepCategory(step: ThinkingStep): string {
+    const name = (step.tool_name || step.toolName || '').toLowerCase();
+    if (PHASE_TOOLS.has(name)) return 'phase';
+    if (TASK_TOOLS.has(name)) return 'task';
+    if (BUILD_TOOLS.has(name)) return 'build';
+    if (LOOKUP_TOOLS.has(name)) return 'lookup';
+    if (QUALITY_TOOLS.has(name)) return 'quality';
+    if (COMPLETE_TOOLS.has(name)) return 'complete';
+    if (name === 'generate_image') return 'hidden';
+    if (name.includes('write') || name.includes('create') || name.includes('modify') || name.includes('replace') || name.includes('edit') || name.includes('delete') || name.includes('read')) return 'file';
+    return 'other';
+}
+
 function extractFileName(text: string): string | null {
     if (!text) return null;
     const patterns = [
-        /(?:Writing|Creating|Reading|Modifying|Deleting)\s+([^\s]+\.\w+)/i,
+        /(?:Writing|Creating|Reading|Modifying|Deleting|Fixing)\s+([^\s]+\.\w+)/i,
         /([^\s]+\.(?:tsx?|jsx?|css|scss|json|md|html|vue|svelte))/i,
     ];
     for (const pattern of patterns) {
@@ -59,32 +78,149 @@ function extractFileName(text: string): string | null {
     return null;
 }
 
-// Parse text and make file names clickable
-function renderTextWithFileLink(
-    text: string,
-    onFileClick?: (filePath: string) => void
-): React.ReactNode {
-    if (!onFileClick) return text;
-    const fileName = extractFileName(text);
-    if (!fileName) return text;
-    const parts = text.split(fileName);
-    if (parts.length !== 2) return text;
-    return (
-        <>
-            {parts[0]}
-            <button
-                onClick={(e) => { e.stopPropagation(); onFileClick(fileName); }}
-                className="inline-flex items-center gap-0.5 text-[#b69161] hover:text-[#b69161] hover:underline font-medium"
-            >
-                {fileName}
-                <ExternalLink className="w-2.5 h-2.5" />
-            </button>
-            {parts[1]}
-        </>
-    );
+function extractDiffStats(step: ThinkingStep): { additions: number; deletions: number } | null {
+    if (!step.details) return null;
+    const content = typeof step.details === 'string' ? step.details : step.details?.content;
+    if (!content || typeof content !== 'string') return null;
+    const lines = content.split('\n');
+    let additions = 0;
+    let deletions = 0;
+    for (const line of lines) {
+        if (line.startsWith('+') && !line.startsWith('+++')) additions++;
+        else if (line.startsWith('-') && !line.startsWith('---')) deletions++;
+    }
+    if (additions === 0 && deletions === 0 && content.length > 10) {
+        additions = Math.min(lines.length, 20);
+    }
+    return additions > 0 || deletions > 0 ? { additions, deletions } : null;
 }
 
-// Streaming text with cursor
+// --- Grouping logic ---
+
+interface GroupedItem {
+    type: 'phase' | 'file_group' | 'task_group' | 'build_group' | 'quality' | 'complete' | 'lookup_group';
+    steps: ThinkingStep[];
+    files?: { name: string; step: ThinkingStep; additions: number; deletions: number }[];
+    completed?: number;
+    total?: number;
+    failed?: number;
+    buildStatus?: 'passed' | 'failed' | 'running';
+    issueCount?: number;
+}
+
+function groupSteps(steps: ThinkingStep[]): GroupedItem[] {
+    const groups: GroupedItem[] = [];
+    let currentFileSteps: ThinkingStep[] = [];
+    let currentTaskSteps: ThinkingStep[] = [];
+    let currentBuildSteps: ThinkingStep[] = [];
+    let currentLookupSteps: ThinkingStep[] = [];
+
+    const flushFiles = () => {
+        if (currentFileSteps.length === 0) return;
+        const fileMap = new Map<string, { name: string; step: ThinkingStep; additions: number; deletions: number }>();
+        for (const step of currentFileSteps) {
+            const text = step.message || step.text || '';
+            const name = extractFileName(text);
+            if (name) {
+                const stats = extractDiffStats(step) || { additions: 0, deletions: 0 };
+                const existing = fileMap.get(name);
+                if (!existing || stats.additions > 0 || stats.deletions > 0) {
+                    fileMap.set(name, { name, step, additions: stats.additions, deletions: stats.deletions });
+                }
+            }
+        }
+        groups.push({
+            type: 'file_group',
+            steps: currentFileSteps,
+            files: Array.from(fileMap.values()),
+        });
+        currentFileSteps = [];
+    };
+
+    const flushTasks = () => {
+        if (currentTaskSteps.length === 0) return;
+        let completed = 0, total = 0, failed = 0;
+        for (const s of currentTaskSteps) {
+            const name = (s.tool_name || s.toolName || '').toLowerCase();
+            if (name.includes('start')) total++;
+            if (name.includes('complete')) completed++;
+            if (name.includes('failed')) { failed++; total++; }
+        }
+        groups.push({ type: 'task_group', steps: currentTaskSteps, completed, total, failed });
+        currentTaskSteps = [];
+    };
+
+    const flushBuild = () => {
+        if (currentBuildSteps.length === 0) return;
+        const lastStep = currentBuildSteps[currentBuildSteps.length - 1];
+        const msg = (lastStep.message || lastStep.text || '').toLowerCase();
+        let buildStatus: 'passed' | 'failed' | 'running' = 'running';
+        let issueCount = 0;
+        if (msg.includes('passed') || lastStep.status === 'complete') buildStatus = 'passed';
+        else if (lastStep.status === 'error' || msg.includes('could not') || msg.includes('remaining')) {
+            buildStatus = 'failed';
+            const match = msg.match(/(\d+)\s*issues?\s*remaining/);
+            if (match) issueCount = parseInt(match[1]);
+        }
+        groups.push({ type: 'build_group', steps: currentBuildSteps, buildStatus, issueCount });
+        currentBuildSteps = [];
+    };
+
+    const flushLookups = () => {
+        if (currentLookupSteps.length === 0) return;
+        groups.push({ type: 'lookup_group', steps: currentLookupSteps });
+        currentLookupSteps = [];
+    };
+
+    for (const step of steps) {
+        const cat = getStepCategory(step);
+        if (cat === 'hidden') continue;
+
+        if (cat === 'file') {
+            flushTasks(); flushBuild(); flushLookups();
+            currentFileSteps.push(step);
+        } else if (cat === 'task') {
+            flushFiles(); flushBuild(); flushLookups();
+            currentTaskSteps.push(step);
+        } else if (cat === 'build') {
+            flushFiles(); flushTasks(); flushLookups();
+            currentBuildSteps.push(step);
+        } else if (cat === 'lookup') {
+            flushFiles(); flushTasks(); flushBuild();
+            currentLookupSteps.push(step);
+        } else {
+            flushFiles(); flushTasks(); flushBuild(); flushLookups();
+            if (cat === 'phase' || cat === 'quality' || cat === 'complete') {
+                groups.push({ type: cat as any, steps: [step] });
+            }
+        }
+    }
+
+    flushFiles(); flushTasks(); flushBuild(); flushLookups();
+    return groups;
+}
+
+// --- Phase metadata ---
+
+function getPhaseInfo(toolName: string): { icon: React.ReactNode; badge: string; iconBg: string; iconColor: string } {
+    const name = toolName.toLowerCase();
+    if (name === 'thinking' || name === 'classifying')
+        return { icon: <Brain className="w-3.5 h-3.5" />, badge: 'THINKING', iconBg: 'bg-[#c9a474]/15', iconColor: 'text-[#c9a474]' };
+    if (name === 'exploring')
+        return { icon: <Search className="w-3.5 h-3.5" />, badge: 'EXPLORING', iconBg: 'bg-amber-400/10', iconColor: 'text-amber-400' };
+    if (name === 'planning' || name === 'replanning' || name === 'replan')
+        return { icon: <Layout className="w-3.5 h-3.5" />, badge: 'PLANNING', iconBg: 'bg-blue-400/10', iconColor: 'text-blue-400' };
+    if (name === 'executing')
+        return { icon: <Zap className="w-3.5 h-3.5" />, badge: 'EXECUTING', iconBg: 'bg-amber-400/10', iconColor: 'text-amber-400' };
+    if (name === 'verifying')
+        return { icon: <ShieldCheck className="w-3.5 h-3.5" />, badge: 'VERIFYING', iconBg: 'bg-emerald-400/10', iconColor: 'text-emerald-400' };
+    if (name === 'routing')
+        return { icon: <Globe className="w-3.5 h-3.5" />, badge: 'ROUTING', iconBg: 'bg-violet-400/10', iconColor: 'text-violet-400' };
+    return { icon: <Settings2 className="w-3.5 h-3.5" />, badge: toolName.toUpperCase(), iconBg: 'bg-[#c9a474]/15', iconColor: 'text-[#c9a474]' };
+}
+
+// --- Streaming text ---
+
 function StreamingText({ text, isStreaming }: { text: string; isStreaming: boolean }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [displayedText, setDisplayedText] = useState('');
@@ -142,7 +278,7 @@ function StreamingText({ text, isStreaming }: { text: string; isStreaming: boole
                 </div>
             ))}
             {displayedText === '' && isStreaming && (
-                <div className="flex items-center gap-1 text-[#a89d8e]">
+                <div className="flex items-center gap-1">
                     <span className={cn(
                         "inline-block w-[2px] h-[14px] bg-[#b69161] rounded-sm transition-opacity duration-100",
                         showCursor ? "opacity-100" : "opacity-30"
@@ -153,104 +289,107 @@ function StreamingText({ text, isStreaming }: { text: string; isStreaming: boole
     );
 }
 
-// Check if a step is a file operation
-function isFileOperation(step: ThinkingStep): boolean {
-    const toolName = (step.tool_name || step.toolName || '').toLowerCase();
-    return toolName.includes('write') || toolName.includes('create') || toolName.includes('modify') || toolName.includes('replace') || toolName.includes('read') || toolName.includes('edit') || toolName.includes('delete');
+// --- Reusable StepCard matching ArtifactCard design ---
+
+function StepCard({
+    icon,
+    iconBg,
+    iconColor,
+    title,
+    badge,
+    badgeColor,
+    isExpanded,
+    onToggle,
+    status,
+    hasContent = true,
+    children,
+}: {
+    icon: React.ReactNode;
+    iconBg: string;
+    iconColor: string;
+    title: string;
+    badge?: string;
+    badgeColor?: string;
+    isExpanded: boolean;
+    onToggle: () => void;
+    status?: 'running' | 'complete' | 'error' | 'pending';
+    hasContent?: boolean;
+    children?: React.ReactNode;
+}) {
+    const isRunning = status === 'running' || status === 'pending';
+
+    return (
+        <div className="rounded-xl overflow-hidden dark-glass-subtle">
+            <button
+                onClick={hasContent ? onToggle : undefined}
+                className={cn(
+                    'w-full flex items-center gap-2.5 px-3.5 py-2.5 transition-colors',
+                    hasContent && 'hover:bg-white/5 cursor-pointer',
+                    !hasContent && 'cursor-default',
+                )}
+            >
+                <div className={cn('w-6 h-6 rounded-lg flex items-center justify-center shrink-0', iconBg, iconColor)}>
+                    {isRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : icon}
+                </div>
+                <span className="flex-1 text-left text-xs font-semibold text-white/90 truncate">
+                    {title}
+                </span>
+                {badge && (
+                    <span className={cn('text-[9px] uppercase tracking-wider font-medium', badgeColor || 'text-white/40')}>
+                        {badge}
+                    </span>
+                )}
+                {hasContent && (
+                    <ChevronDown className={cn(
+                        'w-3.5 h-3.5 text-white/40 transition-transform duration-200',
+                        isExpanded && 'rotate-180',
+                    )} />
+                )}
+            </button>
+            {hasContent && isExpanded && children && (
+                <div className="px-3.5 pb-3 border-t border-[rgba(182,145,97,0.12)] pt-2.5 animate-slide-up">
+                    {children}
+                </div>
+            )}
+        </div>
+    );
 }
 
-// Extract diff-like stats from step details
-function extractDiffStats(step: ThinkingStep): { additions: number; deletions: number } | null {
-    if (!step.details) return null;
-    const content = typeof step.details === 'string' ? step.details : step.details?.content;
-    if (!content || typeof content !== 'string') return null;
-    const lines = content.split('\n');
-    let additions = 0;
-    let deletions = 0;
-    for (const line of lines) {
-        if (line.startsWith('+') && !line.startsWith('+++')) additions++;
-        else if (line.startsWith('-') && !line.startsWith('---')) deletions++;
-    }
-    // If no diff-like content, estimate from content length
-    if (additions === 0 && deletions === 0 && content.length > 10) {
-        additions = Math.min(lines.length, 20);
-    }
-    return additions > 0 || deletions > 0 ? { additions, deletions } : null;
-}
+// --- Main component ---
 
 export function ThinkingSteps({ steps, isComplete = false, thinking = [], onFileClick }: ThinkingStepsProps) {
     const [isExpanded, setIsExpanded] = useState(true);
-    const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
-    const previousRunningIndexRef = useRef<number | null>(null);
-    const lastAutoExpandedPlanningRef = useRef<number | null>(null);
-
-    const runningStepIndex = steps.findIndex((step, idx) =>
-        (step.status === 'running' || step.status === 'pending') && idx === steps.length - 1
-    );
-
-    useEffect(() => {
-        if (runningStepIndex === -1) return;
-        const prevRunning = previousRunningIndexRef.current;
-        if (prevRunning === runningStepIndex) return;
-        setExpandedSteps(prev => {
-            const next = new Set(prev);
-            let changed = false;
-            if (prevRunning !== null && next.has(prevRunning)) { next.delete(prevRunning); changed = true; }
-            if (!next.has(runningStepIndex)) { next.add(runningStepIndex); changed = true; }
-            return changed ? next : prev;
-        });
-        previousRunningIndexRef.current = runningStepIndex;
-    }, [runningStepIndex]);
-
-    useEffect(() => {
-        steps.forEach((step, index) => {
-            const toolName = (step.tool_name || step.toolName || '').toLowerCase();
-            const isPlanning = toolName === 'planning';
-            const hasPlanContent = step.details?.content && typeof step.details.content === 'string' && step.details.content.trim().length > 0;
-            const isRunning = step.status === 'running' || step.status === 'pending';
-            const isStepComplete = step.status === 'complete';
-            if (isPlanning && (isRunning || isStepComplete) && hasPlanContent && lastAutoExpandedPlanningRef.current !== index) {
-                setExpandedSteps(prev => {
-                    if (prev.has(index)) return prev;
-                    const next = new Set(prev);
-                    next.add(index);
-                    return next;
-                });
-                lastAutoExpandedPlanningRef.current = index;
-            }
-        });
-    }, [steps]);
-
-    useEffect(() => {
-        const planningIndex = [...steps]
-            .map((s, idx) => ({ s, idx }))
-            .reverse()
-            .find(({ s }) => {
-                const toolName = (s.tool_name || s.toolName || '').toLowerCase();
-                const hasDetails =
-                    (typeof s.details === 'string' && s.details.trim() !== '' && s.details !== '{}') ||
-                    (s.details && typeof s.details === 'object' && Object.keys(s.details).length > 0);
-                return toolName === 'planning' && s.status === 'complete' && hasDetails;
-            })?.idx;
-        if (planningIndex === undefined) return;
-        if (lastAutoExpandedPlanningRef.current === planningIndex) return;
-        setExpandedSteps(prev => {
-            if (prev.has(planningIndex)) return prev;
-            const next = new Set(prev);
-            next.add(planningIndex);
-            return next;
-        });
-        lastAutoExpandedPlanningRef.current = planningIndex;
-    }, [steps]);
+    const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+    const [expandedPlanIndex, setExpandedPlanIndex] = useState<number | null>(null);
 
     useEffect(() => {
         if (steps.length > 0 || thinking.length > 0) setIsExpanded(true);
     }, [steps.length, thinking.length]);
 
+    const grouped = groupSteps(steps);
+
+    // Auto-expand planning steps that have content
+    useEffect(() => {
+        grouped.forEach((group, idx) => {
+            if (group.type === 'phase') {
+                const step = group.steps[0];
+                const toolName = (step.tool_name || step.toolName || '').toLowerCase();
+                if (toolName === 'planning' && step.details?.content && expandedPlanIndex !== idx) {
+                    setExpandedGroups(prev => {
+                        const next = new Set(prev);
+                        next.add(idx);
+                        return next;
+                    });
+                    setExpandedPlanIndex(idx);
+                }
+            }
+        });
+    }, [grouped.length]);
+
     if (steps.length === 0 && thinking.length === 0) return null;
 
-    const toggleStep = (index: number) => {
-        setExpandedSteps(prev => {
+    const toggleGroup = (index: number) => {
+        setExpandedGroups(prev => {
             const next = new Set(prev);
             if (next.has(index)) next.delete(index);
             else next.add(index);
@@ -258,229 +397,259 @@ export function ThinkingSteps({ steps, isComplete = false, thinking = [], onFile
         });
     };
 
-    const getToolIcon = (toolName?: string) => {
-        if (!toolName) return <Wrench className="w-3.5 h-3.5" />;
-        const name = (toolName || '').toLowerCase();
-        // Agent phases
-        if (name === 'planning' || name === 'replanning') return <Layout className="w-3.5 h-3.5 text-[#b69161]" />;
-        if (name === 'classifying' || name === 'thinking') return <Brain className="w-3.5 h-3.5 text-[#b69161]" />;
-        if (name === 'exploring') return <Search className="w-3.5 h-3.5 text-[#d4a843]" />;
-        if (name === 'verifying') return <ShieldCheck className="w-3.5 h-3.5 text-[#6b8f71]" />;
-        if (name === 'replan') return <RefreshCw className="w-3.5 h-3.5 text-[#b69161]" />;
-        // Task progress
-        if (name === 'task_start' || name === 'task_started') return <Zap className="w-3.5 h-3.5 text-[#d4a843]" />;
-        if (name === 'task_complete' || name === 'task_completed') return <Check className="w-3.5 h-3.5 text-green-400" />;
-        if (name === 'task_failed') return <AlertCircle className="w-3.5 h-3.5 text-red-400" />;
-        // File tools
-        if (name.includes('search') || name.includes('grep') || name.includes('glob')) return <Search className="w-3.5 h-3.5 text-[#d4a843]" />;
-        if (name.includes('write') || name.includes('create')) return <FileCode className="w-3.5 h-3.5 text-green-400" />;
-        if (name.includes('edit') || name.includes('modify') || name.includes('replace')) return <Zap className="w-3.5 h-3.5 text-[#b69161]" />;
-        if (name.includes('read') || name.includes('view')) return <FileCode className="w-3.5 h-3.5 text-[#b69161]" />;
-        if (name.includes('delete')) return <Trash2 className="w-3.5 h-3.5 text-red-400" />;
-        if (name.includes('list')) return <FolderOpen className="w-3.5 h-3.5 text-[#a89d8e]" />;
-        // Other
-        if (name.includes('image')) return <Palette className="w-3.5 h-3.5 text-pink-400" />;
-        if (name.includes('terminal') || name.includes('command') || name.includes('run')) return <Terminal className="w-3.5 h-3.5 text-[#7a6f60]" />;
-        if (name.includes('web') || name.includes('fetch')) return <Globe className="w-3.5 h-3.5 text-[#b69161]" />;
-        return <Settings2 className="w-3.5 h-3.5 text-[#a89d8e]" />;
-    };
-
-    const filteredSteps = steps.filter(step => {
-        const toolName = (step.tool_name || step.toolName || '').toLowerCase();
-        return toolName !== 'generate_image';
-    });
+    const lastStep = steps[steps.length - 1];
+    const isLastRunning = lastStep && (lastStep.status === 'running' || lastStep.status === 'pending');
 
     return (
         <div className="px-4 py-2">
-            {/* "Called N tools" header */}
+            {/* Outer header */}
             <button
                 onClick={() => setIsExpanded(!isExpanded)}
                 className="flex items-center gap-2 py-1 group"
             >
-                <span className="text-xs font-medium text-[#6b8f71]">
-                    {!isComplete ? (
+                <span className="text-xs font-medium text-[#b69161]">
+                    {!isComplete && isLastRunning ? (
                         <span className="flex items-center gap-1.5">
                             <Loader2 className="w-3 h-3 animate-spin" />
-                            Calling {filteredSteps.length} tool{filteredSteps.length !== 1 ? 's' : ''}
+                            {grouped.length} step{grouped.length !== 1 ? 's' : ''}
                         </span>
                     ) : (
-                        `Called ${filteredSteps.length} tool${filteredSteps.length !== 1 ? 's' : ''}`
+                        `${grouped.length} step${grouped.length !== 1 ? 's' : ''}`
                     )}
                 </span>
                 <ChevronDown className={cn(
-                    "w-3 h-3 text-[#a89d8e] transition-transform",
+                    "w-3 h-3 text-white/40 transition-transform",
                     !isExpanded && "-rotate-90"
                 )} />
             </button>
 
-            {/* Expanded: show steps as file cards */}
             {isExpanded && (
-                <div className="mt-2 space-y-1.5">
+                <div className="mt-2 space-y-2">
                     {/* Thinking section */}
                     {thinking.length > 0 && (
-                        <div className="px-3 py-2 bg-[#d6cfc9]/30 rounded-lg border border-[#b69161]/10">
-                            <div className="flex items-center gap-1.5 text-xs font-medium text-[#7a6f60] mb-1">
-                                <Brain className="w-3 h-3" />
-                                <span>Thinking</span>
-                            </div>
-                            <div className="text-xs text-[#a89d8e] font-mono max-h-24 overflow-y-auto">
+                        <StepCard
+                            icon={<Brain className="w-3.5 h-3.5" />}
+                            iconBg="bg-[#b69161]/10"
+                            iconColor="text-[#b69161]"
+                            title="Thinking..."
+                            badge="THINKING"
+                            isExpanded={true}
+                            onToggle={() => {}}
+                            status="running"
+                        >
+                            <div className="text-[11px] text-white/70 font-mono max-h-24 overflow-y-auto">
                                 {thinking.map((thought, i) => (
                                     <div key={i} className="leading-relaxed">{thought}</div>
                                 ))}
                             </div>
-                        </div>
+                        </StepCard>
                     )}
 
-                    {/* Step cards */}
-                    {filteredSteps.map((step, index) => {
-                        const stepText = step.message || step.text || 'Processing...';
-                        const stepToolName = step.tool_name || step.toolName;
-                        const fileName = extractFileName(stepText);
-                        const isFileOp = isFileOperation(step);
-                        const diffStats = isFileOp ? extractDiffStats(step) : null;
+                    {/* Grouped steps */}
+                    {grouped.map((group, gIdx) => {
+                        const isGroupExpanded = expandedGroups.has(gIdx);
 
-                        let stepDetails: string | undefined;
-                        if (typeof step.details === 'string') {
-                            stepDetails = step.details;
-                        } else if (step.details && step.details.content) {
-                            stepDetails = step.details.content;
-                        } else if (step.details && Object.keys(step.details).length > 0) {
-                            stepDetails = JSON.stringify(step.details, null, 2);
-                        }
-                        const hasMeaningfulDetails = stepDetails && stepDetails !== '{}';
-                        const isStepExpanded = expandedSteps.has(index);
+                        // --- Phase / Quality / Complete ---
+                        if (group.type === 'phase' || group.type === 'quality' || group.type === 'complete') {
+                            const step = group.steps[0];
+                            const stepText = step.message || step.text || 'Processing...';
+                            const toolName = (step.tool_name || step.toolName || '');
 
-                        // File operation card
-                        if (isFileOp && fileName) {
+                            let stepDetails: string | undefined;
+                            if (typeof step.details === 'string') stepDetails = step.details;
+                            else if (step.details?.content) stepDetails = step.details.content;
+                            else if (step.details && Object.keys(step.details).length > 0) stepDetails = JSON.stringify(step.details, null, 2);
+                            const hasMeaningfulDetails = stepDetails && stepDetails !== '{}';
+
+                            // Get phase-specific styling
+                            let icon: React.ReactNode;
+                            let badge: string;
+                            let iconBg: string;
+                            let iconColor: string;
+
+                            if (group.type === 'quality') {
+                                icon = <Sparkles className="w-3.5 h-3.5" />;
+                                badge = 'QUALITY';
+                                iconBg = 'bg-amber-400/10';
+                                iconColor = 'text-amber-400';
+                            } else if (group.type === 'complete') {
+                                icon = <Check className="w-3.5 h-3.5" />;
+                                badge = 'DONE';
+                                iconBg = 'bg-emerald-400/10';
+                                iconColor = 'text-emerald-400';
+                            } else {
+                                const info = getPhaseInfo(toolName);
+                                icon = info.icon;
+                                badge = info.badge;
+                                iconBg = info.iconBg;
+                                iconColor = info.iconColor;
+                            }
+
                             return (
-                                <div key={step.id || index}>
-                                    <button
-                                        onClick={() => hasMeaningfulDetails && toggleStep(index)}
-                                        className={cn(
-                                            "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border transition-colors text-left",
-                                            "bg-transparent border-[#b69161]/10 hover:border-[#b69161]/20 hover:bg-[#d6cfc9]/20"
-                                        )}
-                                    >
-                                        {/* File type icon */}
-                                        {(step.status === 'running' || step.status === 'pending') ? (
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#b69161] shrink-0" />
-                                        ) : (
-                                            <StepFileIcon fileName={fileName} />
-                                        )}
-
-                                        {/* File name */}
-                                        <span className="text-xs font-medium text-[#b69161]/80 truncate">
-                                            {fileName}
-                                        </span>
-
-                                        {/* Diff stats */}
-                                        {diffStats && (
-                                            <span className="ml-auto flex items-center gap-1 shrink-0">
-                                                {diffStats.additions > 0 && (
-                                                    <span className="text-[10px] font-medium text-green-400">+{diffStats.additions}</span>
-                                                )}
-                                                {diffStats.deletions > 0 && (
-                                                    <span className="text-[10px] font-medium text-red-400">-{diffStats.deletions}</span>
-                                                )}
-                                            </span>
-                                        )}
-
-                                        {/* Expand chevron */}
-                                        {hasMeaningfulDetails && (
-                                            <ChevronDown className={cn(
-                                                "w-3 h-3 text-[#b69161]/40 shrink-0 transition-transform",
-                                                !isStepExpanded && "-rotate-90"
-                                            )} />
-                                        )}
-                                    </button>
-
-                                    {/* Expanded code preview */}
-                                    {hasMeaningfulDetails && isStepExpanded && stepDetails && (
-                                        <div className="mt-1 rounded-lg overflow-hidden border border-[#b69161]/10 bg-[#f2efed] max-h-64 overflow-y-auto">
-                                            <SyntaxHighlighter
-                                                language="typescript"
-                                                style={oneDark}
-                                                showLineNumbers
-                                                customStyle={{
-                                                    margin: 0,
-                                                    padding: '10px 12px',
-                                                    background: '#f2efed',
-                                                    fontSize: '11px',
-                                                    lineHeight: '1.5',
-                                                }}
-                                                lineNumberStyle={{
-                                                    color: '#a89d8e',
-                                                    fontSize: '10px',
-                                                    minWidth: '2em',
-                                                    paddingRight: '10px',
-                                                }}
-                                            >
-                                                {stepDetails.slice(0, 3000)}
-                                            </SyntaxHighlighter>
+                                <StepCard
+                                    key={gIdx}
+                                    icon={icon}
+                                    iconBg={iconBg}
+                                    iconColor={iconColor}
+                                    title={stepText}
+                                    badge={badge}
+                                    isExpanded={isGroupExpanded}
+                                    onToggle={() => toggleGroup(gIdx)}
+                                    status={step.status}
+                                    hasContent={!!hasMeaningfulDetails}
+                                >
+                                    {hasMeaningfulDetails && stepDetails && (
+                                        <div className="text-[11px] font-mono text-white/70 whitespace-pre-wrap max-h-48 overflow-y-auto">
+                                            <StreamingText
+                                                text={stepDetails}
+                                                isStreaming={step.status === 'running' || step.status === 'pending'}
+                                            />
                                         </div>
                                     )}
-                                </div>
+                                </StepCard>
                             );
                         }
 
-                        // Non-file step (planning, thinking, etc.)
-                        return (
-                            <div key={step.id || index}>
-                                <div
-                                    className={cn(
-                                        'flex items-start gap-2 text-xs py-1.5 px-1 rounded-lg transition-colors',
-                                        hasMeaningfulDetails && 'cursor-pointer hover:bg-[#d6cfc9]/30'
-                                    )}
-                                    onClick={() => hasMeaningfulDetails && toggleStep(index)}
+                        // --- File operations group ---
+                        if (group.type === 'file_group') {
+                            const files = group.files || [];
+                            const totalAdditions = files.reduce((sum, f) => sum + f.additions, 0);
+                            const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);
+                            const anyRunning = group.steps.some(s => s.status === 'running' || s.status === 'pending');
+
+                            const diffBadge = [
+                                totalAdditions > 0 ? `+${totalAdditions}` : '',
+                                totalDeletions > 0 ? `-${totalDeletions}` : '',
+                            ].filter(Boolean).join(' ');
+
+                            return (
+                                <StepCard
+                                    key={gIdx}
+                                    icon={<FileCode className="w-3.5 h-3.5" />}
+                                    iconBg="bg-emerald-400/10"
+                                    iconColor="text-emerald-400"
+                                    title={`${files.length} file${files.length !== 1 ? 's' : ''}`}
+                                    badge={diffBadge || undefined}
+                                    badgeColor={totalDeletions > 0 ? 'text-white/40' : 'text-emerald-400'}
+                                    isExpanded={isGroupExpanded}
+                                    onToggle={() => toggleGroup(gIdx)}
+                                    status={anyRunning ? 'running' : 'complete'}
                                 >
-                                    {/* Status */}
-                                    <div className="flex-shrink-0 mt-0.5">
-                                        {(step.status === 'pending' || step.status === 'running') && index === steps.length - 1 ? (
-                                            <Loader2 className="w-3 h-3 animate-spin text-[#b69161]" />
-                                        ) : step.status === 'error' ? (
-                                            <AlertCircle className="w-3 h-3 text-red-400" />
-                                        ) : (
-                                            <Check className="w-3 h-3 text-green-400" />
-                                        )}
+                                    <div className="space-y-0.5">
+                                        {files.map((file, fIdx) => (
+                                            <button
+                                                key={fIdx}
+                                                onClick={() => onFileClick?.(file.name)}
+                                                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors text-left"
+                                            >
+                                                <StepFileIcon fileName={file.name} />
+                                                <span className="text-[11px] text-white/70 truncate flex-1">{file.name}</span>
+                                                {(file.additions > 0 || file.deletions > 0) && (
+                                                    <span className="flex items-center gap-1 shrink-0">
+                                                        {file.additions > 0 && <span className="text-[10px] font-medium text-emerald-600">+{file.additions}</span>}
+                                                        {file.deletions > 0 && <span className="text-[10px] font-medium text-red-500">-{file.deletions}</span>}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        ))}
                                     </div>
+                                </StepCard>
+                            );
+                        }
 
-                                    {/* Content */}
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                            {stepToolName && (
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#d6cfc9]/30 text-[#7a6f60]">
-                                                    {getToolIcon(stepToolName)}
-                                                    <span className="font-mono text-[10px]">{stepToolName}</span>
-                                                </span>
-                                            )}
-                                            <span className={cn(
-                                                'text-[#7a6f60]',
-                                                index === steps.length - 1 && !isComplete && 'text-[#2c2418] font-medium'
-                                            )}>
-                                                {renderTextWithFileLink(stepText, onFileClick)}
-                                            </span>
-                                        </div>
+                        // --- Task group ---
+                        if (group.type === 'task_group') {
+                            const { completed = 0, total = 0, failed = 0 } = group;
+                            const anyRunning = group.steps.some(s => s.status === 'running' || s.status === 'pending');
+                            const allDone = completed + failed >= total;
+
+                            const title = anyRunning
+                                ? `Running tasks (${completed}/${total})`
+                                : `Completed ${completed}/${total} tasks`;
+                            const badge = failed > 0 ? `${failed} FAILED` : `${completed}/${total}`;
+
+                            return (
+                                <StepCard
+                                    key={gIdx}
+                                    icon={<Zap className="w-3.5 h-3.5" />}
+                                    iconBg="bg-amber-400/10"
+                                    iconColor="text-amber-400"
+                                    title={title}
+                                    badge={badge}
+                                    badgeColor={failed > 0 ? 'text-red-400' : 'text-white/40'}
+                                    isExpanded={isGroupExpanded}
+                                    onToggle={() => toggleGroup(gIdx)}
+                                    status={anyRunning ? 'running' : allDone && failed === 0 ? 'complete' : 'error'}
+                                >
+                                    <div className="space-y-0.5">
+                                        {group.steps.filter(s => {
+                                            const n = (s.tool_name || s.toolName || '').toLowerCase();
+                                            return n.includes('start');
+                                        }).map((s, tIdx) => {
+                                            const text = s.message || s.text || '';
+                                            return (
+                                                <div key={tIdx} className="flex items-center gap-2 px-2 py-1 text-[11px] text-white/70">
+                                                    <Zap className="w-3 h-3 text-amber-500 shrink-0" />
+                                                    <span className="truncate">{text}</span>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
+                                </StepCard>
+                            );
+                        }
 
-                                    {hasMeaningfulDetails && (
-                                        <ChevronDown className={cn(
-                                            "w-3 h-3 text-[#a89d8e] shrink-0 mt-0.5 transition-transform",
-                                            !isStepExpanded && "-rotate-90"
-                                        )} />
-                                    )}
-                                </div>
+                        // --- Build validation group ---
+                        if (group.type === 'build_group') {
+                            const { buildStatus = 'running', issueCount = 0 } = group;
+                            const anyRunning = group.steps.some(s => s.status === 'running' || s.status === 'pending');
 
-                                {/* Expanded detail */}
-                                {hasMeaningfulDetails && isStepExpanded && stepDetails && (
-                                    <div className="ml-5 mt-1 p-2 bg-[#d6cfc9]/30 rounded-lg text-xs font-mono text-[#7a6f60] whitespace-pre-wrap max-h-48 overflow-y-auto border border-[#b69161]/10">
-                                        <StreamingText
-                                            text={stepDetails}
-                                            isStreaming={step.status === 'running' || step.status === 'pending'}
-                                        />
+                            let title = 'Build validation';
+                            if (buildStatus === 'passed') title = 'Build validation passed';
+                            else if (buildStatus === 'failed' && issueCount > 0) title = `Build validation — ${issueCount} issue${issueCount !== 1 ? 's' : ''} remaining`;
+                            else if (buildStatus === 'failed') title = 'Build validation — could not auto-fix';
+
+                            const badge = anyRunning ? 'RUNNING' : buildStatus === 'passed' ? 'PASSED' : 'FAILED';
+                            const badgeColor = buildStatus === 'passed' ? 'text-emerald-400' : buildStatus === 'failed' ? 'text-red-400' : 'text-white/40';
+
+                            return (
+                                <StepCard
+                                    key={gIdx}
+                                    icon={<ShieldCheck className="w-3.5 h-3.5" />}
+                                    iconBg={buildStatus === 'passed' ? 'bg-emerald-400/10' : buildStatus === 'failed' ? 'bg-red-400/10' : 'bg-[#c9a474]/15'}
+                                    iconColor={buildStatus === 'passed' ? 'text-emerald-400' : buildStatus === 'failed' ? 'text-red-400' : 'text-[#c9a474]'}
+                                    title={title}
+                                    badge={badge}
+                                    badgeColor={badgeColor}
+                                    isExpanded={isGroupExpanded}
+                                    onToggle={() => toggleGroup(gIdx)}
+                                    status={anyRunning ? 'running' : buildStatus === 'passed' ? 'complete' : 'error'}
+                                >
+                                    <div className="space-y-0.5">
+                                        {group.steps.map((s, bIdx) => {
+                                            const text = s.message || s.text || '';
+                                            return (
+                                                <div key={bIdx} className="flex items-center gap-2 px-2 py-1 text-[11px] text-white/70">
+                                                    {s.status === 'error' ? (
+                                                        <AlertCircle className="w-3 h-3 text-red-500 shrink-0" />
+                                                    ) : s.status === 'running' || s.status === 'pending' ? (
+                                                        <Loader2 className="w-3 h-3 animate-spin text-[#b69161] shrink-0" />
+                                                    ) : (
+                                                        <Check className="w-3 h-3 text-emerald-500 shrink-0" />
+                                                    )}
+                                                    <span className="truncate">{text}</span>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
-                                )}
-                            </div>
-                        );
+                                </StepCard>
+                            );
+                        }
+
+                        // Lookup group — hidden
+                        if (group.type === 'lookup_group') return null;
+
+                        return null;
                     })}
                 </div>
             )}
@@ -491,15 +660,14 @@ export function ThinkingSteps({ steps, isComplete = false, thinking = [], onFile
 // Compact indicator
 export function ThinkingIndicator({ text = 'Thinking...', toolName }: { text?: string; toolName?: string }) {
     return (
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#d6cfc9]/30 rounded-full text-xs border border-[#b69161]/10">
-            <div className="relative">
-                <Brain className="w-3.5 h-3.5 text-[#b69161]" />
-                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-[#b69161] rounded-full animate-pulse" />
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl dark-glass-subtle text-xs">
+            <div className="w-5 h-5 rounded-lg bg-[#c9a474]/15 flex items-center justify-center">
+                <Brain className="w-3 h-3 text-[#c9a474]" />
             </div>
             {toolName && (
-                <span className="font-mono text-[#a89d8e] bg-[#d6cfc9]/30 px-1.5 py-0.5 rounded">{toolName}</span>
+                <span className="font-mono text-white/40 text-[10px]">{toolName}</span>
             )}
-            <span className="text-[#7a6f60]">{text}</span>
+            <span className="text-white/60">{text}</span>
         </div>
     );
 }

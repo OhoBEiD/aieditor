@@ -2,23 +2,27 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Send, X, Square, ChevronUp, Check, Paperclip } from 'lucide-react';
-import NextImage from 'next/image';
-import { ClaudeLogo } from '@/components/icons/ClaudeLogo';
+import { Send, X, Square, ChevronUp, Check, Paperclip, Zap, Cpu, Sparkles, Crown } from 'lucide-react';
 import { ContextIndicator } from './ContextIndicator';
 import type { ContextUsage } from '@/hooks/useContextUsage';
 import { gsap } from 'gsap';
 
-export type ExecutorMode = 'auto' | 'fast' | 'thinking' | 'mastra';
+export type ModelOption = 'flash' | 'pro' | 'sonnet' | 'opus';
+
+const MODEL_INFO: Record<ModelOption, { label: string; description: string; icon: React.ReactNode }> = {
+    flash: { label: 'Gemini Flash', description: 'Fast & efficient', icon: <Zap className="w-4 h-4" /> },
+    pro: { label: 'Gemini Pro', description: 'Advanced reasoning', icon: <Cpu className="w-4 h-4" /> },
+    sonnet: { label: 'Claude Sonnet', description: 'Balanced quality', icon: <Sparkles className="w-4 h-4" /> },
+    opus: { label: 'Claude Opus', description: 'Maximum quality', icon: <Crown className="w-4 h-4" /> },
+};
 
 interface MessageInputProps {
     onSend: (message: string, image?: File) => void;
     onStop?: () => void;
     isLoading?: boolean;
     placeholder?: string;
-    executorMode?: ExecutorMode;
-    onModeChange?: (mode: ExecutorMode) => void;
-    showModeSelector?: boolean;
+    selectedModel?: ModelOption;
+    onModelChange?: (model: ModelOption) => void;
     contextUsage?: ContextUsage;
 }
 
@@ -27,15 +31,14 @@ export function MessageInput({
     onStop,
     isLoading = false,
     placeholder = "Give a followup...",
-    executorMode = 'mastra',
-    onModeChange,
-    showModeSelector: _showModeSelector = true,
+    selectedModel = 'flash',
+    onModelChange,
     contextUsage,
 }: MessageInputProps) {
     const [message, setMessage] = useState('');
     const [selectedImage, setSelectedImage] = useState<File | null>(null);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
-    const [isModeDropdownOpen, setIsModeDropdownOpen] = useState(false);
+    const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -61,7 +64,7 @@ export function MessageInput({
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setIsModeDropdownOpen(false);
+                setIsModelDropdownOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -70,7 +73,7 @@ export function MessageInput({
 
     useEffect(() => {
         if (!dropdownMenuRef.current) return;
-        if (isModeDropdownOpen) {
+        if (isModelDropdownOpen) {
             gsap.fromTo(dropdownMenuRef.current,
                 { opacity: 0, y: 10, scale: 0.95 },
                 { opacity: 1, y: 0, scale: 1, duration: 0.25, ease: 'back.out(1.7)' }
@@ -85,7 +88,7 @@ export function MessageInput({
                 opacity: 0, y: 10, scale: 0.95, duration: 0.15, ease: 'power2.in',
             });
         }
-    }, [isModeDropdownOpen]);
+    }, [isModelDropdownOpen]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -146,6 +149,8 @@ export function MessageInput({
         }
     }, [message]);
 
+    const currentModel = MODEL_INFO[selectedModel];
+
     return (
         <div className="flex-shrink-0 px-3 pb-3 pt-2 relative z-50">
             {/* Image Preview */}
@@ -170,7 +175,7 @@ export function MessageInput({
                 ref={formRef}
                 onSubmit={handleSubmit}
                 onClick={handleFormClick}
-                className="relative bg-[#f2efed] rounded-2xl border border-[#b69161]/25 transition-colors focus-input-on-click cursor-text"
+                className="relative bg-[rgba(30,24,16,0.5)] backdrop-blur-md rounded-2xl border border-[rgba(182,145,97,0.18)] transition-colors focus-input-on-click cursor-text"
             >
                 <input
                     ref={fileInputRef}
@@ -199,7 +204,7 @@ export function MessageInput({
                     className={cn(
                         'w-full px-4 pt-3 pb-2 rounded-2xl text-sm resize-none',
                         'bg-transparent border-0',
-                        'text-[#2c2418] placeholder:text-[#a89d8e]',
+                        'text-white/90 placeholder:text-white/30',
                         'focus:outline-none focus:ring-0 transition-all duration-200',
                         'disabled:opacity-50',
                         'caret-[#b69161]'
@@ -219,7 +224,7 @@ export function MessageInput({
                         <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
-                            className="p-1.5 rounded-lg text-[#b69161]/60 hover:text-[#b69161] hover:bg-[#b69161]/10 transition-colors"
+                            className="p-1.5 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/8 transition-colors"
                             title="Attach image"
                         >
                             <Paperclip className="w-4 h-4" />
@@ -243,7 +248,7 @@ export function MessageInput({
                                     'p-1.5 rounded-lg transition-colors',
                                     (message.trim() || selectedImage)
                                         ? 'bg-[#b69161] text-white hover:bg-[#c9a474]'
-                                        : 'bg-[#d6cfc9]/50 text-[#a89d8e]'
+                                        : 'bg-white/8 text-white/30'
                                 )}
                             >
                                 <Send className="w-4 h-4" />
@@ -253,32 +258,23 @@ export function MessageInput({
                 </div>
             </form>
 
-            {/* Bottom bar: Agent + Model selectors */}
+            {/* Bottom bar: Model selector */}
             <div className="flex items-center justify-between mt-2 px-1" ref={dropdownRef}>
                 <div className="flex items-center gap-2">
-                    {/* Agent selector pill */}
+                    {/* Model selector pill */}
                     <button
                         type="button"
-                        onClick={() => setIsModeDropdownOpen(!isModeDropdownOpen)}
+                        onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
                         className={cn(
                             "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all border",
-                            "bg-[#d6cfc9]/30 text-[#84745b] border-[#b69161]/20 hover:bg-[#b69161]/10 hover:text-[#84745b]"
+                            "bg-white/8 text-white/50 border-[rgba(182,145,97,0.18)] hover:bg-white/12 hover:text-white/70"
                         )}
                     >
-                        {executorMode === 'mastra' ? (
-                            <>
-                                <NextImage src="/automatelogo.png" alt="" width={14} height={14} className="object-contain" />
-                                <span>Automate</span>
-                            </>
-                        ) : (
-                            <>
-                                <ClaudeLogo className="w-3.5 h-3.5" />
-                                <span>Claude Code</span>
-                            </>
-                        )}
+                        <span className="text-white/40">{currentModel.icon}</span>
+                        <span>{currentModel.label}</span>
                         <ChevronUp className={cn(
                             "w-3 h-3 transition-transform",
-                            isModeDropdownOpen && "rotate-180"
+                            isModelDropdownOpen && "rotate-180"
                         )} />
                     </button>
                 </div>
@@ -286,59 +282,41 @@ export function MessageInput({
                 {/* Context usage indicator */}
                 {contextUsage && <ContextIndicator usage={contextUsage} />}
 
-                {/* Dropdown Menu */}
-                {isModeDropdownOpen && (
+                {/* Model Dropdown Menu */}
+                {isModelDropdownOpen && (
                     <div
                         ref={dropdownMenuRef}
-                        className="absolute bottom-full left-1 mb-2 w-52 bg-[#f2efed] rounded-xl shadow-2xl border border-[#b69161]/20 overflow-hidden"
+                        className="absolute bottom-full left-1 mb-2 w-52 bg-[rgba(55,45,30,0.92)] backdrop-blur-xl rounded-xl shadow-2xl border border-[rgba(182,145,97,0.2)] overflow-hidden"
                     >
-                        {/* Claude Code */}
-                        <button
-                            type="button"
-                            onClick={() => {
-                                onModeChange?.('thinking');
-                                setIsModeDropdownOpen(false);
-                            }}
-                            className={cn(
-                                "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
-                                executorMode !== 'mastra'
-                                    ? "bg-[#b69161]/10"
-                                    : "hover:bg-[#b69161]/5"
-                            )}
-                        >
-                            <ClaudeLogo className="w-4 h-4 text-[#84745b]" />
-                            <div className="flex-1">
-                                <div className="text-sm font-medium text-[#2c2418]">Claude Code</div>
-                                <div className="text-xs text-[#7a6f60]">Anthropic Claude</div>
-                            </div>
-                            {executorMode !== 'mastra' && (
-                                <Check className="w-4 h-4 text-[#b69161]" />
-                            )}
-                        </button>
-
-                        {/* Automate */}
-                        <button
-                            type="button"
-                            onClick={() => {
-                                onModeChange?.('mastra');
-                                setIsModeDropdownOpen(false);
-                            }}
-                            className={cn(
-                                "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
-                                executorMode === 'mastra'
-                                    ? "bg-[#b69161]/10"
-                                    : "hover:bg-[#b69161]/5"
-                            )}
-                        >
-                            <NextImage src="/automatelogo.png" alt="" width={16} height={16} className="object-contain" />
-                            <div className="flex-1">
-                                <div className="text-sm font-medium text-[#2c2418]">Automate Editor</div>
-                                <div className="text-xs text-[#7a6f60]">Custom AI</div>
-                            </div>
-                            {executorMode === 'mastra' && (
-                                <Check className="w-4 h-4 text-[#b69161]" />
-                            )}
-                        </button>
+                        {(Object.keys(MODEL_INFO) as ModelOption[]).map((key) => {
+                            const info = MODEL_INFO[key];
+                            const isSelected = selectedModel === key;
+                            return (
+                                <button
+                                    key={key}
+                                    type="button"
+                                    onClick={() => {
+                                        onModelChange?.(key);
+                                        setIsModelDropdownOpen(false);
+                                    }}
+                                    className={cn(
+                                        "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
+                                        isSelected
+                                            ? "bg-[#b69161]/10"
+                                            : "hover:bg-[#b69161]/5"
+                                    )}
+                                >
+                                    <span className="text-white/50">{info.icon}</span>
+                                    <div className="flex-1">
+                                        <div className="text-sm font-medium text-white/90">{info.label}</div>
+                                        <div className="text-xs text-white/50">{info.description}</div>
+                                    </div>
+                                    {isSelected && (
+                                        <Check className="w-4 h-4 text-[#b69161]" />
+                                    )}
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
             </div>

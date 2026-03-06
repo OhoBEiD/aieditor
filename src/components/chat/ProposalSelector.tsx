@@ -34,10 +34,10 @@ const complexityIcon = (complexity: string) => {
 
 const complexityColor = (complexity: string) => {
     switch (complexity) {
-        case 'simple': return 'text-emerald-600 bg-emerald-50';
-        case 'moderate': return 'text-amber-600 bg-amber-50';
-        case 'complex': return 'text-rose-500 bg-rose-50';
-        default: return 'text-[#84745b] bg-[#d6cfc9]/30';
+        case 'simple': return 'text-emerald-400 bg-emerald-400/10';
+        case 'moderate': return 'text-amber-400 bg-amber-400/10';
+        case 'complex': return 'text-rose-400 bg-rose-400/10';
+        default: return 'text-white/50 bg-white/8';
     }
 };
 
@@ -56,24 +56,24 @@ export function ProposalSelector({
     return (
         <div className="my-3 rounded-2xl overflow-hidden">
             {/* Glass header */}
-            <div className="relative px-4 py-3 bg-gradient-to-r from-[#b69161]/15 via-[#d6cfc9]/20 to-[#b69161]/10 backdrop-blur-md border border-[#b69161]/15 rounded-t-2xl">
+            <div className="relative px-4 py-3 dark-glass rounded-t-2xl">
                 <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-[#b69161]/20 flex items-center justify-center">
-                        <Sparkles className="w-3.5 h-3.5 text-[#b69161]" />
+                    <div className="w-6 h-6 rounded-full bg-[#c9a474]/15 flex items-center justify-center">
+                        <Sparkles className="w-3.5 h-3.5 text-[#c9a474]" />
                     </div>
-                    <span className="text-xs font-semibold text-[#2c2418] tracking-wide uppercase">
+                    <span className="text-xs font-semibold text-white/95 tracking-wide uppercase">
                         Choose an approach
                     </span>
                 </div>
                 {researchSummary && (
-                    <p className="mt-1.5 text-[11px] text-[#84745b] leading-relaxed line-clamp-2">
+                    <p className="mt-1.5 text-[11px] text-white/50 leading-relaxed line-clamp-2">
                         {researchSummary}
                     </p>
                 )}
             </div>
 
             {/* Options */}
-            <div className="border-x border-[#b69161]/15 bg-white/60 backdrop-blur-sm divide-y divide-[#b69161]/8">
+            <div className="border-x border-[rgba(182,145,97,0.15)] dark-glass-subtle divide-y divide-[rgba(182,145,97,0.12)]">
                 {options.map((option) => {
                     const isRecommended = option.id === recommendation;
                     const isHovered = hoveredId === option.id;
@@ -85,20 +85,27 @@ export function ProposalSelector({
                             key={option.id}
                             className={cn(
                                 'relative transition-all duration-200',
-                                isChosen && 'bg-[#b69161]/8',
-                                isHovered && !isSelected && 'bg-[#b69161]/5',
+                                isChosen && 'bg-[#c9a474]/10',
+                                isHovered && !isSelected && 'bg-white/5',
                             )}
                         >
-                            {/* Main option row */}
-                            <button
+                            {/* Main option row — uses div to avoid nested button hydration error */}
+                            <div
+                                role="button"
+                                tabIndex={isSelected ? -1 : 0}
                                 onClick={() => {
                                     if (!isSelected && onSelect) {
                                         onSelect(option.id);
                                     }
                                 }}
+                                onKeyDown={(e) => {
+                                    if ((e.key === 'Enter' || e.key === ' ') && !isSelected && onSelect) {
+                                        e.preventDefault();
+                                        onSelect(option.id);
+                                    }
+                                }}
                                 onMouseEnter={() => setHoveredId(option.id)}
                                 onMouseLeave={() => setHoveredId(null)}
-                                disabled={isSelected}
                                 className={cn(
                                     'w-full text-left px-4 py-3 transition-all duration-150',
                                     !isSelected && 'cursor-pointer hover:pl-5',
@@ -112,8 +119,8 @@ export function ProposalSelector({
                                         isChosen
                                             ? 'border-[#b69161] bg-[#b69161]'
                                             : isHovered && !isSelected
-                                                ? 'border-[#b69161]/60 bg-[#b69161]/10'
-                                                : 'border-[#d6cfc9] bg-white',
+                                                ? 'border-[#c9a474]/60 bg-[#c9a474]/10'
+                                                : 'border-[#b69161]/30 bg-transparent',
                                     )}>
                                         {isChosen && <Check className="w-3 h-3 text-white" />}
                                     </div>
@@ -123,18 +130,18 @@ export function ProposalSelector({
                                         <div className="flex items-center gap-2 flex-wrap">
                                             <span className={cn(
                                                 'text-sm font-semibold transition-colors',
-                                                isChosen ? 'text-[#b69161]' : 'text-[#2c2418]',
+                                                isChosen ? 'text-[#dbb98a]' : 'text-white/95',
                                             )}>
                                                 {option.title}
                                             </span>
                                             {isRecommended && (
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-[#b69161]/15 text-[#b69161]">
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-[#c9a474]/15 text-[#c9a474]">
                                                     <Sparkles className="w-2.5 h-2.5" />
                                                     Recommended
                                                 </span>
                                             )}
                                         </div>
-                                        <p className="text-[11px] text-[#84745b] mt-0.5 leading-relaxed">
+                                        <p className="text-[11px] text-white/55 mt-0.5 leading-relaxed">
                                             {option.description}
                                         </p>
 
@@ -147,7 +154,7 @@ export function ProposalSelector({
                                                 {complexityIcon(option.complexity)}
                                                 {option.complexity}
                                             </span>
-                                            <span className="inline-flex items-center gap-1 text-[10px] text-[#84745b]">
+                                            <span className="inline-flex items-center gap-1 text-[10px] text-white/50">
                                                 <FileCode className="w-3 h-3" />
                                                 ~{option.estimatedFiles} files
                                             </span>
@@ -160,36 +167,36 @@ export function ProposalSelector({
                                             e.stopPropagation();
                                             setExpandedId(isExpanded ? null : option.id);
                                         }}
-                                        className="mt-1 p-1 rounded-md hover:bg-[#b69161]/10 transition-colors"
+                                        className="mt-1 p-1 rounded-md hover:bg-white/8 transition-colors"
                                     >
                                         <ChevronRight className={cn(
-                                            'w-3.5 h-3.5 text-[#84745b] transition-transform duration-200',
+                                            'w-3.5 h-3.5 text-white/40 transition-transform duration-200',
                                             isExpanded && 'rotate-90',
                                         )} />
                                     </button>
                                 </div>
-                            </button>
+                            </div>
 
                             {/* Expanded details */}
                             {isExpanded && (
                                 <div className="px-4 pb-3 pl-12 animate-slide-up">
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
-                                            <p className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wider mb-1">Pros</p>
+                                            <p className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider mb-1">Pros</p>
                                             <ul className="space-y-0.5">
                                                 {option.pros.map((pro, i) => (
-                                                    <li key={i} className="flex items-start gap-1.5 text-[11px] text-[#4a3f32]">
-                                                        <span className="text-emerald-500 mt-0.5 shrink-0">+</span>
+                                                    <li key={i} className="flex items-start gap-1.5 text-[11px] text-white/70">
+                                                        <span className="text-emerald-400 mt-0.5 shrink-0">+</span>
                                                         {pro}
                                                     </li>
                                                 ))}
                                             </ul>
                                         </div>
                                         <div>
-                                            <p className="text-[10px] font-semibold text-rose-500 uppercase tracking-wider mb-1">Cons</p>
+                                            <p className="text-[10px] font-semibold text-rose-400 uppercase tracking-wider mb-1">Cons</p>
                                             <ul className="space-y-0.5">
                                                 {option.cons.map((con, i) => (
-                                                    <li key={i} className="flex items-start gap-1.5 text-[11px] text-[#4a3f32]">
+                                                    <li key={i} className="flex items-start gap-1.5 text-[11px] text-white/70">
                                                         <span className="text-rose-400 mt-0.5 shrink-0">-</span>
                                                         {con}
                                                     </li>
@@ -206,11 +213,11 @@ export function ProposalSelector({
 
             {/* Footer */}
             <div className={cn(
-                'px-4 py-2.5 border border-t-0 border-[#b69161]/15 rounded-b-2xl',
-                isSelected ? 'bg-[#b69161]/8' : 'bg-gradient-to-r from-[#b69161]/8 via-transparent to-[#b69161]/5',
+                'px-4 py-2.5 border border-t-0 border-[rgba(182,145,97,0.15)] rounded-b-2xl dark-glass-subtle',
+                isSelected && 'bg-[#c9a474]/10',
             )}>
                 {isSelected ? (
-                    <p className="text-[10px] text-[#b69161] font-medium flex items-center gap-1.5">
+                    <p className="text-[10px] text-[#c9a474] font-medium flex items-center gap-1.5">
                         <Check className="w-3 h-3" />
                         Option {selectedId} selected — executing...
                     </p>
@@ -222,18 +229,40 @@ export function ProposalSelector({
                                 <div className="w-1.5 h-1.5 rounded-full bg-[#b69161] animate-bounce" style={{ animationDelay: '150ms' }} />
                                 <div className="w-1.5 h-1.5 rounded-full bg-[#b69161] animate-bounce" style={{ animationDelay: '300ms' }} />
                             </div>
-                            <span className="text-[10px] text-[#b69161] font-medium">
+                            <span className="text-[10px] text-[#c9a474] font-medium">
                                 Select an approach to continue
                             </span>
                         </div>
                         {recommendationReason && (
-                            <span className="text-[9px] text-[#84745b] max-w-[55%] truncate">
+                            <span className="text-[9px] text-white/40 max-w-[55%] truncate">
                                 Recommended: Option {recommendation}
                             </span>
                         )}
                     </div>
                 )}
             </div>
+        </div>
+    );
+}
+
+export function SelectedProposalBadge({ option, optionId }: { option?: ProposalOption; optionId: number }) {
+    return (
+        <div className="my-2 flex items-center gap-2.5 px-3 py-2 rounded-xl dark-glass-subtle">
+            <div className="w-5 h-5 rounded-full bg-[#b69161] flex items-center justify-center shrink-0">
+                <Check className="w-3 h-3 text-white" />
+            </div>
+            <span className="text-xs font-medium text-white/90">
+                {option?.title || `Option ${optionId}`}
+            </span>
+            {option?.complexity && (
+                <span className={cn(
+                    'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium',
+                    complexityColor(option.complexity),
+                )}>
+                    {complexityIcon(option.complexity)}
+                    {option.complexity}
+                </span>
+            )}
         </div>
     );
 }

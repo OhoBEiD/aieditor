@@ -17,12 +17,12 @@ import { useSupabaseConnection } from '@/hooks/useSupabaseConnection';
 // Dynamic imports for SSR safety
 const Terminal = dynamic(() => import('./Terminal').then(mod => mod.Terminal), {
     ssr: false,
-    loading: () => <div className="w-full h-full flex items-center justify-center text-[#b69161]/60">Loading terminal...</div>
+    loading: () => <div className="w-full h-full flex items-center justify-center text-white/50">Loading terminal...</div>
 });
 
 const CodeView = dynamic(() => import('./CodeView').then(mod => mod.CodeView), {
     ssr: false,
-    loading: () => <div className="w-full h-full flex items-center justify-center bg-transparent text-[#b69161]/60">Loading editor...</div>
+    loading: () => <div className="w-full h-full flex items-center justify-center bg-transparent text-white/50">Loading editor...</div>
 });
 
 type DeviceMode = 'desktop' | 'mobile';
@@ -76,7 +76,7 @@ function PhaseLoader({
     const percent = getPhasePercent(phaseIdx);
 
     return (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white rounded-2xl">
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center rounded-2xl" style={{ background: 'rgba(44, 36, 24, 0.92)' }}>
             {/* Logo */}
             <div ref={logoRef} className="mb-8">
                 <Image
@@ -109,15 +109,15 @@ function PhaseLoader({
                                 </div>
                             ) : (
                                 <div className="w-4.5 h-4.5 flex items-center justify-center">
-                                    <Circle className="w-3 h-3 text-[#b69161]/25" />
+                                    <Circle className="w-3 h-3 text-white/15" />
                                 </div>
                             )}
                             {/* Label */}
                             <span className={cn(
                                 'text-xs transition-colors duration-300',
-                                isComplete && 'text-[#b69161]/70',
-                                isActive && 'text-[#b69161] font-medium',
-                                isPending && 'text-[#b69161]/30',
+                                isComplete && 'text-[#c9a474]/70',
+                                isActive && 'text-[#c9a474] font-medium',
+                                isPending && 'text-white/20',
                             )}>
                                 {isActive ? `${phase.label}...` : phase.label}
                             </span>
@@ -127,7 +127,7 @@ function PhaseLoader({
             </div>
 
             {/* Progress Bar */}
-            <div className="w-52 h-1.5 bg-[#d6cfc9]/20 rounded-full overflow-hidden">
+            <div className="w-52 h-1.5 bg-white/10 rounded-full overflow-hidden">
                 <div
                     className="h-full bg-gradient-to-r from-[#b69161] to-[#c9a474] rounded-full transition-all duration-1000 ease-out"
                     style={{ width: `${percent}%` }}
@@ -362,7 +362,7 @@ export function PreviewPanel({
     const getFullPreviewUrl = useCallback(() => {
         if (!previewUrl) return '';
         const baseUrl = previewUrl.replace(/[?#].*$/, '');
-        return `${baseUrl}${currentPage}?_v=${iframeKey}&_t=${Date.now()}`;
+        return `${baseUrl}${currentPage}?_v=${iframeKey}`;
     }, [previewUrl, currentPage, iframeKey]);
 
     // With WebContainers, server runs in browser - no health check needed
@@ -621,8 +621,8 @@ export function PreviewPanel({
             <div
                 className="relative z-[9999] flex items-center justify-between px-4 py-3 backdrop-blur-xl border border-[#b69161]/20 rounded-2xl mx-6 mt-6 mb-4 active:scale-[0.99] transition-all duration-300"
                 style={{
-                    background: 'linear-gradient(135deg, rgba(242, 239, 237, 0.95) 0%, rgba(246, 244, 242, 0.97) 50%, rgba(242, 239, 237, 0.95) 100%)',
-                    boxShadow: '0 20px 60px rgba(44, 36, 24, 0.1), 0 8px 32px rgba(44, 36, 24, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
+                    background: 'linear-gradient(135deg, rgba(44, 36, 24, 0.85) 0%, rgba(50, 40, 28, 0.88) 50%, rgba(44, 36, 24, 0.85) 100%)',
+                    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.35), 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
                 }}
             >
                 {/* Left - Exit & View Toggle */}
@@ -630,7 +630,7 @@ export function PreviewPanel({
                     {onExitPreview && (
                         <button
                             onClick={onExitPreview}
-                            className="flex items-center justify-center p-2 rounded-xl text-[#b69161] bg-[#d6cfc9]/20 border border-[#b69161]/20 hover:bg-[#b69161]/10 transition-all shadow-sm"
+                            className="flex items-center justify-center p-2 rounded-xl text-white/50 bg-white/8 border border-[rgba(182,145,97,0.18)] hover:bg-white/12 hover:text-white/85 transition-all shadow-sm"
                             title="Exit Preview"
                         >
                             <X className="w-4 h-4" />
@@ -638,14 +638,14 @@ export function PreviewPanel({
                     )}
 
                     {/* View Mode Toggle - Preview / Code (Moved to left) */}
-                    <div className="flex items-center p-1 rounded-xl bg-[#d6cfc9]/20 border border-[#b69161]/20 shadow-sm">
+                    <div className="flex items-center p-1 rounded-xl bg-white/8 border border-[rgba(182,145,97,0.18)] shadow-sm">
                         <button
                             onClick={() => setViewMode('preview')}
                             className={cn(
                                 'flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all text-sm',
                                 viewMode === 'preview'
                                     ? 'bg-[#b69161] text-white shadow-sm font-medium'
-                                    : 'text-[#b69161]/60 hover:text-[#b69161]'
+                                    : 'text-white/50 hover:text-white/85'
                             )}
                             title="Preview"
                         >
@@ -658,7 +658,7 @@ export function PreviewPanel({
                                 'flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all text-sm',
                                 viewMode === 'code'
                                     ? 'bg-[#b69161] text-white shadow-sm font-medium'
-                                    : 'text-[#b69161]/60 hover:text-[#b69161]'
+                                    : 'text-white/50 hover:text-white/85'
                             )}
                             title="Code"
                         >
@@ -675,21 +675,21 @@ export function PreviewPanel({
                         <div className="relative">
                             <button
                                 onClick={() => setShowPageSelector(!showPageSelector)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm bg-[#d6cfc9]/20 border border-[#b69161]/20 hover:bg-[#b69161]/10 transition-all shadow-sm"
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm bg-white/8 border border-[rgba(182,145,97,0.18)] hover:bg-white/12 transition-all shadow-sm"
                                 title="Select Page"
                             >
-                                <span className="text-xs font-medium text-[#b69161]">{currentPage}</span>
+                                <span className="text-xs font-medium text-[#c9a474]">{currentPage}</span>
                             </button>
 
                             {showPageSelector && (
                                 <div
-                                    className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-[10000] w-64 max-h-96 overflow-y-auto backdrop-blur-xl border border-[#b69161]/20 rounded-xl shadow-2xl p-2"
+                                    className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-[10000] w-64 max-h-96 overflow-y-auto backdrop-blur-xl border border-[rgba(182,145,97,0.22)] rounded-xl shadow-2xl p-2"
                                     style={{
-                                        background: 'linear-gradient(135deg, rgba(242, 239, 237, 0.97) 0%, rgba(246, 244, 242, 0.97) 50%, rgba(242, 239, 237, 0.97) 100%)',
-                                        boxShadow: '0 8px 32px rgba(44, 36, 24, 0.12)',
+                                        background: 'rgba(55, 45, 30, 0.92)',
+                                        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.25)',
                                     }}
                                 >
-                                    <div className="text-xs font-semibold text-[#b69161]/60 px-2 py-1 mb-1">
+                                    <div className="text-xs font-semibold text-[#c9a474]/60 px-2 py-1 mb-1">
                                         Available Pages
                                     </div>
                                     {availablePages.map((page) => (
@@ -699,8 +699,8 @@ export function PreviewPanel({
                                             className={cn(
                                                 'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors',
                                                 currentPage === page
-                                                    ? 'bg-[#b69161]/20 text-[#b69161] font-medium'
-                                                    : 'hover:bg-[#d6cfc9]/30 text-[#b69161]/70'
+                                                    ? 'bg-[#c9a474]/15 text-[#c9a474] font-medium'
+                                                    : 'hover:bg-white/8 text-white/60'
                                             )}
                                         >
                                             {page}
@@ -712,14 +712,14 @@ export function PreviewPanel({
                     )}
 
                     {/* Device Toggle */}
-                    <div className="flex items-center p-1 rounded-xl bg-[#d6cfc9]/20 border border-[#b69161]/20 shadow-sm">
+                    <div className="flex items-center p-1 rounded-xl bg-white/8 border border-[rgba(182,145,97,0.18)] shadow-sm">
                         <button
                             onClick={() => setDeviceMode('desktop')}
                             className={cn(
                                 'p-1.5 rounded-lg transition-all',
                                 deviceMode === 'desktop' && viewMode === 'preview'
                                     ? 'bg-[#b69161] text-white shadow-sm'
-                                    : 'text-[#b69161]/60 hover:text-[#b69161]'
+                                    : 'text-white/50 hover:text-white/85'
                             )}
                             title="Desktop"
                             disabled={viewMode === 'code'}
@@ -732,7 +732,7 @@ export function PreviewPanel({
                                 'p-1.5 rounded-lg transition-all',
                                 deviceMode === 'mobile' && viewMode === 'preview'
                                     ? 'bg-[#b69161] text-white shadow-sm'
-                                    : 'text-[#b69161]/60 hover:text-[#b69161]'
+                                    : 'text-white/50 hover:text-white/85'
                             )}
                             title="Mobile"
                             disabled={viewMode === 'code'}
@@ -741,7 +741,7 @@ export function PreviewPanel({
                         </button>
                     </div>
 
-                    <div className="flex items-center gap-1 bg-[#d6cfc9]/20 border border-[#b69161]/20 rounded-xl p-1 shadow-sm">
+                    <div className="flex items-center gap-1 bg-white/8 border border-[rgba(182,145,97,0.18)] rounded-xl p-1 shadow-sm">
                         {/* Fix Error Button */}
                         {onFixError && buildError && (
                             <button
@@ -756,7 +756,7 @@ export function PreviewPanel({
 
                         <button
                             onClick={handleManualRefresh}
-                            className="p-1.5 rounded-lg text-[#b69161]/60 hover:text-[#b69161] hover:bg-[#d6cfc9]/30 transition-all"
+                            className="p-1.5 rounded-lg text-white/50 hover:text-white/85 hover:bg-white/8 transition-all"
                             title="Refresh"
                             disabled={loadState === 'loading'}
                         >
@@ -770,7 +770,7 @@ export function PreviewPanel({
                                 "p-1.5 rounded-lg transition-all",
                                 showTerminal
                                     ? "text-white bg-[#b69161] hover:bg-[#c9a474]"
-                                    : "text-[#b69161]/60 hover:text-[#b69161] hover:bg-[#d6cfc9]/30"
+                                    : "text-white/50 hover:text-white/85 hover:bg-white/8"
                             )}
                             title={showTerminal ? "Hide Terminal" : "Show Terminal"}
                         >
@@ -785,7 +785,7 @@ export function PreviewPanel({
                     <button
                         onClick={() => setDrawerType(drawerType === 'supabase' ? null : 'supabase')}
                         className={cn(
-                            "p-2 rounded-lg bg-[#d6cfc9]/20 border border-[#b69161]/20 hover:bg-[#b69161]/10 transition-all shadow-sm flex items-center justify-center relative",
+                            "p-2 rounded-lg bg-white/8 border border-[rgba(182,145,97,0.18)] hover:bg-white/12 transition-all shadow-sm flex items-center justify-center relative",
                             drawerType === 'supabase' && "bg-emerald-500/20 border-emerald-400/40 ring-1 ring-emerald-400/30",
                             supabaseConnection.isConnected && "border-emerald-400/40"
                         )}
@@ -800,8 +800,12 @@ export function PreviewPanel({
                     {/* Open Preview in New Tab */}
                     {previewUrl && (
                         <button
-                            onClick={() => window.open(getFullPreviewUrl(), '_blank')}
-                            className="p-2 rounded-lg bg-[#d6cfc9]/20 border border-[#b69161]/20 hover:bg-[#b69161]/10 transition-all shadow-sm flex items-center justify-center"
+                            onClick={() => {
+                                const baseUrl = previewUrl.replace(/[?#].*$/, '');
+                                const url = `${baseUrl}${currentPage}`;
+                                window.open(`/preview?url=${encodeURIComponent(url)}`, '_blank');
+                            }}
+                            className="p-2 rounded-lg bg-white/8 border border-[rgba(182,145,97,0.18)] hover:bg-white/12 transition-all shadow-sm flex items-center justify-center"
                             title="Open in New Tab"
                         >
                             <ExternalLink className="w-4 h-4 text-[#b69161]" />
@@ -812,7 +816,7 @@ export function PreviewPanel({
                     <button
                         onClick={() => setDrawerType(drawerType === 'github' ? null : 'github')}
                         className={cn(
-                            "p-2 rounded-lg bg-[#d6cfc9]/20 border border-[#b69161]/20 hover:bg-[#b69161]/10 transition-all shadow-sm flex items-center justify-center",
+                            "p-2 rounded-lg bg-white/8 border border-[rgba(182,145,97,0.18)] hover:bg-white/12 transition-all shadow-sm flex items-center justify-center",
                             drawerType === 'github' && "bg-[#b69161]/20 border-[#b69161]/40 ring-1 ring-[#b69161]/30"
                         )}
                         title={repoUrl ? "GitHub Repository" : "Sync to GitHub"}
@@ -828,8 +832,8 @@ export function PreviewPanel({
                                 drawerType === 'supabase' ? "w-72" : "w-56"
                             )}
                             style={{
-                                background: 'linear-gradient(135deg, rgba(242, 239, 237, 0.97) 0%, rgba(246, 244, 242, 0.97) 50%, rgba(242, 239, 237, 0.97) 100%)',
-                                boxShadow: '0 20px 60px rgba(44, 36, 24, 0.12), 0 8px 32px rgba(44, 36, 24, 0.08)',
+                                background: 'rgba(55, 45, 30, 0.92)',
+                                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.25)',
                                 animation: 'previewDrawerIn 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards',
                                 transformOrigin: 'top right',
                             }}
@@ -907,7 +911,8 @@ export function PreviewPanel({
                     /* Preview View */
                     <div
                         ref={iframeContainerRef}
-                        className="overflow-hidden w-full h-full bg-white rounded-2xl"
+                        className="overflow-hidden w-full h-full rounded-2xl"
+                        style={{ background: 'rgba(44, 36, 24, 0.82)' }}
                     >
                         {/* Phase Loader - show during any loading state */}
                         {(isLoading || (previewUrl && (!isServerReady || loadState === 'loading'))) && (
@@ -926,7 +931,7 @@ export function PreviewPanel({
                             <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#2c2418]/80 backdrop-blur-sm rounded-2xl">
                                 <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
                                 <p className="text-[#b69161] font-semibold mb-2">Preview Server Not Ready</p>
-                                <p className="text-[#b69161]/60 text-sm mb-2 text-center px-8 max-w-md">
+                                <p className="text-white/50 text-sm mb-2 text-center px-8 max-w-md">
                                     The preview server is still starting up or stopped.
                                 </p>
                                 <p className="text-[#b69161]/40 text-xs mb-6 text-center px-8 max-w-md">
@@ -1018,7 +1023,7 @@ export function PreviewPanel({
                                     height={48}
                                     className="object-contain opacity-20 mb-4"
                                 />
-                                <p className="text-sm font-medium text-[#b69161]/60">Send a message to start building</p>
+                                <p className="text-sm font-medium text-white/50">Send a message to start building</p>
                             </div>
                         ) : null}
                     </div>

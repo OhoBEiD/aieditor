@@ -1,7 +1,7 @@
 export { ChatPanel } from './ChatPanel';
 export { ChatSidebar } from './ChatSidebar';
 export { MessageBubble } from './MessageBubble';
-export { MessageInput, type ExecutorMode } from './MessageInput';
+export { MessageInput, type ModelOption } from './MessageInput';
 export { ChatSelector } from './ChatSelector';
 export { MessageLoader, ChatSkeleton } from './MessageLoader';
 export { ThinkingSteps } from './ThinkingSteps';

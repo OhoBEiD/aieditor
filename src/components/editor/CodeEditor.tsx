@@ -53,7 +53,7 @@ export function CodeEditor({ filePath, content, onChange, onClose, className }: 
     return (
         <div className={cn("flex flex-col h-full bg-transparent code-editor-container", className)}>
             {/* Editor Card - Dark Glass */}
-            <div className="flex-1 border border-[#b69161]/20 rounded-2xl overflow-hidden shadow-[0_8px_32px_0_rgba(44,36,24,0.1)] mx-4 mb-4 mt-2 bg-[#f2efed]/90 backdrop-blur-xl relative">
+            <div className="flex-1 border border-[rgba(182,145,97,0.22)] rounded-2xl overflow-hidden shadow-[0_16px_48px_rgba(0,0,0,0.35)] mx-4 mb-4 mt-2 bg-[rgba(44,36,24,0.82)] backdrop-blur-xl relative">
                 <style jsx global>{`
                     .monaco-editor, .monaco-editor-background, .monaco-editor .inputarea.ime-input {
                         background-color: transparent !important;
@@ -63,7 +63,7 @@ export function CodeEditor({ filePath, content, onChange, onClose, className }: 
                     }
                     /* Subtle line numbers */
                     .monaco-editor .line-numbers {
-                        color: rgba(132, 116, 91, 0.4) !important;
+                        color: rgba(182, 145, 97, 0.25) !important;
                     }
                 `}</style>
                 <Editor
@@ -73,7 +73,7 @@ export function CodeEditor({ filePath, content, onChange, onClose, className }: 
                     theme="vs-dark"
                     onChange={(value) => onChange?.(value || '')}
                     loading={
-                        <div className="flex flex-col items-center justify-center h-full w-full bg-[#f2efed] backdrop-blur-xl">
+                        <div className="flex flex-col items-center justify-center h-full w-full bg-transparent backdrop-blur-xl">
                             <div className="flex flex-col items-center gap-3">
                                 <Image
                                     src="/automatelogo.png"
@@ -82,7 +82,7 @@ export function CodeEditor({ filePath, content, onChange, onClose, className }: 
                                     height={40}
                                     className="animate-pulse"
                                 />
-                                <div className="flex items-center gap-2 text-[#b69161]/60">
+                                <div className="flex items-center gap-2 text-[#c9a474]/50">
                                     <Loader2 className="w-4 h-4 animate-spin" />
                                     <span className="text-sm font-medium">Loading editor...</span>
                                 </div>

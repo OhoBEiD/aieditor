@@ -3,7 +3,7 @@
 // Based on SWE-Search (ICLR 2025) — nobody has this in production yet
 
 import { generateText, stepCountIs } from "ai";
-import { selectModel } from "../router";
+import { selectModel, type UserModel } from "../router";
 import { createEnhancedTools, type DatabaseContext } from "../tools/enhanced-tools";
 import { scoreTaskOutput, type QualityScore } from "./QualityScorer";
 import { validateBuild } from "./BuildValidator";
@@ -86,12 +86,13 @@ export async function speculativeExecute(
   repoMap: RepoMap | null,
   numBranches: number = 3,
   dbContext?: DatabaseContext,
+  userModel?: UserModel,
 ): Promise<SpeculativeResult> {
   const strategies = STRATEGIES.slice(0, numBranches);
 
   // Run all branches in parallel
   const branchPromises = strategies.map(strategy =>
-    executeBranch(task, virtualFS, systemPrompt, strategy, repoMap, dbContext),
+    executeBranch(task, virtualFS, systemPrompt, strategy, repoMap, dbContext, userModel),
   );
 
   const branches = await Promise.all(branchPromises);
@@ -130,6 +131,7 @@ async function executeBranch(
   strategy: BranchStrategy,
   repoMap: RepoMap | null,
   dbContext?: DatabaseContext,
+  userModel?: UserModel,
 ): Promise<BranchResult> {
   // Clone virtualFS for isolation
   const branchFS = new Map(originalFS);
@@ -137,7 +139,7 @@ async function executeBranch(
   const fileOperations: FileOperation[] = [];
 
   // Select model with reduced step budget
-  const config = selectModel("execute", task.complexity as any);
+  const config = selectModel("execute", task.complexity as any, userModel);
   const maxSteps = Math.max(3, Math.floor(config.maxSteps / 2));
 
   const prompt = `${task.description}${strategy.promptSuffix}`;

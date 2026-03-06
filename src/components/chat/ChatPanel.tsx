@@ -1,8 +1,8 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useMemo } from 'react';
 import { MessageBubble } from './MessageBubble';
-import { MessageInput, type ExecutorMode } from './MessageInput';
+import { MessageInput, type ModelOption } from './MessageInput';
 import { ThinkingSteps, type ThinkingStep } from './ThinkingSteps';
 import { Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -25,8 +25,8 @@ interface ChatPanelProps {
     thinkingSteps?: ThinkingStep[];
     agentThinking?: string[];
     sessionTitle?: string;
-    executorMode?: ExecutorMode;
-    onModeChange?: (mode: ExecutorMode) => void;
+    selectedModel?: ModelOption;
+    onModelChange?: (model: ModelOption) => void;
     contextUsage?: ContextUsage;
     messageStepsMap?: Record<string, ThinkingStep[]>;
 }
@@ -45,8 +45,8 @@ export function ChatPanel({
     isStreaming = false,
     thinkingSteps = [],
     agentThinking = [],
-    executorMode = 'mastra',
-    onModeChange,
+    selectedModel = 'flash',
+    onModelChange,
     contextUsage,
     messageStepsMap = {},
 }: ChatPanelProps) {
@@ -54,6 +54,34 @@ export function ChatPanel({
     const [isTransitioning, setIsTransitioning] = useState(false);
     const [displayedMessages, setDisplayedMessages] = useState<Message[]>([]);
     const chatPanelRef = useRef<HTMLDivElement>(null);
+
+    // Derive which proposal messages have been selected
+    // Primary: read from message metadata (persisted to Supabase on selection)
+    // Fallback: scan for "Option X" user messages (backwards compat for older messages)
+    const proposalSelections = useMemo(() => {
+        const selections: Record<string, number> = {};
+        for (let i = 0; i < displayedMessages.length; i++) {
+            const msg = displayedMessages[i];
+            if (msg.role === 'assistant' && msg.content.includes('PROPOSAL_OPTIONS')) {
+                // Primary: check metadata
+                const meta = msg.metadata as Record<string, any> | null;
+                if (meta?.selectedOption) {
+                    selections[msg.id] = meta.selectedOption as number;
+                    continue;
+                }
+                // Fallback: scan for "Option X" in next user message
+                for (let j = i + 1; j < displayedMessages.length; j++) {
+                    const next = displayedMessages[j];
+                    if (next.role === 'user') {
+                        const match = next.content.match(/^Option\s+(\d)/i);
+                        if (match) selections[msg.id] = parseInt(match[1]);
+                        break;
+                    }
+                }
+            }
+        }
+        return selections;
+    }, [displayedMessages]);
 
     useEffect(() => {
         if (isLoadingMessages && messages.length === 0) {
@@ -104,7 +132,7 @@ export function ChatPanel({
     }, [isLoading, isStreaming]);
 
     return (
-        <div ref={chatPanelRef} className="flex flex-col h-full overflow-hidden">
+        <div ref={chatPanelRef} className="flex flex-col h-full overflow-hidden dark-glass-strong rounded-2xl">
             {/* Scrollbar styling for dark theme */}
             <style jsx global>{`
                 .chat-scrollbar::-webkit-scrollbar {
@@ -114,11 +142,11 @@ export function ChatPanel({
                     background: transparent;
                 }
                 .chat-scrollbar::-webkit-scrollbar-thumb {
-                    background-color: rgba(132, 116, 91, 0.2);
+                    background-color: rgba(182, 145, 97, 0.25);
                     border-radius: 9999px;
                 }
                 .chat-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background-color: rgba(132, 116, 91, 0.35);
+                    background-color: rgba(182, 145, 97, 0.40);
                 }
             `}</style>
 
@@ -148,6 +176,7 @@ export function ChatPanel({
                                     message={message}
                                     onRevert={onRevert}
                                     onSendMessage={onSendMessage}
+                                    initialSelectedProposal={proposalSelections[message.id] ?? null}
                                 />
                             </div>
                         ))}
@@ -193,8 +222,8 @@ export function ChatPanel({
                 onSend={onSendMessage}
                 onStop={onStop}
                 isLoading={isLoading}
-                executorMode={executorMode}
-                onModeChange={onModeChange}
+                selectedModel={selectedModel}
+                onModelChange={onModelChange}
                 contextUsage={contextUsage}
             />
         </div>
@@ -213,7 +242,7 @@ function EmptyState() {
                     className="object-contain drop-shadow-lg opacity-60"
                 />
             </div>
-            <p className="mt-3 text-sm text-[#b69161]/60">Start a conversation</p>
+            <p className="mt-3 text-sm text-[#c9a474]/60">Start a conversation</p>
         </div>
     );
 }
@@ -227,7 +256,7 @@ function LoadingIndicator() {
                     <div className="w-1.5 h-1.5 rounded-full bg-[#b69161] animate-bounce" style={{ animationDelay: '150ms' }} />
                     <div className="w-1.5 h-1.5 rounded-full bg-[#b69161] animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
-                <span className="text-xs text-[#b69161]/60">Agent thinking...</span>
+                <span className="text-xs text-[#c9a474]/60">Agent thinking...</span>
             </div>
         </div>
     );
@@ -238,17 +267,17 @@ function MessagesSkeleton() {
         <div className="p-4 space-y-4 animate-fade-in">
             {/* User skeleton */}
             <div className="px-4">
-                <div className="h-10 w-3/4 rounded-2xl bg-[#d6cfc9]/30 skeleton-pulse opacity-30" />
+                <div className="h-10 w-3/4 rounded-2xl bg-[rgba(182,145,97,0.12)] skeleton-pulse opacity-30" />
             </div>
             {/* AI skeleton */}
             <div className="px-4 space-y-2">
-                <div className="h-4 w-full rounded bg-[#d6cfc9]/30 skeleton-pulse opacity-30" />
-                <div className="h-4 w-5/6 rounded bg-[#d6cfc9]/30 skeleton-pulse opacity-30" />
-                <div className="h-4 w-2/3 rounded bg-[#d6cfc9]/30 skeleton-pulse opacity-30" />
+                <div className="h-4 w-full rounded bg-[rgba(182,145,97,0.12)] skeleton-pulse opacity-30" />
+                <div className="h-4 w-5/6 rounded bg-[rgba(182,145,97,0.12)] skeleton-pulse opacity-30" />
+                <div className="h-4 w-2/3 rounded bg-[rgba(182,145,97,0.12)] skeleton-pulse opacity-30" />
             </div>
             {/* User skeleton */}
             <div className="px-4">
-                <div className="h-10 w-1/2 rounded-2xl bg-[#d6cfc9]/30 skeleton-pulse opacity-30" />
+                <div className="h-10 w-1/2 rounded-2xl bg-[rgba(182,145,97,0.12)] skeleton-pulse opacity-30" />
             </div>
         </div>
     );

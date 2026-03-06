@@ -21,12 +21,13 @@ import { generateReflection, formatReflectionsForPrompt, type Reflection } from 
 import { scoreTaskOutput } from "@/lib/ai/agents/QualityScorer";
 import { speculativeExecute, shouldUseSpeculation } from "@/lib/ai/agents/SpeculativeExecutor";
 import { generateTests } from "@/lib/ai/agents/TestGenerator";
-import { getFlashModel, selectModel, selectModelWithFallback, generateTextWithFallback, type Complexity } from "@/lib/ai/router";
+import { getFlashModel, selectModel, selectModelWithFallback, generateTextWithFallback, type Complexity, type UserModel } from "@/lib/ai/router";
 import { createEnhancedTools, type FileOperation, type DatabaseContext } from "@/lib/ai/tools/enhanced-tools";
 import { compactToolResults } from "@/lib/ai/context/compaction";
 import { buildRepoMap, getCompactRepoMap, type RepoMap } from "@/lib/ai/context/repo-map";
 import { buildDynamicSystemPrompt, type DynamicPromptContext } from "@/lib/ai/prompts/dynamic-prompt-builder";
 import { loadBrain, extractAndSaveLearnings, formatBrainForPrompt, type BrainEntry } from "@/lib/ai/context/brain";
+import { saveConversationMemory, loadConversationMemory, formatMemoryForPrompt } from "@/lib/ai/context/agent-memory";
 import { resetArtifactCounter, emitPlanArtifact, emitQualityArtifact, emitBranchComparisonArtifact, emitTestResultArtifact, emitBrainUpdateArtifact, emitScreenshotArtifact, emitProposalArtifact } from "@/lib/ai/artifacts/emitter";
 import { generateProposals, parseOptionSelection, shouldUseInteractiveMode, type ApproachOption } from "@/lib/ai/agents/InteractiveProposer";
 import { z } from "zod";
@@ -60,6 +61,45 @@ async function generateTextWithRetry(
 
 // --- Helpers ---
 
+// Strip AI markers from message content for clean conversation context
+function cleanMessageContent(text: string): string {
+  return text
+    .replace(/\n?<!--FILE_OP:[\s\S]*?-->\n?/g, "")
+    .replace(/\n?<!--DONE:[\s\S]*?-->\n?/g, "")
+    .replace(/\n?<!--ARTIFACT:[\s\S]*?-->\n?/g, "")
+    .replace(/\n?<!--PROPOSAL_OPTIONS:[\s\S]*?-->\n?/g, "")
+    .replace(/\n?<!--REQUEST_SCREENSHOT:[\s\S]*?-->\n?/g, "")
+    .trim();
+}
+
+// Load conversation history from Supabase (server-side, authoritative)
+async function loadServerConversationHistory(
+  supabaseDb: ReturnType<typeof getSupabaseClient>,
+  sessionId: string,
+): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
+  if (!supabaseDb) return [];
+  try {
+    const { data, error } = await supabaseDb
+      .from("messages")
+      .select("role, content, created_at")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: true })
+      .limit(20);
+
+    if (error || !data) return [];
+
+    return data
+      .filter((m: any) => m.role === "user" || m.role === "assistant")
+      .map((m: any) => ({
+        role: m.role as "user" | "assistant",
+        content: cleanMessageContent(m.content || ""),
+      }))
+      .filter((m: { content: string }) => m.content.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 function normalizePath(p: string): string {
   return (p || "").replace(/^\/+/, "").replace(/\/+/g, "/").trim();
 }
@@ -84,12 +124,13 @@ interface RequestBody {
     originalMessage: string;
     options: ApproachOption[];
   };
+  selectedModel?: UserModel;                  // User's model choice (flash/pro/sonnet/opus) — applies to plan + execute
 }
 
 // --- Base System Prompt ---
 
 const BASE_EXECUTOR_PROMPT = `You are a world-class frontend engineer executing code changes to build stunning web experiences.
-Your signature style: liquid glass morphism, GSAP scroll animations, premium typography, and cinematic layouts.
+Adapt your design style to match the type of website being built.
 
 ## WORKFLOW (CRITICAL)
 1. SEARCH: Use grep_files to find relevant code before reading files
@@ -98,17 +139,16 @@ Your signature style: liquid glass morphism, GSAP scroll animations, premium typ
 4. VERIFY: Use read_file to confirm your changes applied correctly
 
 ## DESIGN RULES
-- **Glass morphism**: backdrop-blur-xl, bg-white/[0.05], border border-white/[0.08], rounded-2xl, shadow-[0_8px_32px_rgba(0,0,0,0.12)]
-- **Floating orbs**: 3-5 gradient blurred circles as background decoration on every page
-- **Grain overlay**: Subtle noise texture (use CSS SVG filter) on the body
+- **Theme**: Match the theme to the site type. Light theme for ecommerce, business, portfolios, blogs, medical, education. Dark theme for SaaS dashboards, developer tools, gaming, nightlife. Always follow user preference if stated.
+- **Headers/Navbars**: Use SOLID backgrounds by default (e.g. bg-white, bg-gray-900, bg-primary). Only use transparency/glass morphism if the user specifically requests it.
 - **Typography**: Use next/font/google — Inter for body, Space Grotesk for headings. Hero text: text-5xl md:text-7xl font-bold tracking-tight
-- **GSAP animations**: ScrollTrigger on every section (fade up + stagger), word-by-word hero reveal, parallax images, floating orb animation, counter stats
-- **Images**: ALWAYS use real Unsplash URLs (https://images.unsplash.com/photo-{id}?w=1920&q=80&fit=crop). Avatars from randomuser.me. NEVER placeholder images.
+- **Images**: Use https://picsum.photos/{width}/{height} for hero and section images (e.g. https://picsum.photos/1920/1080). For avatars use https://i.pravatar.cc/150?img={1-70}. NEVER invent Unsplash photo IDs — only use Unsplash URLs if you know the exact real photo ID.
 - **Icons**: Lucide React for all iconography
 - **Spacing**: Full-width sections, max-w-7xl mx-auto px-4 sm:px-6 lg:px-8, py-24 lg:py-32 between sections
-- **Color**: CSS variables for theming. Dark theme default for SaaS/tech.
+- **Color**: Use CSS variables for theming. Choose a palette that fits the brand/site type.
 - **Components**: Create 8-10 separate component files for landing pages (Navbar, Hero, LogoCloud, Features, Showcase, Testimonials, Stats, Pricing, CTA, Footer)
-- Every animated component MUST have "use client" directive and guard GSAP with typeof window !== "undefined"
+- **Animations**: Use GSAP with ScrollTrigger for scroll animations when appropriate. Every animated component MUST have "use client" directive and guard GSAP with typeof window !== "undefined".
+- **Design variety**: Choose from solid, gradient, or glassmorphic styles based on what fits. Do NOT default to glass morphism on every site.
 
 ## CODE RULES
 - "content" for write_file must be the COMPLETE file source code
@@ -135,10 +175,18 @@ export async function POST(req: NextRequest) {
     supabaseContext,
     selectedOption,
     pendingProposal,
+    selectedModel,
   } = body;
 
   const sessionId = conversationId;
   const supabaseDb = getSupabaseClient();
+
+  // Load authoritative conversation history from Supabase (server-side)
+  // This is more reliable than the frontend-sent history, which can be empty after page reload
+  const serverHistory = sessionId
+    ? await loadServerConversationHistory(supabaseDb, sessionId)
+    : [];
+  const authHistory = serverHistory.length > 0 ? serverHistory : conversationHistory;
 
   // Build virtual filesystem
   const virtualFS = new Map<string, string>();
@@ -171,7 +219,7 @@ export async function POST(req: NextRequest) {
 
   // Questions route to direct LLM response
   if (classification.type === "question") {
-    return handleQuestion({ message, files, conversationHistory, requestId, siteId, sessionId });
+    return handleQuestion({ message, files, conversationHistory: authHistory, requestId, siteId, sessionId });
   }
 
   // --- All other tasks: Enhanced Orchestrated Pipeline ---
@@ -181,7 +229,56 @@ export async function POST(req: NextRequest) {
 
   return createUIMessageStreamResponse({
     stream: createUIMessageStream({
-      execute: async ({ writer }) => {
+      execute: async ({ writer: rawWriter }) => {
+        // Wrap writer to survive client disconnects (page refresh)
+        // If the client closes the connection, writes silently fail
+        // but the pipeline continues executing server-side
+        let streamBroken = false;
+        const writer = {
+          write: (data: any) => {
+            if (streamBroken) return;
+            try {
+              rawWriter.write(data);
+            } catch {
+              streamBroken = true;
+            }
+          },
+        };
+
+        // Server-side message persistence: update the streaming placeholder
+        // created by the client. This ensures the message is saved even if
+        // the client disconnects (page refresh) before onFinish fires.
+        const persistMessageServerSide = async (content: string, status: 'completed' | 'error' = 'completed') => {
+          if (!supabaseDb || !sessionId) return;
+          try {
+            // Find the latest assistant message for this session
+            const { data: rows } = await supabaseDb
+              .from('messages')
+              .select('id')
+              .eq('session_id', sessionId)
+              .eq('role', 'assistant')
+              .order('created_at', { ascending: false })
+              .limit(1);
+
+            if (rows && rows.length > 0) {
+              await supabaseDb.from('messages').update({
+                content,
+                metadata: { requestId, status },
+              }).eq('id', rows[0].id);
+            } else {
+              // No placeholder exists — insert directly
+              await supabaseDb.from('messages').insert({
+                session_id: sessionId,
+                role: 'assistant',
+                content,
+                metadata: { requestId, status },
+              });
+            }
+          } catch (e) {
+            console.error('[route] Failed to persist message server-side:', e);
+          }
+        };
+
         try {
           writer.write({ type: "start", messageId: msgId });
 
@@ -227,14 +324,28 @@ export async function POST(req: NextRequest) {
           }
 
           // ================================
-          // PHASE 0.5: Load Persistent Brain
+          // PHASE 0.5: Load Persistent Brain + Conversation Memory
           // ================================
           let brainEntries: BrainEntry[] = [];
+          let conversationMemories: Awaited<ReturnType<typeof loadConversationMemory>> = [];
+
           if (siteId && siteId !== "unknown") {
-            brainEntries = await loadBrain(siteId);
+            // Load brain and conversation memory in parallel
+            const [brain, memories] = await Promise.all([
+              loadBrain(siteId),
+              loadConversationMemory({ projectId: siteId, sessionId }),
+            ]);
+            brainEntries = brain;
+            conversationMemories = memories;
+
             if (brainEntries.length > 0) {
               await emitStep(requestId, siteId, stepCounter++, "brain_load", "complete",
                 `Loaded ${brainEntries.length} learned patterns from previous sessions`,
+                undefined, sessionId);
+            }
+            if (conversationMemories.length > 0) {
+              await emitStep(requestId, siteId, stepCounter++, "memory_load", "complete",
+                `Loaded ${conversationMemories.length} conversation memories`,
                 undefined, sessionId);
             }
           }
@@ -247,10 +358,22 @@ export async function POST(req: NextRequest) {
           };
           let systemPrompt = buildDynamicSystemPrompt(BASE_EXECUTOR_PROMPT, dynamicPromptContext);
 
-          // Inject brain knowledge into system prompt
-          const brainContext = formatBrainForPrompt(brainEntries);
+          // Inject brain knowledge — filter aggressively to prevent stale patterns from leaking
+          const filteredBrainEntries = brainEntries.filter(e => {
+            if (e.category === "mistake" || e.category === "pattern" || e.category === "component") return true;
+            // Architecture/preference entries only if high confidence
+            if (e.category === "architecture" || e.category === "preference") return e.confidence >= 0.8;
+            return true;
+          });
+          const brainContext = formatBrainForPrompt(filteredBrainEntries);
           if (brainContext) {
             systemPrompt += "\n\n" + brainContext;
+          }
+
+          // Inject conversation memory so the AI knows what was previously discussed
+          const memoryContext = formatMemoryForPrompt(conversationMemories);
+          if (memoryContext) {
+            systemPrompt += "\n\n" + memoryContext;
           }
 
           // Inject connected database context
@@ -272,10 +395,10 @@ export async function POST(req: NextRequest) {
             const repoMapSummary = repoMap ? getCompactRepoMap(repoMap, 400) : "";
             const fileList = Array.from(virtualFS.keys()).sort().join("\n");
 
-            let prompt = `## Project Files\n${fileList || "(empty project)"}\n${repoMapSummary ? `\n${repoMapSummary}\n` : ""}\n## Request\n${message}`;
-            if (conversationHistory.length > 0) {
-              const recent = conversationHistory.slice(-4);
-              prompt = recent.map((m) => `${m.role}: ${m.content.slice(0, 300)}`).join("\n") + "\n\nUser: " + prompt;
+            let prompt = `## USER INTENT (CRITICAL — do NOT deviate from this request)\n${message}\n\n## Project Files\n${fileList || "(empty project)"}\n${repoMapSummary ? `\n${repoMapSummary}\n` : ""}`;
+            if (authHistory.length > 0) {
+              const recent = authHistory.slice(-10);
+              prompt = `## Recent Conversation\n` + recent.map((m) => `${m.role}: ${m.content.slice(0, 500)}`).join("\n") + "\n\n" + prompt;
             }
 
             const result = await generateTextWithFallback({
@@ -298,7 +421,7 @@ export async function POST(req: NextRequest) {
                   await emitStep(requestId, siteId, stepCounter++, toolName, status, msg, details, sessionId);
                 },
                 stepCounter,
-                2, // max 2 iterations for fast path
+                3, // max 3 iterations for fast path
               );
               stepCounter += buildResult.iterations * 3;
 
@@ -311,8 +434,30 @@ export async function POST(req: NextRequest) {
 
             await emitStep(requestId, siteId, 999, "complete", "complete", `Done: ${fileOperations.length} file operations`, undefined, sessionId);
 
-            writeTextToStream(writer, result.text || "Changes applied.", msgId);
+            const fastPathText = result.text || "Changes applied.";
+            writeTextToStream(writer, fastPathText, msgId);
             writeDoneMarker(writer, fileOperations.length);
+            // Persist server-side in case client disconnected
+            await persistMessageServerSide(fastPathText);
+
+            // Save conversation memory for fast path too
+            if (siteId && siteId !== "unknown" && sessionId) {
+              try {
+                await saveConversationMemory({
+                  projectId: siteId,
+                  sessionId,
+                  userMessage: message,
+                  classification,
+                  selectedApproach: null,
+                  planSummary: null,
+                  filesChanged: fileOperations.map(op => op.path),
+                  sequenceNumber: conversationMemories.length + 1,
+                });
+              } catch {
+                // Non-critical
+              }
+            }
+
             writer.write({ type: "finish", finishReason: "stop" });
             return;
           }
@@ -324,30 +469,53 @@ export async function POST(req: NextRequest) {
           // --- Phase 1.5: Interactive Proposals (for complex/moderate tasks) ---
           // Show proposals BEFORE exploring — proposals are about approach, not existing code.
           // Exploration happens after the user picks an approach (more targeted).
-          const isFollowUp = conversationHistory.length > 0 && !pendingProposal;
           let selectedApproach: string | null = null;
 
-          if (shouldUseInteractiveMode(classification.complexity, isFollowUp) && !resolvedOption) {
+          if (shouldUseInteractiveMode(classification) && !resolvedOption) {
             await emitStep(requestId, siteId, stepCounter++, "proposing", "running", "Researching approaches...", undefined, sessionId);
 
             // Light exploration: just pass file list for context, skip full agent explore
-            const proposals = await generateProposals(message, null, virtualFS, brainEntries);
+            // Include memory context so proposals reflect what was previously discussed
+            const proposalMessage = memoryContext
+              ? `${message}\n\n${memoryContext}`
+              : message;
+            const proposals = await generateProposals(proposalMessage, null, virtualFS, brainEntries);
 
-            // Emit proposal artifact for the frontend
+            // Build proposal options for both stream and persistence
+            const proposalOptions = proposals.options.map(opt => ({
+              id: opt.id,
+              title: opt.title,
+              description: opt.description,
+              complexity: opt.complexity,
+              estimatedFiles: opt.estimatedFiles,
+              pros: opt.tradeoffs.pros,
+              cons: opt.tradeoffs.cons,
+            }));
+
+            // Emit proposal artifact for the frontend (stream)
             emitProposalArtifact(writer,
-              proposals.options.map(opt => ({
-                id: opt.id,
-                title: opt.title,
-                description: opt.description,
-                complexity: opt.complexity,
-                estimatedFiles: opt.estimatedFiles,
-                pros: opt.tradeoffs.pros,
-                cons: opt.tradeoffs.cons,
-              })),
+              proposalOptions,
               proposals.recommendation,
               proposals.recommendationReason,
               proposals.researchSummary,
             );
+
+            // Build the same ARTIFACT content for server-side persistence
+            // This ensures proposals survive even if the client disconnected
+            const proposalArtifactData = {
+              id: `artifact_proposal_server_${Date.now()}`,
+              type: 'proposal',
+              title: 'Choose your approach',
+              data: {
+                options: proposalOptions,
+                recommendation: proposals.recommendation,
+                recommendationReason: proposals.recommendationReason,
+                researchSummary: proposals.researchSummary,
+              },
+              timestamp: Date.now(),
+            };
+            const proposalContent = `\n<!--ARTIFACT:${JSON.stringify(proposalArtifactData)}-->\n`;
+            await persistMessageServerSide(proposalContent);
 
             await emitStep(requestId, siteId, stepCounter++, "proposing", "complete",
               `Generated ${proposals.options.length} approaches — waiting for selection`,
@@ -386,6 +554,9 @@ export async function POST(req: NextRequest) {
             // Update dynamic prompt with exploration results
             dynamicPromptContext.exploration = exploration;
             systemPrompt = buildDynamicSystemPrompt(BASE_EXECUTOR_PROMPT, dynamicPromptContext);
+            // Re-inject brain + memory context (system prompt was rebuilt)
+            if (brainContext) systemPrompt += "\n\n" + brainContext;
+            if (memoryContext) systemPrompt += "\n\n" + memoryContext;
 
             await emitStep(requestId, siteId, stepCounter++, "exploring", "complete", "Codebase exploration complete", { content: exploration.summary.slice(0, 500) }, sessionId);
           }
@@ -401,14 +572,19 @@ export async function POST(req: NextRequest) {
           await emitStep(requestId, siteId, planStepNum, "planning", "running", "Creating implementation plan...", undefined, sessionId);
 
           // If an approach was selected, augment the message with the approach details
-          const planMessage = selectedApproach
+          let planMessage = selectedApproach
             ? `${message}\n\n## Selected Approach\n${selectedApproach}`
             : message;
+
+          // Include memory context so planner knows what was previously built
+          if (memoryContext) {
+            planMessage += `\n\n${memoryContext}`;
+          }
 
           const plan = await runPlanAgent(
             planMessage, exploration, virtualFS,
             classification.complexity,
-            conversationHistory,
+            authHistory,
             async (toolName, status, msg, details) => {
               if (toolName === "planning") {
                 await emitStep(requestId, siteId, planStepNum, "planning", status, msg, details, sessionId);
@@ -417,6 +593,7 @@ export async function POST(req: NextRequest) {
               }
             },
             dbContext,
+            selectedModel,
           );
 
           await emitStep(requestId, siteId, planStepNum, "planning", "complete", "Plan created", { content: plan.summary }, sessionId);
@@ -468,6 +645,7 @@ export async function POST(req: NextRequest) {
                     repoMap,
                     3,
                     dbContext,
+                    selectedModel,
                   );
 
                   // Apply winning branch's file operations
@@ -515,20 +693,25 @@ export async function POST(req: NextRequest) {
               }
 
               // --- Normal Execution ---
-              const chain = selectModelWithFallback("execute", taskComplexity);
+              const chain = selectModelWithFallback("execute", taskComplexity, selectedModel);
               const tools = createEnhancedTools(virtualFS, dbContext);
 
               // Build task prompt with reflections from previous tasks
               const reflectionContext = formatReflectionsForPrompt(reflections);
               const repoMapContext = repoMap ? getCompactRepoMap(repoMap, 500) : "";
 
-              const taskPrompt = `## Current Task (${task.id}/${plan.tasks.length})
+              const taskPrompt = `## USER INTENT (CRITICAL — do NOT deviate from this request)
+THE USER WANTS: ${message}
+${selectedApproach ? `SELECTED APPROACH: ${selectedApproach}` : ""}
+PLAN: ${plan.summary}
+
+Everything you build MUST serve this intent. Do not build anything unrelated.
+
+## Current Task (${task.id}/${plan.tasks.length})
 **${task.description}**
 Type: ${task.type}
 Files: ${task.files.join(", ")}
 Verification: ${task.verification}
-
-## Overall Plan: ${plan.summary}
 ${repoMapContext ? `\n${repoMapContext}\n` : ""}
 ## Available Files: ${Array.from(virtualFS.keys()).sort().join("\n")}
 ${reflectionContext}
@@ -818,6 +1001,24 @@ ${fixReflectionContext}`;
             }
           }
 
+          // --- Phase 8.5: Save Conversation Memory ---
+          if (siteId && siteId !== "unknown" && sessionId) {
+            try {
+              await saveConversationMemory({
+                projectId: siteId,
+                sessionId,
+                userMessage: message,
+                classification,
+                selectedApproach,
+                planSummary: plan?.summary || null,
+                filesChanged: fileOperations.map(op => op.path),
+                sequenceNumber: conversationMemories.length + 1,
+              });
+            } catch {
+              // Memory saving is non-critical
+            }
+          }
+
           // --- Phase 9: Visual Verification Request ---
           // Emit a request for the frontend to capture a screenshot and send to /api/ai/visual-verify
           if (fileOperations.some(op => op.path.endsWith(".tsx") || op.path.endsWith(".jsx") || op.path.endsWith(".css"))) {
@@ -845,15 +1046,20 @@ ${fixReflectionContext}`;
           const summaryText = `Completed ${successCount}/${plan.tasks.length} tasks with ${fileOperations.length} file operations.${verification.passed ? " All checks passed." : ""}${buildResult.fixesApplied > 0 ? ` ${buildResult.fixesApplied} auto-fixes applied.` : ""} Quality: ${qualityResult.averageScore}/10.`;
           await emitStep(requestId, siteId, 999, "complete", "complete", summaryText, undefined, sessionId);
 
-          writeTextToStream(writer, execOutput || summaryText, msgId);
+          const finalText = execOutput || summaryText;
+          writeTextToStream(writer, finalText, msgId);
           writeDoneMarker(writer, fileOperations.length);
+          // Persist server-side in case client disconnected
+          await persistMessageServerSide(finalText);
           writer.write({ type: "finish", finishReason: "stop" });
         } catch (error: any) {
           const errorTextId = `error_${Date.now()}`;
+          let errorContent: string;
           if (error.message === "EXECUTION_CANCELLED") {
+            errorContent = "Execution stopped by user.";
             try {
               writer.write({ type: "text-start", id: errorTextId });
-              writer.write({ type: "text-delta", id: errorTextId, delta: "Execution stopped by user." });
+              writer.write({ type: "text-delta", id: errorTextId, delta: errorContent });
               writer.write({ type: "text-end", id: errorTextId });
             } catch { /* stream may be closed */ }
           } else {
@@ -861,16 +1067,18 @@ ${fixReflectionContext}`;
             const isProviderError = error?.message?.includes("Invalid JSON response")
               || error?.message?.includes("Internal Server Error")
               || error?.statusCode === 500;
-            const userMessage = isProviderError
+            errorContent = isProviderError
               ? "The AI provider returned an error. Please try again."
               : (error.message || "Internal server error");
             // Always write visible text so onFinish has content to persist
             try {
               writer.write({ type: "text-start", id: errorTextId });
-              writer.write({ type: "text-delta", id: errorTextId, delta: userMessage });
+              writer.write({ type: "text-delta", id: errorTextId, delta: errorContent });
               writer.write({ type: "text-end", id: errorTextId });
             } catch { /* stream may be closed */ }
           }
+          // Persist error message server-side
+          await persistMessageServerSide(errorContent, 'error');
           try {
             writer.write({ type: "finish", finishReason: "error" });
           } catch { /* stream may be closed */ }
@@ -1100,8 +1308,8 @@ async function handleQuestion({
 
           const fileList = Object.keys(files).sort().join(", ");
           const historyContext = conversationHistory
-            .slice(-4)
-            .map((m) => `${m.role}: ${m.content.slice(0, 300)}`)
+            .slice(-10)
+            .map((m) => `${m.role}: ${m.content.slice(0, 500)}`)
             .join("\n");
 
           const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ""}Project files: ${fileList || "none"}\n\nUser question: ${message}`;

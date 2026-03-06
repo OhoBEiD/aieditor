@@ -19,18 +19,30 @@ export interface BuildValidationResult {
 
 // --- System Prompt ---
 
-const FIXER_SYSTEM_PROMPT = `You are an expert code fixer. You receive specific build/syntax errors and must fix them precisely.
+const FIXER_SYSTEM_PROMPT = `You are an expert code fixer for Next.js/React projects. You receive specific build/syntax errors and must fix them precisely.
 
 ## RULES
 1. Fix ONLY the errors listed. Do not refactor or improve other code.
 2. File contents are provided with each error — use them to understand context immediately.
-3. For import errors: grep for the correct export, then fix the import path.
+3. For import errors (missing_import): use grep_files to search for the correct export name across the codebase, then use edit_file to fix the import path. Common patterns:
+   - "@/components/ui" might export from "@/components/ui/index.ts" or individual files
+   - A component might have been created in a different path than expected
+   - Try searching for "export.*ComponentName" to find where it's actually exported
 4. For type errors: read the type definition, then align the usage.
 5. For syntax errors: fix the exact issue at the reported line.
-6. For missing files: check if the file was renamed, or create it if truly missing.
-7. After fixing, read the file again to verify your fix is correct.
+6. For "use client" missing: add "use client" as the very first line of the file using edit_file.
+7. For missing files: check if the file was renamed, or create it with write_file if truly missing.
+8. For "Unsupported Server Component type: undefined" or undefined exports:
+   - This means a component's default export is undefined at runtime.
+   - Read the file and check if it has a valid "export default function ComponentName() { return (...) }".
+   - Check if the component name in "export default X;" matches an actual function/const defined in the file.
+   - If the component is imported then re-exported, verify the source file actually exports it.
+   - Fix by ensuring every component file has a properly defined and exported React component.
+9. For missing default exports in page.tsx/layout.tsx:
+   - Next.js requires these files to have a default export.
+   - Add "export default function Page() { return (...) }" or add "export default" before the component.
 
-IMPORTANT: You MUST use write_file or edit_file tools to apply fixes. Do NOT just describe fixes in text — actually apply them using the tools.
+IMPORTANT: You MUST use write_file or edit_file tools to apply fixes. Do NOT just describe fixes in text — actually apply them using the tools. Fix EVERY error listed, not just some of them. Read files first to understand the full context before making changes.
 
 ## RESPONSE
 After fixing all errors with tools, respond with a brief summary of what was fixed.`;
@@ -156,7 +168,17 @@ export function validateBuild(virtualFS: Map<string, string>): ClassifiedError[]
       const layoutErrors = validateLayout(path, content);
       errors.push(...layoutErrors);
     }
+
+    // Check exports in page/component files
+    if (path.endsWith(".tsx") || path.endsWith(".jsx")) {
+      const exportErrors = validateExports(path, content);
+      errors.push(...exportErrors);
+    }
   }
+
+  // Cross-file: check component integrity (imports resolve to valid exports)
+  const integrityErrors = validateComponentIntegrity(virtualFS);
+  errors.push(...integrityErrors);
 
   return errors;
 }
@@ -337,30 +359,39 @@ function findUnbalancedLine(content: string, open: string, close: string): numbe
 function validateReact(path: string, content: string): ClassifiedError[] {
   const errors: ClassifiedError[] = [];
 
-  // Check for GSAP without window guard in client components
+  // Check for animation libraries without window guard in client components
   const hasGsap = content.includes("gsap") || content.includes("ScrollTrigger");
+  const hasLenis = content.includes("lenis") || content.includes("ReactLenis") || content.includes("useLenis");
+  const hasAnime = content.includes("animejs") || /\bimport\s+anime\s+from\b/.test(content);
+  const hasR3F = content.includes("@react-three/fiber") || content.includes("Canvas");
+  const hasSSRUnsafeLib = hasGsap || hasLenis || hasAnime;
   const hasWindowGuard = content.includes("typeof window") || content.includes("useLayoutEffect") || content.includes("useEffect");
   const isClientComponent = content.includes('"use client"') || content.includes("'use client'");
 
-  if (hasGsap && isClientComponent && !hasWindowGuard) {
+  if (hasSSRUnsafeLib && isClientComponent && !hasWindowGuard) {
+    const libName = hasGsap ? "GSAP" : hasLenis ? "Lenis" : "Anime.js";
     errors.push({
       type: "runtime_error",
       file: path,
       line: 1,
-      message: "GSAP used without window guard — will crash during SSR",
-      fixStrategy: `Add typeof window !== "undefined" guard around GSAP code, or wrap in useEffect/useLayoutEffect in ${path}`,
+      message: `${libName} used without window guard — will crash during SSR`,
+      fixStrategy: `Add typeof window !== "undefined" guard around ${libName} code, or wrap in useEffect/useLayoutEffect in ${path}`,
       severity: "warning",
     });
   }
 
-  // Check for missing "use client" with client-side hooks
+  // Check for missing "use client" with client-side hooks or animation libraries
   const hasClientHooks = /\b(useState|useEffect|useLayoutEffect|useRef|useCallback|useMemo|useContext|useReducer)\b/.test(content);
-  if (hasClientHooks && !isClientComponent) {
+  const hasAnimationHooks = /\b(useSpring|useTransition|useTrail|useScroll|useTransform|useFrame|useLenis)\b/.test(content);
+  const hasMotionComponents = content.includes("motion.") || content.includes("<motion") || content.includes("AnimatePresence");
+  const needsClientDirective = hasClientHooks || hasAnimationHooks || hasMotionComponents || hasR3F || hasSSRUnsafeLib;
+
+  if (needsClientDirective && !isClientComponent) {
     errors.push({
       type: "missing_directive",
       file: path,
       line: 1,
-      message: 'Uses React hooks but missing "use client" directive',
+      message: 'Uses React hooks or animation libraries but missing "use client" directive',
       fixStrategy: `Add "use client" as the first line of ${path}`,
       severity: "error",
     });
@@ -397,6 +428,154 @@ function validateLayout(path: string, content: string): ClassifiedError[] {
   }
 
   return errors;
+}
+
+// --- Export Validation ---
+
+function validateExports(path: string, content: string): ClassifiedError[] {
+  const errors: ClassifiedError[] = [];
+  const isPage = /(?:^|\/)page\.(tsx|jsx)$/.test(path);
+  const isLayout = /(?:^|\/)layout\.(tsx|jsx)$/.test(path);
+
+  // Page and layout files MUST have a default export
+  if (isPage || isLayout) {
+    const hasDefaultExport = /export\s+default\s+/.test(content) ||
+      /export\s*\{\s*[^}]*\bas\s+default\b/.test(content);
+    if (!hasDefaultExport) {
+      errors.push({
+        type: "runtime_error",
+        file: path,
+        line: 1,
+        message: `${isPage ? "page" : "layout"}.tsx missing default export — Next.js requires a default-exported component`,
+        fixStrategy: `Add "export default function Page() { ... }" or ensure the component is exported as default in ${path}`,
+        severity: "error",
+      });
+    }
+  }
+
+  // Check for exporting undefined values
+  // e.g. "export default undefined" or "export default ;"
+  if (/export\s+default\s+undefined\b/.test(content) || /export\s+default\s*;/.test(content)) {
+    errors.push({
+      type: "runtime_error",
+      file: path,
+      line: findLineNumber(content, /export\s+default\s+(?:undefined|;)/),
+      message: `File exports undefined as default — this causes "Unsupported Server Component type: undefined"`,
+      fixStrategy: `The default export in ${path} is undefined. Ensure a valid React component function is exported as default.`,
+      severity: "error",
+    });
+  }
+
+  // Check for default-exporting a variable that was never defined in the file
+  const defaultVarExport = content.match(/export\s+default\s+([A-Z]\w+)\s*;/);
+  if (defaultVarExport) {
+    const exportedName = defaultVarExport[1];
+    // Check if this name is defined as a function, const, class, or imported
+    const isDefined = new RegExp(
+      `(?:function\\s+${exportedName}\\b|const\\s+${exportedName}\\b|let\\s+${exportedName}\\b|class\\s+${exportedName}\\b|import\\s+${exportedName}\\b|import\\s*\\{[^}]*\\b${exportedName}\\b)`
+    ).test(content);
+    if (!isDefined) {
+      errors.push({
+        type: "runtime_error",
+        file: path,
+        line: findLineNumber(content, new RegExp(`export\\s+default\\s+${exportedName}`)),
+        message: `"${exportedName}" is exported as default but never defined — component will be undefined`,
+        fixStrategy: `Define the "${exportedName}" component as a function in ${path}, or fix the export to reference the correct component name.`,
+        severity: "error",
+      });
+    }
+  }
+
+  return errors;
+}
+
+// --- Component Integrity (cross-file) ---
+
+function validateComponentIntegrity(virtualFS: Map<string, string>): ClassifiedError[] {
+  const errors: ClassifiedError[] = [];
+
+  // Find all page.tsx files and check their component imports
+  for (const [pagePath, pageContent] of virtualFS.entries()) {
+    if (!(/(?:^|\/)page\.(tsx|jsx)$/.test(pagePath))) continue;
+    if (shouldSkipValidation(pagePath)) continue;
+
+    const lines = pageContent.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // Match default imports from local paths: import Something from './Something'
+      const defaultImportMatch = line.match(
+        /import\s+([A-Z]\w+)\s+from\s+["']([.@~/][^"']+)["']/
+      );
+      if (!defaultImportMatch) continue;
+
+      const [, componentName, importPath] = defaultImportMatch;
+      const resolved = resolveImportPath(importPath, pagePath, virtualFS);
+      if (!resolved) continue; // Import validation already catches missing files
+
+      const targetContent = virtualFS.get(resolved);
+      if (!targetContent) continue;
+
+      // Verify the target file has a default export
+      const hasDefaultExport = /export\s+default\s+/.test(targetContent) ||
+        /export\s*\{\s*[^}]*\bas\s+default\b/.test(targetContent);
+      if (!hasDefaultExport) {
+        errors.push({
+          type: "runtime_error",
+          file: resolved,
+          line: 1,
+          message: `"${componentName}" imported by ${pagePath} but ${resolved} has no default export — renders as undefined`,
+          fixStrategy: `Add "export default" to the component in ${resolved}. The component "${componentName}" must be exported as default for the import in ${pagePath} to work.`,
+          severity: "error",
+        });
+      }
+    }
+
+    // Also check named imports: import { Foo } from './Bar'
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const namedImportMatch = line.match(
+        /import\s*\{([^}]+)\}\s*from\s*["']([.@~/][^"']+)["']/
+      );
+      if (!namedImportMatch) continue;
+
+      const [, names, importPath] = namedImportMatch;
+      const resolved = resolveImportPath(importPath, pagePath, virtualFS);
+      if (!resolved) continue;
+
+      const targetContent = virtualFS.get(resolved);
+      if (!targetContent) continue;
+
+      // Check each named import exists as an export in the target
+      const importedNames = names.split(",").map(n => n.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
+      for (const name of importedNames) {
+        if (name === "type" || name === "default") continue;
+        const isExported = new RegExp(
+          `(?:export\\s+(?:const|function|class|let|var|type|interface)\\s+${name}\\b|export\\s*\\{[^}]*\\b${name}\\b)`
+        ).test(targetContent);
+        if (!isExported) {
+          errors.push({
+            type: "missing_import",
+            file: pagePath,
+            line: i + 1,
+            message: `"${name}" imported from ${resolved} but not exported there`,
+            fixStrategy: `Either add "export" to the "${name}" definition in ${resolved}, or fix the import in ${pagePath} to use the correct export name. Search for similar names in ${resolved}.`,
+            severity: "error",
+          });
+        }
+      }
+    }
+  }
+
+  return errors;
+}
+
+function findLineNumber(content: string, pattern: RegExp): number {
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (pattern.test(lines[i])) return i + 1;
+  }
+  return 1;
 }
 
 // --- Fixer Agent ---
@@ -446,7 +625,7 @@ async function runFixerAgent(
       system: FIXER_SYSTEM_PROMPT,
       prompt,
       tools,
-      stopWhen: stepCountIs(Math.min(errors.length * 3, 12)),
+      stopWhen: stepCountIs(Math.min(errors.length * 4, 16)),
       onStepFinish: async (step) => {
         const toolCalls = Array.isArray(step.toolCalls) ? step.toolCalls : [];
         for (const tc of toolCalls) {

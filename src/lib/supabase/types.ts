@@ -151,28 +151,34 @@ export interface Database {
             agent_memory: {
                 Row: {
                     id: string;
-                    client_id: string;
-                    memory_type: 'preference' | 'style' | 'component' | 'instruction' | 'context';
-                    key: string;
-                    value: string;
+                    project_id: string;
+                    session_id: string | null;
+                    memory_type: 'conversation' | 'file_change' | 'preference' | 'context' | 'error' | 'instruction';
+                    content: string;
+                    content_json: Json | null;
+                    sequence_number: number;
                     created_at: string;
                     updated_at: string;
                 };
                 Insert: {
                     id?: string;
-                    client_id: string;
-                    memory_type: 'preference' | 'style' | 'component' | 'instruction' | 'context';
-                    key: string;
-                    value: string;
+                    project_id: string;
+                    session_id?: string | null;
+                    memory_type: 'conversation' | 'file_change' | 'preference' | 'context' | 'error' | 'instruction';
+                    content: string;
+                    content_json?: Json | null;
+                    sequence_number?: number;
                     created_at?: string;
                     updated_at?: string;
                 };
                 Update: {
                     id?: string;
-                    client_id?: string;
-                    memory_type?: 'preference' | 'style' | 'component' | 'instruction' | 'context';
-                    key?: string;
-                    value?: string;
+                    project_id?: string;
+                    session_id?: string | null;
+                    memory_type?: 'conversation' | 'file_change' | 'preference' | 'context' | 'error' | 'instruction';
+                    content?: string;
+                    content_json?: Json | null;
+                    sequence_number?: number;
                     created_at?: string;
                     updated_at?: string;
                 };
@@ -284,6 +290,7 @@ export type EventLog = Database['public']['Tables']['event_logs']['Row'];
 export type InsertChatSession = Database['public']['Tables']['chat_sessions']['Insert'];
 export type InsertMessage = Database['public']['Tables']['messages']['Insert'];
 export type InsertCodeVersion = Database['public']['Tables']['code_versions']['Insert'];
+export type InsertAgentMemory = Database['public']['Tables']['agent_memory']['Insert'];
 
 // View types
 export type ChatSessionSummary = Database['public']['Views']['v_chat_sessions_summary']['Row'];

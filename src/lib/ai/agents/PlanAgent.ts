@@ -3,9 +3,10 @@
 // Receives exploration summary (not raw files) for token efficiency
 
 import { generateText, stepCountIs } from "ai";
-import { selectModel, type Complexity } from "../router";
+import { selectModel, type Complexity, type UserModel } from "../router";
 import { getPlannerTools, type DatabaseContext } from "../tools/enhanced-tools";
 import type { ExplorationResult } from "./ExploreAgent";
+import { ANIMATION_SKILLS_BRIEF } from "../prompts/skills";
 
 // --- Types ---
 
@@ -85,7 +86,14 @@ You MUST output valid JSON in this exact structure:
 - For MODIFICATIONS: only plan the files that need to change
 - Use Tailwind CSS, React 18+, TypeScript, Next.js App Router
 - Always include real image URLs (Unsplash) for visual elements
-- Keep tasks atomic - each task should be independently verifiable`;
+- Keep tasks atomic - each task should be independently verifiable
+
+## PAGE COMPOSITION (CRITICAL)
+When creating multiple new components (Hero, Navbar, Footer, etc.), you MUST include a FINAL task that:
+1. Updates \`src/app/page.tsx\` to import and render ALL new components in the correct order
+2. Updates \`src/app/layout.tsx\` with proper metadata (title, description) matching the project
+This task MUST depend on all component-creation tasks and should list both page.tsx and layout.tsx in its files array.
+Do NOT assume earlier tasks will handle this — page composition MUST be its own explicit task.`;
 
 // --- Agent ---
 
@@ -97,8 +105,9 @@ export async function runPlanAgent(
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = [],
   onStep?: (toolName: string, status: string, message: string, details?: any) => Promise<void>,
   dbContext?: DatabaseContext,
+  userModel?: UserModel,
 ): Promise<ExecutionPlan> {
-  const config = selectModel("plan", complexity);
+  const config = selectModel("plan", complexity, userModel);
   const tools = getPlannerTools(virtualFS, dbContext);
 
   // Build the prompt with exploration context
@@ -137,12 +146,12 @@ export async function runPlanAgent(
     prompt += `## Project Files\n${fileList || "(empty project)"}\n\n`;
   }
 
-  // Add conversation history for context
+  // Add conversation history for context (10 messages, 500 chars each for richer context)
   if (conversationHistory.length > 0) {
-    const recent = conversationHistory.slice(-4); // Last 4 messages for context
+    const recent = conversationHistory.slice(-10);
     prompt += `## Recent Conversation\n`;
     for (const msg of recent) {
-      prompt += `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content.slice(0, 300)}\n`;
+      prompt += `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content.slice(0, 500)}\n`;
     }
     prompt += "\n";
   }
@@ -154,7 +163,7 @@ export async function runPlanAgent(
   try {
     const result = await generateText({
       model: config.model,
-      system: PLAN_SYSTEM_PROMPT,
+      system: PLAN_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS_BRIEF,
       prompt,
       tools,
       stopWhen: stepCountIs(config.maxSteps),
@@ -216,7 +225,7 @@ Output the corrected plan as JSON in the same format as the original.`;
   try {
     const result = await generateText({
       model: config.model,
-      system: PLAN_SYSTEM_PROMPT + "\n\nYou are RE-PLANNING after verification failures. Focus only on fixing the issues listed. Do not redo tasks that already succeeded.",
+      system: PLAN_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS_BRIEF + "\n\nYou are RE-PLANNING after verification failures. Focus only on fixing the issues listed. Do not redo tasks that already succeeded.",
       prompt,
       tools,
       stopWhen: stepCountIs(config.maxSteps),
@@ -318,11 +327,11 @@ function createFallbackPlan(
         },
         {
           id: 2,
-          description: "Create components and pages",
+          description: "Create components and compose them in page.tsx and layout.tsx",
           type: "create",
           files: ["src/app/layout.tsx", "src/app/page.tsx"],
           dependencies: [1],
-          verification: "Pages render correctly",
+          verification: "page.tsx imports and renders all created components",
           complexity: "moderate",
         },
       ]

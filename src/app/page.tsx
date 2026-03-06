@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ChatSelector } from '@/components/chat/ChatSelector';
 import { ChatPanel } from '@/components/chat/ChatPanel';
-import type { ExecutorMode } from '@/components/chat/MessageInput';
+import type { ModelOption } from '@/components/chat/MessageInput';
 import { PreviewPanel } from '@/components/editor/PreviewPanel';
 import { DeploymentSettings } from '@/components/settings/DeploymentSettings';
 import { supabase } from '@/lib/supabase/client';
@@ -138,11 +138,12 @@ export default function Home() {
     const [messageStepsMap, setMessageStepsMap] = useState<Record<string, ThinkingStep[]>>({});
 
     // Merge SSE and Supabase thinking steps
-    // If we have SSE steps, use them; otherwise fall back to Supabase steps
-    // After completion, keep showing steps from Supabase (they persist)
+    // Only show live steps when we have an active request (currentRequestId is set).
+    // After completion, steps are frozen into messageStepsMap and currentRequestId is cleared,
+    // so liveThinkingSteps (which queries by sessionId) won't cause duplication.
     const allThinkingSteps = sseThinkingSteps.length > 0
         ? sseThinkingSteps
-        : (liveThinkingSteps.length > 0 ? liveThinkingSteps : []);
+        : (currentRequestId && liveThinkingSteps.length > 0 ? liveThinkingSteps : []);
 
     // Helper to add message without duplicates
     const addMessage = useCallback((newMsg: Message) => {
@@ -170,9 +171,17 @@ export default function Home() {
     // Settings view toggle
     const [showSettings, setShowSettings] = useState(false);
 
-    // Executor mode - user selection for Fast vs Thinking
-    // Default to 'mastra' (Automate Editor) instead of Claude Code
-    const [executorMode, setExecutorMode] = useState<ExecutorMode>('mastra');
+    // Model selection — persisted in localStorage
+    const [selectedModel, setSelectedModel] = useState<ModelOption>(() => {
+        if (typeof window !== 'undefined') {
+            return (localStorage.getItem('selectedModel') as ModelOption) || 'flash';
+        }
+        return 'flash';
+    });
+    const handleModelChange = useCallback((model: ModelOption) => {
+        setSelectedModel(model);
+        localStorage.setItem('selectedModel', model);
+    }, []);
 
     // Cached file context for context usage indicator
     const [cachedFileContext, setCachedFileContext] = useState<Record<string, string>>({});
@@ -284,9 +293,23 @@ export default function Home() {
         sessionId: activeSessionId,
         siteId: activeProject?.siteKey || DEFAULT_CLIENT_ID,
         projectId: activeProjectId,
+        selectedModel,
         getFileContext,
         applyFileOperations,
-        onRequestIdChange: (id) => setCurrentRequestId(id),
+        onRequestIdChange: (id) => {
+            setCurrentRequestId(id);
+            // Sync localStorage with the actual requestId the server uses
+            if (id) {
+                try {
+                    const saved = localStorage.getItem('activeRequest');
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        parsed.requestId = id;
+                        localStorage.setItem('activeRequest', JSON.stringify(parsed));
+                    }
+                } catch { /* ignore */ }
+            }
+        },
         onBeforeFinish: async (_requestId) => {
             // Query thinking steps directly from Supabase (realtime subscription may lag)
             try {
@@ -308,15 +331,24 @@ export default function Home() {
                     const lastAiMsg = [...messages].reverse().find(m => m.role === 'assistant');
                     const msgId = lastAiMsg?.id || _requestId;
                     setMessageStepsMap(prev => ({ ...prev, [msgId]: mapped }));
+                    // Clear live steps now that they're frozen into messageStepsMap
+                    setSseThinkingSteps([]);
+                    setCurrentRequestId(null);
                 }
             } catch (err) {
                 console.error('[onBeforeFinish] Failed to query thinking steps:', err);
             }
         },
-        onStreamingChange: (streaming) => setIsStreaming(streaming),
+        onStreamingChange: (streaming) => {
+            setIsStreaming(streaming);
+            if (!streaming) {
+                // Generation completed — clear active request marker
+                localStorage.removeItem('activeRequest');
+            }
+        },
         onFileOpsApplied: (count) => {
             console.log(`[AI SDK] ${count} file ops applied`);
-            setPreviewRefreshKey(prev => prev + 1);
+            // HMR handles preview updates automatically — no forced refresh needed
         },
         supabaseContext: supabaseConn.isConnected ? {
             projectUrl: supabaseConn.projectUrl!,
@@ -620,7 +652,6 @@ export default function Home() {
 
 
         // Restore active request state (for page refresh during AI thinking)
-        /* 
         try {
             const savedActiveRequest = localStorage.getItem('activeRequest');
             if (savedActiveRequest) {
@@ -630,11 +661,14 @@ export default function Home() {
                 const maxAge = 5 * 60 * 1000; // 5 minutes
 
                 if (now - startedAt < maxAge) {
-                    // Request is still fresh, restore state
+                    // Request is still fresh — server may still be generating
                     console.log('[App] Restoring active request:', parsed);
                     setCurrentRequestId(parsed.requestId);
-                    setIsSending(true);
                     setIsStreaming(true);
+                    // Set the active session so thinking steps subscription connects
+                    if (parsed.sessionId) {
+                        setActiveSessionId(parsed.sessionId);
+                    }
                 } else {
                     // Request is stale, clear it
                     console.log('[App] Clearing stale active request');
@@ -645,7 +679,6 @@ export default function Home() {
             console.error('Failed to restore active request:', e);
             localStorage.removeItem('activeRequest');
         }
-        */
     }, []);
 
     // Load sessions on mount
@@ -678,18 +711,69 @@ export default function Home() {
                 localStorage.setItem('activeProject', JSON.stringify(activeProject));
             }
         }
-    }, [isClient, showPreview, isPanelOpen, previewUrl, activeProject, executorMode]);
+    }, [isClient, showPreview, isPanelOpen, previewUrl, activeProject, selectedModel]);
 
     // Load messages when session changes + persist to localStorage
-    // Skip loading when actively sending to preserve optimistic UI
+    // Skip loading when actively sending or streaming to preserve optimistic UI
+    // (the isStreaming transition useEffect handles reloading after streaming ends)
     useEffect(() => {
-        if (isClient && activeSessionId && !isSending) {
+        if (isClient && activeSessionId && !isSending && !isStreaming) {
             loadMessages(activeSessionId);
             localStorage.setItem('lastActiveSessionId', activeSessionId);
         } else if (!activeSessionId && !isSending) {
             setMessages([]);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isClient, activeSessionId, isSending]);
+
+    // Reload messages from Supabase when streaming ends (to pick up persisted assistant response)
+    const prevIsStreamingRef = useRef(false);
+    useEffect(() => {
+        if (prevIsStreamingRef.current && !isStreaming && activeSessionId) {
+            // Streaming just ended — onFinish has already persisted the message
+            // Small delay to ensure the Supabase write is committed
+            const timer = setTimeout(() => loadMessages(activeSessionId), 300);
+            return () => clearTimeout(timer);
+        }
+        prevIsStreamingRef.current = isStreaming;
+    }, [isStreaming, activeSessionId]);
+
+    // Poll for generation completion after page refresh (server continues generating)
+    // When isStreaming is true but isSending is false, we're reconnecting after a refresh
+    useEffect(() => {
+        if (!isStreaming || isSending || !activeSessionId || !currentRequestId) return;
+
+        // We're in "restored" streaming state — poll Supabase to detect completion
+        const pollInterval = setInterval(async () => {
+            try {
+                // Check if the streaming placeholder has been completed
+                const { data } = await supabase
+                    .from('messages')
+                    .select('id, metadata')
+                    .eq('session_id', activeSessionId)
+                    .eq('role', 'assistant')
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                const status = (data?.metadata as any)?.status;
+                if (status === 'completed' || status === 'error' || status === 'stopped' || status === 'interrupted') {
+                    // Generation finished — clear streaming state and load messages
+                    console.log('[App] Generation completed (detected via poll):', status);
+                    clearInterval(pollInterval);
+                    localStorage.removeItem('activeRequest');
+                    setIsStreaming(false);
+                    setCurrentRequestId(null);
+                    loadMessages(activeSessionId);
+                }
+            } catch {
+                // Non-critical polling error
+            }
+        }, 2000);
+
+        return () => clearInterval(pollInterval);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isStreaming, isSending, activeSessionId, currentRequestId]);
 
     const loadMessages = async (sessionId: string) => {
         setIsLoadingMessages(true);
@@ -701,7 +785,45 @@ export default function Home() {
                 .order('created_at', { ascending: true });
 
             if (error) throw error;
-            setMessages((data || []) as Message[]);
+
+            // Clean up streaming placeholders left by interrupted streams
+            const msgs = (data || []) as Message[];
+            const idsToDelete: string[] = [];
+            for (const msg of msgs) {
+                if (msg.role === 'assistant' && (msg.metadata as any)?.status === 'streaming') {
+                    if (!msg.content || msg.content.trim() === '') {
+                        // Empty placeholder — delete from DB and filter out
+                        idsToDelete.push(msg.id);
+                    } else {
+                        // Has partial content — mark as interrupted but keep it
+                        try {
+                            await supabase.from('messages').update({
+                                metadata: { ...(msg.metadata as Record<string, unknown>), status: 'interrupted' },
+                            }).eq('id', msg.id);
+                            (msg as any).metadata = { ...(msg.metadata as Record<string, unknown>), status: 'interrupted' };
+                        } catch {
+                            // Non-critical
+                        }
+                    }
+                }
+            }
+
+            // Delete empty placeholders from Supabase
+            if (idsToDelete.length > 0) {
+                try {
+                    await supabase.from('messages').delete().in('id', idsToDelete);
+                } catch {
+                    // Non-critical
+                }
+            }
+
+            // Filter out empty/deleted assistant messages
+            const filteredMsgs = msgs.filter(m => {
+                if (idsToDelete.includes(m.id)) return false;
+                if (m.role === 'assistant' && !m.content) return false;
+                return true;
+            });
+            setMessages(filteredMsgs);
 
             // Restore request contexts from message metadata
             const contexts = new Map<string, RequestContext>();
@@ -1034,203 +1156,18 @@ export default function Home() {
 
             // Call /api/chat endpoint (which routes to n8n)
             try {
-                // DEBUG: Log the executorMode value
-                console.log('🎯 Sending executorMode:', executorMode, 'Type:', typeof executorMode);
+                // Use AI SDK streaming via useAIChat hook
+                // The hook handles: streaming, file_op processing, WebContainer apply,
+                // and Supabase message persistence (via onFinish callback)
+                // Pass sessionId explicitly — on the first message, the hook's sessionId
+                // prop is still null (React hasn't re-rendered yet), so we pass the
+                // locally-created sessionId as an override.
+                await aiChat.sendMessage(content.trim(), image || undefined, sessionId || undefined);
 
-                // Fetch real user ID for the request
-                const { data: { user } } = await supabase.auth.getUser();
-                const targetSiteId = targetProject?.siteKey || DEFAULT_CLIENT_ID;
-
-                // Get file context from WebContainer
-                console.log('📂 Reading file context for AI...');
-                const fileContents = await getFileContext();
-                console.log('✅ Read ' + Object.keys(fileContents).length + ' files');
-
-                // Call API based on mode
-                let response;
-
-                if (executorMode === 'mastra') {
-                    // Use AI SDK streaming via useAIChat hook
-                    // The hook handles: streaming, file_op processing, WebContainer apply,
-                    // and Supabase message persistence (via onFinish callback)
-                    await aiChat.sendMessage(content.trim(), image || undefined);
-
-                    // The hook's onFinish callback persists the assistant message to Supabase
-                    // and calls onStreamingChange(false) + onFileOpsApplied
-
-                    setIsStreaming(false);
-                    if (refreshThinkingSteps) {
-                        refreshThinkingSteps(requestId).catch(console.error);
-                    }
-
-                    // Skip the legacy fetch path below
-                    setIsSending(false);
-                    return;
-                } else {
-                    // Call Standard Chat API (Claude Code or Hybrid Auto)
-                    // Hybrid mode uses the same API but with internal intent-based routing
-                    response = await fetch('/api/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            siteId: targetSiteId,
-                            conversationId: sessionId,
-                            userId: user?.id || targetSiteId,
-                            message: content.trim(),
-                            image: imageData,
-                            requestId,
-                            executorMode,
-                            fileContents // Pass full file context
-                        }),
-                    });
-                }
-
-                if (!response.ok) {
-                    throw new Error(`API error: ${response.status}`);
-                }
-
-                // --- Parse JSON response (Chat API) ---
-                const result = await response.json();
-
-                console.log('AI Response:', { summary: result.summary || result.text, ops: result.fileOperations?.length || 0, streamed: result._streamApplied || 0 });
-
-                // Format and save AI response (handle both summary and text fields)
-                const aiContent = result.summary || result.text || 'Changes processed.';
-
-                const { data: aiMsg, error: aiError } = await supabase
-                    .from('messages')
-                    .insert({
-                        session_id: sessionId,
-                        role: 'assistant',
-                        content: aiContent,
-                        metadata: {
-                            requestId: result.requestId || requestId,
-                            status: result.status || 'pending',
-                            previewUrl: result.previewUrl,
-                            diff: result.diff,
-                            filesChanged: result.filesChanged,
-                            warnings: result.warnings,
-                        },
-                    })
-                    .select()
-                    .single();
-
-                if (aiError) throw aiError;
-                addMessage(aiMsg as Message);
-
-                // Store context with proper type assertions
-                setRequestContexts(prev => new Map(prev).set(aiMsg.id, {
-                    requestId: result.requestId || requestId,
-                    status: (result.status || 'preview_ready') as 'preview_ready' | 'applied' | 'rolled_back',
-                    previewUrl: result.previewUrl || '',
-                    prUrl: '',
-                    messageId: aiMsg.id,
-                }));
-
-                // Query thinking steps directly from Supabase for this message
-                try {
-                    const { data: stepsData } = await supabase
-                        .from('thinking_steps')
-                        .select('*')
-                        .eq('request_id', requestId)
-                        .order('step_number', { ascending: true });
-                    if (stepsData && stepsData.length > 0) {
-                        const mapped: ThinkingStep[] = stepsData.map((s: any) => ({
-                            id: s.id,
-                            tool_name: s.tool_name,
-                            toolName: s.tool_name,
-                            status: s.status,
-                            message: s.message,
-                            details: s.details,
-                            created_at: s.created_at,
-                        }));
-                        setMessageStepsMap(prev => ({ ...prev, [aiMsg.id]: mapped }));
-                    }
-                } catch (err) {
-                    console.error('[SSE] Failed to query thinking steps:', err);
-                }
-
-                // Don't clear thinking steps immediately - keep them visible for review
-                setIsStreaming(false);
-                if (refreshThinkingSteps) {
-                    refreshThinkingSteps(requestId).catch(console.error);
-                }
-
-                // Handle file operations via WebContainer (only for non-streamed responses)
-                // Streamed responses already applied ops in real-time above
-                if (result.fileOperations && Array.isArray(result.fileOperations) && result.fileOperations.length > 0) {
-                    console.log('🔧 Applying ' + result.fileOperations.length + ' file operations...');
-                    const applyResult = await applyFileOperations(result.fileOperations, {
-                        clientId: activeProjectId,
-                        sessionId: sessionId!,
-                        messageId: aiMsg.id,
-                    });
-
-                    if (applyResult && applyResult.success && applyResult.applied > 0) {
-                        console.log(`✅ Successfully applied ${applyResult.applied}/${applyResult.total} file operations`);
-
-                        // Run build validation if requested by the AI
-                        if (result.requiresBuildValidation) {
-                            console.log('🔨 Running build validation...');
-                            const buildStepId = 'build-validation-step';
-                            setSseThinkingSteps(prev => [
-                                ...prev,
-                                {
-                                    id: buildStepId,
-                                    tool_name: 'validate_build',
-                                    toolName: 'validate_build',
-                                    status: 'running',
-                                    message: 'Running npm run build to validate...',
-                                    details: {}
-                                }
-                            ]);
-
-                            const buildResult = await runBuild();
-
-                            if (buildResult.success) {
-                                console.log('✅ Build validation passed!');
-                                setSseThinkingSteps(prev => prev.map(step =>
-                                    step.id === buildStepId
-                                        ? { ...step, status: 'complete' as const, message: 'Build succeeded! Project compiles correctly.' }
-                                        : step
-                                ));
-                            } else {
-                                console.log('❌ Build validation failed:', buildResult.errors);
-                                setSseThinkingSteps(prev => prev.map(step =>
-                                    step.id === buildStepId
-                                        ? { ...step, status: 'error' as const, message: 'Build failed with errors', details: { content: buildResult.errors.join('\n') } }
-                                        : step
-                                ));
-                                setSseThinkingSteps(prev => [
-                                    ...prev,
-                                    {
-                                        id: 'build-error-step',
-                                        tool_name: 'error',
-                                        toolName: 'error',
-                                        status: 'error' as const,
-                                        message: 'Build errors need to be fixed',
-                                        details: { content: buildResult.errors.slice(0, 5).join('\n') }
-                                    }
-                                ]);
-                            }
-                        }
-
-                        // Force preview refresh after batch file changes
-                        console.log('🔄 Refreshing preview to show new content...');
-                        setTimeout(() => {
-                            setPreviewRefreshKey(prev => prev + 1);
-                            console.log('🔄 Preview refresh triggered (refreshKey incremented)');
-                        }, 500);
-                    } else {
-                        console.warn('⚠️ File operations may have failed. Applied:', applyResult?.applied || 0);
-                        setTimeout(() => {
-                            setPreviewRefreshKey(prev => prev + 1);
-                            console.log('🔄 Preview refresh triggered (fallback)');
-                        }, 500);
-                    }
-                }
-
-
+                // Don't set isStreaming=false here — useAIChat's onFinish does it
+                // AFTER persisting the message. Setting it here would trigger loadMessages
+                // before onFinish completes, causing empty placeholders to be deleted.
+                return;
             } catch (apiError) {
                 // Ignore abort errors
                 if (apiError instanceof Error && apiError.name === 'AbortError') {
@@ -1466,6 +1403,7 @@ export default function Home() {
             setMessages([]); // Clear messages for fresh start
             setSessions([]); // Clear sessions list for new project
             setRequestContexts(new Map()); // Clear request contexts
+            supabaseInjectedRef.current = null; // Force re-injection for new project
 
             // Send the initial message to the AI IMMEDIATELY to show it in UI
             // handleSendMessage will manage isSending state
@@ -1524,6 +1462,7 @@ export default function Home() {
             setActiveProject(data.project);
             setActiveSessionId(null);
             setMessages([]);
+            supabaseInjectedRef.current = null; // Force re-injection for new project
 
             // Start preview for the imported project immediately
             await startPreview(data.project);
@@ -1555,18 +1494,18 @@ export default function Home() {
                     {/* Side Panel - Warm Light Glass */}
                     <div
                         className={cn(
-                            'flex flex-col backdrop-blur-xl border border-[#b69161]/20 transition-all duration-300 ease-in-out rounded-3xl',
+                            'flex flex-col backdrop-blur-xl border border-[rgba(182,145,97,0.22)] transition-all duration-300 ease-in-out rounded-3xl',
                             isPanelOpen ? 'w-[360px] opacity-100' : 'w-0 opacity-0 overflow-hidden p-0 border-0'
                         )}
                         style={{
-                            background: 'linear-gradient(180deg, rgba(242, 239, 237, 0.92) 0%, rgba(236, 232, 228, 0.95) 50%, rgba(242, 239, 237, 0.93) 100%)',
-                            boxShadow: '0 20px 60px rgba(44, 36, 24, 0.12), 0 8px 32px rgba(44, 36, 24, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.5)',
+                            background: 'linear-gradient(180deg, rgba(44, 36, 24, 0.82) 0%, rgba(38, 30, 20, 0.88) 50%, rgba(44, 36, 24, 0.84) 100%)',
+                            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.35), 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
                         }}
                     >
                         {/* Header */}
-                        <div className="flex-shrink-0 px-4 py-3 flex items-center justify-between border-b border-[#b69161]/10">
+                        <div className="flex-shrink-0 px-4 py-3 flex items-center justify-between border-b border-[rgba(182,145,97,0.12)]">
                             {showSettings ? (
-                                <span className="text-sm font-medium text-[#84745b]">Settings</span>
+                                <span className="text-sm font-medium text-white/70">Settings</span>
                             ) : (
                                 <div className="flex items-center gap-2">
                                     <Image
@@ -1576,7 +1515,7 @@ export default function Home() {
                                         height={24}
                                         className="object-contain"
                                     />
-                                    <span className="text-sm font-bold text-[#84745b] tracking-tight" style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}>
+                                    <span className="text-sm font-bold text-white/70 tracking-tight" style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}>
                                         Automate
                                     </span>
                                 </div>
@@ -1588,7 +1527,7 @@ export default function Home() {
                                         'p-2 rounded-xl transition-all duration-200',
                                         showSettings
                                             ? 'bg-[#b69161] text-white shadow-md'
-                                            : 'text-[#84745b]/60 hover:text-[#84745b] hover:bg-[#b69161]/10'
+                                            : 'text-white/40 hover:text-white/70 hover:bg-white/8'
                                     )}
                                     title={showSettings ? 'Back to Chat' : 'Settings'}
                                 >
@@ -1630,8 +1569,8 @@ export default function Home() {
                                         isStreaming={isStreaming}
                                         thinkingSteps={allThinkingSteps}
                                         agentThinking={agentThinking}
-                                        executorMode={executorMode}
-                                        onModeChange={setExecutorMode}
+                                        selectedModel={selectedModel}
+                                        onModelChange={handleModelChange}
                                         contextUsage={contextUsage}
                                         messageStepsMap={messageStepsMap}
                                     />
@@ -1685,14 +1624,15 @@ export default function Home() {
                             // Different project - need to switch
                             setActiveProject(project);
                             setPreviewUrl(undefined);
+                            supabaseInjectedRef.current = null; // Force re-injection for new project
                             console.log('[Project] Opening project, WebContainer will boot for preview');
                         }
                         setShowPreview(true);
                         startPreview(project);
                     }}
                     isLoading={isPreviewLoading || isSending}
-                    executorMode={executorMode}
-                    onModeChange={setExecutorMode}
+                    selectedModel={selectedModel}
+                    onModelChange={handleModelChange}
                 />
             )}
         </div>
