@@ -56,7 +56,7 @@ You MUST output valid JSON in this EXACT structure:
       "description": "2-3 sentence explanation of this approach",
       "approach": "Detailed description for the planner agent: what files to create/modify, what patterns to use, what components to build",
       "complexity": "simple",
-      "estimatedFiles": 3,
+      "estimatedFiles": 6,
       "tradeoffs": {
         "pros": ["Pro 1", "Pro 2"],
         "cons": ["Con 1"]
@@ -68,7 +68,7 @@ You MUST output valid JSON in this EXACT structure:
       "description": "...",
       "approach": "...",
       "complexity": "moderate",
-      "estimatedFiles": 6,
+      "estimatedFiles": 12,
       "tradeoffs": { "pros": ["..."], "cons": ["..."] }
     },
     {
@@ -77,7 +77,7 @@ You MUST output valid JSON in this EXACT structure:
       "description": "...",
       "approach": "...",
       "complexity": "complex",
-      "estimatedFiles": 10,
+      "estimatedFiles": 16,
       "tradeoffs": { "pros": ["..."], "cons": ["..."] }
     }
   ],
@@ -91,6 +91,10 @@ You MUST output valid JSON in this EXACT structure:
 - If the user asks for an "ecommerce furniture store", ALL options must be for an ecommerce furniture store — not a SaaS, dashboard, or any other type.
 - Ignore any "learned patterns" that contradict the user's request. Those patterns are from previous projects and may be irrelevant.
 - The options should differ in SCOPE and COMPLEXITY, not in what they build.
+
+## BRAND NAME RULE (CRITICAL)
+- If the user mentions a brand, store, or company name (e.g. "for Furry", "called Stellar", "my store X"), ALL 3 options MUST use that exact name in their title and approach description. NEVER invent an alternative brand name.
+- If the user specifies a color theme, mention it in all 3 approaches.
 
 ## RULES
 - Each option must be MEANINGFULLY different (different file count, different patterns, different scope)
@@ -236,7 +240,7 @@ function createFallbackProposal(userRequest: string): ProposalResult {
         description: "Implement the core functionality with minimal changes. Reuses existing components where possible.",
         approach: `Implement "${userRequest}" with minimal file changes. Reuse existing components and patterns. Focus on functionality over aesthetics.`,
         complexity: "simple",
-        estimatedFiles: 3,
+        estimatedFiles: 6,
         tradeoffs: {
           pros: ["Fast to implement", "Low risk", "Fewer files to review"],
           cons: ["Basic styling", "Less polished"],
@@ -248,7 +252,7 @@ function createFallbackProposal(userRequest: string): ProposalResult {
         description: "Well-structured implementation with good design. Follows best practices with proper component separation.",
         approach: `Implement "${userRequest}" with proper component architecture. Include responsive design, good typography, and clean code structure. Create separate components for each section.`,
         complexity: "moderate",
-        estimatedFiles: 6,
+        estimatedFiles: 12,
         tradeoffs: {
           pros: ["Good quality", "Maintainable", "Proper architecture"],
           cons: ["More files", "Takes longer"],
@@ -260,7 +264,7 @@ function createFallbackProposal(userRequest: string): ProposalResult {
         description: "Full premium implementation with GSAP scroll animations, cinematic layout, and polished visual effects.",
         approach: `Implement "${userRequest}" with premium design: GSAP scroll animations with ScrollTrigger, parallax images, staggered card reveals, word-by-word hero text animation, counter stats with animation, and full responsive design. Choose a design style (solid, gradient, or glass) that best fits the site type. Create 8-10 separate components.`,
         complexity: "complex",
-        estimatedFiles: 10,
+        estimatedFiles: 16,
         tradeoffs: {
           pros: ["Stunning visuals", "Professional quality", "Full animations"],
           cons: ["More complex", "More files", "Longer execution"],

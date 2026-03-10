@@ -1,4 +1,4 @@
-// Animation & UI Library Skills — shared knowledge for all agents
+// Animation & UI Library Skills + Image Rules — shared knowledge for all agents
 // Full reference for code-writing agents, brief version for planners/proposers
 
 export const ANIMATION_SKILLS = `## AVAILABLE ANIMATION & UI LIBRARIES
@@ -50,24 +50,6 @@ const trail = useTrail(items.length, { from: { opacity: 0, y: 20 }, to: { opacit
 \`\`\`
 Best for: physics-based animations, natural motion, spring dynamics, list transitions.
 
-### Three.js / React Three Fiber (R3F)
-\`npm: three @react-three/fiber @react-three/drei\` + \`@types/three\` (devDep)
-\`\`\`tsx
-"use client";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Environment, Float, Text3D, MeshDistortMaterial } from "@react-three/drei";
-// 3D scene:
-<Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
-  <ambientLight intensity={0.5} />
-  <directionalLight position={[10, 10, 5]} />
-  <mesh><sphereGeometry args={[1, 64, 64]} /><MeshDistortMaterial color="#4f46e5" distort={0.3} speed={2} /></mesh>
-  <OrbitControls enableZoom={false} autoRotate />
-  <Environment preset="city" />
-</Canvas>
-// Animation loop: useFrame((state, delta) => { meshRef.current.rotation.y += delta * 0.5; });
-\`\`\`
-Best for: 3D heroes, product viewers, interactive 3D scenes, globe visualizations. Always guard Canvas with typeof window check.
-
 ### Anime.js
 \`npm: animejs\` + \`@types/animejs\` (devDep)
 \`\`\`tsx
@@ -118,8 +100,7 @@ These are NOT npm packages — they are copy-paste component patterns. When the 
   - Scroll-triggered reveals → GSAP ScrollTrigger
   - Smooth page scroll → Lenis
   - Physics/spring feel → React Spring
-  - Complex timelines → GSAP or Anime.js
-  - 3D content → Three.js/R3F`;
+  - Complex timelines → GSAP or Anime.js`;
 
 export const ANIMATION_SKILLS_BRIEF = `## AVAILABLE ANIMATION & UI LIBRARIES
 When planning tasks involving animation or interactive UI, these libraries are available:
@@ -127,9 +108,34 @@ When planning tasks involving animation or interactive UI, these libraries are a
 - **Motion / Framer Motion** (npm: motion) — component animations, page transitions, gestures, layout animations
 - **Lenis** (npm: lenis) — smooth scroll, scroll-linked effects, parallax
 - **React Spring** (npm: @react-spring/web) — physics-based spring animations, list transitions
-- **Three.js / R3F** (npm: three @react-three/fiber @react-three/drei) — 3D scenes, product viewers, globes
 - **Anime.js** (npm: animejs) — timeline sequences, SVG morphing, stagger animations
 - **UI-Layout / Cult-UI patterns** — copy-paste patterns for marquee, magnetic buttons, dock, animated tabs, text reveal
 
 Choose the right library for each task. Add npm packages to package.json when needed.
 All animation components need "use client" and typeof window guards for SSR.`;
+
+export const IMAGE_RULES = `## IMAGE RULES (CRITICAL — all images must actually load)
+
+**Use plain \`<img>\` tags for ALL external images.** Do NOT use next/image \`<Image>\` for picsum/pravatar/randomuser URLs — it breaks due to redirects.
+NEVER use unsplash.com URLs — they require exact photo IDs and will break.
+
+### Primary: picsum.photos (always works, no API key needed)
+- General: \`https://picsum.photos/seed/{keyword}/{width}/{height}\`
+- Hero/banner: \`https://picsum.photos/seed/hero-{topic}/1920/1080\`
+- Cards/thumbnails: \`https://picsum.photos/seed/{product-name}/800/600\`
+- Square: \`https://picsum.photos/seed/{keyword}/600/600\`
+
+The {keyword} seed makes the URL return a consistent image every time.
+Use descriptive seeds: "pet-bed", "running-shoes", "coffee-shop", "modern-office".
+Each unique seed gives a different image, so vary the seed per image.
+
+### Avatars & People
+- Avatars: \`https://i.pravatar.cc/150?img={1-70}\`
+- Team photos: \`https://randomuser.me/api/portraits/men/{n}.jpg\` or \`/women/{n}.jpg\` (n = 1-99)
+
+### Rules
+1. NEVER use images.unsplash.com or source.unsplash.com — these WILL break
+2. ALWAYS use \`https://picsum.photos/seed/{keyword}/{w}/{h}\` — the /seed/ prefix is REQUIRED
+3. ALWAYS use plain \`<img>\` tags with alt, width, and height attributes — NOT next/image \`<Image>\`
+4. Vary the seed keyword for each image so they look different
+5. For product images, use the product name as seed: \`/seed/memory-foam-bed/800/600\``;

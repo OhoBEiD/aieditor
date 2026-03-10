@@ -32,6 +32,7 @@ import { resetArtifactCounter, emitPlanArtifact, emitQualityArtifact, emitBranch
 import { generateProposals, parseOptionSelection, shouldUseInteractiveMode, type ApproachOption } from "@/lib/ai/agents/InteractiveProposer";
 import { z } from "zod";
 import { generateText as generateTextBase, stepCountIs } from "ai";
+import { IMAGE_RULES } from "@/lib/ai/prompts/skills";
 
 export const maxDuration = 300;
 
@@ -112,6 +113,7 @@ interface SupabaseContext {
 
 interface RequestBody {
   message: string;
+  image?: string;                             // Base64 data URL from user screenshot/image
   files?: Record<string, string>;
   conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>;
   mode?: "thinking" | "fast" | "mastra";
@@ -139,16 +141,18 @@ Adapt your design style to match the type of website being built.
 4. VERIFY: Use read_file to confirm your changes applied correctly
 
 ## DESIGN RULES
-- **Theme**: Match the theme to the site type. Light theme for ecommerce, business, portfolios, blogs, medical, education. Dark theme for SaaS dashboards, developer tools, gaming, nightlife. Always follow user preference if stated.
-- **Headers/Navbars**: Use SOLID backgrounds by default (e.g. bg-white, bg-gray-900, bg-primary). Only use transparency/glass morphism if the user specifically requests it.
-- **Typography**: Use next/font/google — Inter for body, Space Grotesk for headings. Hero text: text-5xl md:text-7xl font-bold tracking-tight
-- **Images**: Use https://picsum.photos/{width}/{height} for hero and section images (e.g. https://picsum.photos/1920/1080). For avatars use https://i.pravatar.cc/150?img={1-70}. NEVER invent Unsplash photo IDs — only use Unsplash URLs if you know the exact real photo ID.
+- **Theme**: Match the theme to the site type. Light for ecommerce, business, portfolios, blogs, medical, education. Dark for SaaS, dev tools, gaming. Follow user preference if stated.
+- **Headers/Navbars**: SOLID backgrounds by default (bg-white, bg-gray-900, bg-primary). Only use glass/transparency if the user requests it.
+- **Typography**: Use next/font/google. Choose fonts that fit the brand — pick from Inter, Space Grotesk, Poppins, DM Sans, Playfair Display, Outfit, Sora, etc. Don't always use the same combination.
+- **Images**: Use plain \`<img>\` tags (NOT next/image \`<Image>\`) for all external images. URL: \`https://picsum.photos/seed/{keyword}/{width}/{height}\` — the seed makes each URL return a consistent image. Use descriptive seeds: "modern-sofa", "pet-bed", "coffee-shop". NEVER use unsplash.com URLs. Avatars: \`https://i.pravatar.cc/150?img={1-70}\`.
 - **Icons**: Lucide React for all iconography
-- **Spacing**: Full-width sections, max-w-7xl mx-auto px-4 sm:px-6 lg:px-8, py-24 lg:py-32 between sections
-- **Color**: Use CSS variables for theming. Choose a palette that fits the brand/site type.
-- **Components**: Create 8-10 separate component files for landing pages (Navbar, Hero, LogoCloud, Features, Showcase, Testimonials, Stats, Pricing, CTA, Footer)
-- **Animations**: Use GSAP with ScrollTrigger for scroll animations when appropriate. Every animated component MUST have "use client" directive and guard GSAP with typeof window !== "undefined".
-- **Design variety**: Choose from solid, gradient, or glassmorphic styles based on what fits. Do NOT default to glass morphism on every site.
+- **Layout**: Design UNIQUE layouts for each project. Vary section count (5-12), order, and composition. NOT every site needs Pricing, Testimonials, or Stats — choose sections that make sense for the project. Use creative layouts: asymmetric grids, split-screen hero, editorial columns, card-based, magazine-style, full-bleed images.
+- **Styling variety**: Choose from flat/clean, gradient, bold/colorful, minimalist, editorial, brutalist, or soft/rounded styles based on the brand. Do NOT default to glass morphism on every site.
+- **Animations**: GSAP + ScrollTrigger for scroll animations when appropriate. Guard with "use client" + typeof window !== "undefined". Don't over-animate — sometimes subtle is better.
+
+## BRAND RULES (CRITICAL)
+- ALWAYS use the brand/store/company name from the user's request. If they say "for Furry", the brand name is "Furry" — use it in navbar logo, hero heading, footer, layout.tsx metadata. NEVER invent a different name.
+- ALWAYS use the color theme the user specified. Do not override with defaults.
 
 ## CODE RULES
 - "content" for write_file must be the COMPLETE file source code
@@ -157,8 +161,17 @@ Adapt your design style to match the type of website being built.
 - After updating package.json, MUST run npm install
 - All files use .tsx extension for React, .ts for non-UI
 
+## MODIFICATION RULES
+When modifying existing files (not creating new ones):
+- ONLY change what was explicitly requested. "Change colors" means ONLY colors.
+- NEVER change brand names, text content, layout structure, or component hierarchy unless asked.
+- When the user says "change X to Y", find X in the existing code and replace it with Y. Do NOT rewrite the entire file.
+- Use edit_file for surgical changes. Only use write_file if the entire file needs replacing.
+
 ## RESPONSE FORMAT
-After completing all file operations, respond with a SHORT summary (2-3 sentences max).`;
+After completing all file operations, respond with a SHORT summary (2-3 sentences max).
+
+` + IMAGE_RULES;
 
 // --- Main Route ---
 
@@ -166,6 +179,7 @@ export async function POST(req: NextRequest) {
   const body: RequestBody = await req.json();
   const {
     message,
+    image,
     files = {},
     conversationHistory = [],
     mode = "mastra",
@@ -206,20 +220,34 @@ export async function POST(req: NextRequest) {
   const optionFromMessage = parseOptionSelection(message);
   const resolvedOption = selectedOption || optionFromMessage;
 
-  // Classify intent
-  const classification = await classifyIntent(
-    resolvedOption && pendingProposal ? pendingProposal.originalMessage : message,
-  );
+  // Classify intent (hint about attached image so classifier routes appropriately)
+  const classifyMessage = resolvedOption && pendingProposal
+    ? pendingProposal.originalMessage
+    : image ? `${message}\n[User attached a screenshot/image for visual reference]` : message;
+  const classification = await classifyIntent(classifyMessage);
   console.log(`[AI Chat] Intent: ${classification.type}, complexity: ${classification.complexity}, route: ${classification.route}${resolvedOption ? `, selectedOption: ${resolvedOption}` : ""}`);
 
-  // UI tasks route to VercelUIAgent
-  if (classification.type === "ui_task") {
+  // Detect if this is a modification request (change X to Y, update colors, rename, etc.)
+  // These need search_and_replace tools from the fast path, not the limited VercelUIAgent
+  const isModificationRequest = /\b(change|rename|replace|swap|update|switch)\b.*\b(to|with|into)\b/i.test(message)
+    || /\b(change|update|switch)\s+(the\s+)?(color|theme|palette|scheme|brand|name)/i.test(message)
+    || /\bmake\s+(it|the|everything|all)\s+(blue|red|green|white|black|dark|light|purple|orange|pink)/i.test(message);
+
+  // UI tasks route to VercelUIAgent — but only for creation tasks, not modifications
+  // Modification requests need the full tool suite (grep, search_and_replace) from the fast path
+  if (classification.type === "ui_task" && !isModificationRequest) {
     return handleUITask({ message, files, requestId, siteId, sessionId });
+  }
+
+  // If it was a ui_task modification, reclassify as simple_edit for fast path
+  if (classification.type === "ui_task" && isModificationRequest) {
+    classification.type = "simple_edit";
+    classification.route = "fast_path";
   }
 
   // Questions route to direct LLM response
   if (classification.type === "question") {
-    return handleQuestion({ message, files, conversationHistory: authHistory, requestId, siteId, sessionId });
+    return handleQuestion({ message, image, files, conversationHistory: authHistory, requestId, siteId, sessionId });
   }
 
   // --- All other tasks: Enhanced Orchestrated Pipeline ---
@@ -310,7 +338,8 @@ export async function POST(req: NextRequest) {
           // Reset artifact counter for this request
           resetArtifactCounter();
 
-          await emitStep(requestId, siteId, stepCounter++, "thinking", "running", "Analyzing request...", undefined, sessionId);
+          const thinkingStepNum = stepCounter++;
+          await emitStep(requestId, siteId, thinkingStepNum, "thinking", "running", "Analyzing request...", undefined, sessionId);
 
           // ================================
           // PHASE 0: Build Repository Map
@@ -382,6 +411,9 @@ export async function POST(req: NextRequest) {
             systemPrompt += `\n\n## Connected Database\nThis project has a connected Supabase database with ${tableNames.length} tables: ${tableNames.join(", ")}.\nYou have tools to read the schema (read_database_schema), list tables (list_database_tables), and execute SQL (execute_sql).\n- Use read_database_schema to see column details before writing queries.\n- Prefer SELECT queries when the user asks to "check" or "look at" data.\n- For INSERT/UPDATE/DELETE/DDL, confirm the operation is what the user intended.`;
           }
 
+          // Mark thinking step as complete now that setup is done
+          await emitStep(requestId, siteId, thinkingStepNum, "thinking", "complete", "Analyzed request & project context", undefined, sessionId);
+
           // ==========================
           // FAST PATH (simple edits)
           // ==========================
@@ -404,7 +436,13 @@ export async function POST(req: NextRequest) {
             const result = await generateTextWithFallback({
               model: chain.primary.model,
               system: systemPrompt,
-              prompt,
+              // When user attached an image, use multimodal messages format
+              ...(image
+                ? { messages: [{ role: "user" as const, content: [
+                    { type: "text" as const, text: prompt },
+                    { type: "image" as const, image },
+                  ]}]}
+                : { prompt }),
               stopWhen: stepCountIs(chain.primary.maxSteps),
               tools,
               onStepFinish: async (step) => {
@@ -472,7 +510,8 @@ export async function POST(req: NextRequest) {
           let selectedApproach: string | null = null;
 
           if (shouldUseInteractiveMode(classification) && !resolvedOption) {
-            await emitStep(requestId, siteId, stepCounter++, "proposing", "running", "Researching approaches...", undefined, sessionId);
+            const proposingStepNum = stepCounter++;
+            await emitStep(requestId, siteId, proposingStepNum, "proposing", "running", "Researching approaches...", undefined, sessionId);
 
             // Light exploration: just pass file list for context, skip full agent explore
             // Include memory context so proposals reflect what was previously discussed
@@ -517,7 +556,7 @@ export async function POST(req: NextRequest) {
             const proposalContent = `\n<!--ARTIFACT:${JSON.stringify(proposalArtifactData)}-->\n`;
             await persistMessageServerSide(proposalContent);
 
-            await emitStep(requestId, siteId, stepCounter++, "proposing", "complete",
+            await emitStep(requestId, siteId, proposingStepNum, "proposing", "complete",
               `Generated ${proposals.options.length} approaches — waiting for selection`,
               undefined, sessionId);
             writeDoneMarker(writer, 0);
@@ -540,7 +579,8 @@ export async function POST(req: NextRequest) {
           let exploration = null;
           if (virtualFS.size > 5) {
             // Only explore if the project has meaningful code (>5 files = not just a scaffold)
-            await emitStep(requestId, siteId, stepCounter++, "exploring", "running", "Exploring codebase...", undefined, sessionId);
+            const exploringStepNum = stepCounter++;
+            await emitStep(requestId, siteId, exploringStepNum, "exploring", "running", "Exploring codebase...", undefined, sessionId);
 
             exploration = await runExploreAgent(
               selectedApproach ? `${message}\n\nApproach: ${selectedApproach}` : message,
@@ -558,7 +598,7 @@ export async function POST(req: NextRequest) {
             if (brainContext) systemPrompt += "\n\n" + brainContext;
             if (memoryContext) systemPrompt += "\n\n" + memoryContext;
 
-            await emitStep(requestId, siteId, stepCounter++, "exploring", "complete", "Codebase exploration complete", { content: exploration.summary.slice(0, 500) }, sessionId);
+            await emitStep(requestId, siteId, exploringStepNum, "exploring", "complete", "Codebase exploration complete", { content: exploration.summary.slice(0, 500) }, sessionId);
           }
 
           if (await isCancelled()) {
@@ -613,7 +653,8 @@ export async function POST(req: NextRequest) {
           }
 
           // --- Phase 3: Execute tasks with Reflection + Incremental Verification + MCTS ---
-          await emitStep(requestId, siteId, stepCounter++, "executing", "running", "Executing implementation...", undefined, sessionId);
+          const executingStepNum = stepCounter++;
+          await emitStep(requestId, siteId, executingStepNum, "executing", "running", "Executing implementation...", undefined, sessionId);
 
           let execOutput = "";
           let conversationMemory: Array<{ role: string; content: string }> = [];
@@ -634,8 +675,9 @@ export async function POST(req: NextRequest) {
 
               // --- MCTS Speculative Execution for complex tasks ---
               if (shouldUseSpeculation(taskComplexity, plan.tasks.length)) {
+                const specStepNum = stepCounter++;
                 try {
-                  await emitStep(requestId, siteId, stepCounter++, "speculative", "running",
+                  await emitStep(requestId, siteId, specStepNum, "speculative", "running",
                     `Exploring 3 approaches for Task ${task.id}...`, undefined, sessionId);
 
                   const specResult = await speculativeExecute(
@@ -675,7 +717,7 @@ export async function POST(req: NextRequest) {
                     specResult.reason,
                   );
 
-                  await emitStep(requestId, siteId, stepCounter++, "speculative", "complete",
+                  await emitStep(requestId, siteId, specStepNum, "speculative", "complete",
                     `Selected ${specResult.selectedBranch.strategy} approach (score: ${specResult.selectedBranch.combinedScore})`,
                     undefined, sessionId);
 
@@ -721,7 +763,13 @@ Execute this task. Search/read first, then write, then verify.`;
                 const taskResult = await generateTextWithFallback({
                   model: chain.primary.model,
                   system: systemPrompt,
-                  prompt: taskPrompt,
+                  // Include user's image on the first task for visual context
+                  ...(image && task.id === 1
+                    ? { messages: [{ role: "user" as const, content: [
+                        { type: "text" as const, text: taskPrompt },
+                        { type: "image" as const, image },
+                      ]}]}
+                    : { prompt: taskPrompt }),
                   stopWhen: stepCountIs(Math.min(chain.primary.maxSteps, 10)),
                   tools,
                   onStepFinish: async (step) => {
@@ -805,6 +853,11 @@ Execute this task. Search/read first, then write, then verify.`;
             }
           }
 
+          // Mark executing step as complete
+          const completedTasks = taskResults.filter(r => r.success).length;
+          await emitStep(requestId, siteId, executingStepNum, "executing", "complete",
+            `Executed ${completedTasks}/${taskResults.length} tasks`, undefined, sessionId);
+
           if (await isCancelled()) {
             writeTextToStream(writer, "Cancelled.", msgId);
             writeDoneMarker(writer, fileOperations.length);
@@ -844,8 +897,9 @@ Execute this task. Search/read first, then write, then verify.`;
 
           // --- Phase 4.5: Auto Test Generation ---
           if (fileOperations.length > 0) {
+            const testGenStepNum = stepCounter++;
             try {
-              await emitStep(requestId, siteId, stepCounter++, "test_gen", "running", "Generating tests...", undefined, sessionId);
+              await emitStep(requestId, siteId, testGenStepNum, "test_gen", "running", "Generating tests...", undefined, sessionId);
 
               const testResult = await generateTests(
                 fileOperations.filter(op => op.content).map(op => ({ type: op.type as any, path: op.path, content: op.content })),
@@ -868,20 +922,21 @@ Execute this task. Search/read first, then write, then verify.`;
                   coverageEstimate: f.coverageEstimate,
                 })));
 
-                await emitStep(requestId, siteId, stepCounter++, "test_gen", "complete",
+                await emitStep(requestId, siteId, testGenStepNum, "test_gen", "complete",
                   `Generated ${testResult.totalTests} tests in ${testResult.testFiles.length} files`,
                   undefined, sessionId);
               } else {
-                await emitStep(requestId, siteId, stepCounter++, "test_gen", "complete", "No testable files found", undefined, sessionId);
+                await emitStep(requestId, siteId, testGenStepNum, "test_gen", "complete", "No testable files found", undefined, sessionId);
               }
             } catch {
               // Test generation is non-critical — continue
-              await emitStep(requestId, siteId, stepCounter++, "test_gen", "complete", "Test generation skipped", undefined, sessionId);
+              await emitStep(requestId, siteId, testGenStepNum, "test_gen", "complete", "Test generation skipped", undefined, sessionId);
             }
           }
 
           // --- Phase 5: Self-Healing Build Validation ---
-          await emitStep(requestId, siteId, stepCounter++, "build_validation", "running", "Running build validation...", undefined, sessionId);
+          const buildStepNum = stepCounter++;
+          await emitStep(requestId, siteId, buildStepNum, "build_validation", "running", "Running build validation...", undefined, sessionId);
 
           const buildResult = await runBuildValidationLoop(
             virtualFS, fileOperations,
@@ -899,7 +954,7 @@ Execute this task. Search/read first, then write, then verify.`;
             fileOperations.push(op);
           }
 
-          await emitStep(requestId, siteId, stepCounter++, "build_validation",
+          await emitStep(requestId, siteId, buildStepNum, "build_validation",
             buildResult.passed ? "complete" : "error",
             buildResult.passed
               ? `Build validation passed (${buildResult.fixesApplied} auto-fixes applied)`
@@ -907,7 +962,8 @@ Execute this task. Search/read first, then write, then verify.`;
             undefined, sessionId);
 
           // --- Phase 6: Final Verification ---
-          await emitStep(requestId, siteId, stepCounter++, "verifying", "running", "Final verification...", undefined, sessionId);
+          const verifyStepNum = stepCounter++;
+          await emitStep(requestId, siteId, verifyStepNum, "verifying", "running", "Final verification...", undefined, sessionId);
 
           const execResult = {
             taskResults: plan.tasks.map((t) => {
@@ -933,7 +989,7 @@ Execute this task. Search/read first, then write, then verify.`;
           );
 
           await emitStep(
-            requestId, siteId, stepCounter++, "verifying",
+            requestId, siteId, verifyStepNum, "verifying",
             verification.passed ? "complete" : "error",
             verification.passed ? "All checks passed" : `${verification.issues.length} issues found`,
             { content: verification.summary },
@@ -942,7 +998,8 @@ Execute this task. Search/read first, then write, then verify.`;
 
           // --- Phase 7: Error-Aware Re-plan if needed (max 1 cycle) ---
           if (!verification.passed && !await isCancelled()) {
-            await emitStep(requestId, siteId, stepCounter++, "replanning", "running", "Re-planning to fix issues...", { content: verification.issues.join("\n") }, sessionId);
+            const replanStepNum = stepCounter++;
+            await emitStep(requestId, siteId, replanStepNum, "replanning", "running", "Re-planning to fix issues...", { content: verification.issues.join("\n") }, sessionId);
 
             const fixPlan = await runReplanAgent(
               plan, verification.issues, virtualFS,
@@ -983,7 +1040,7 @@ ${fixReflectionContext}`;
               } catch { /* continue with remaining tasks */ }
             }
 
-            await emitStep(requestId, siteId, stepCounter++, "replanning", "complete", "Fix applied", undefined, sessionId);
+            await emitStep(requestId, siteId, replanStepNum, "replanning", "complete", "Fix applied", undefined, sessionId);
           }
 
           // --- Phase 8: Save Learnings to Persistent Brain ---
@@ -1180,6 +1237,28 @@ async function handleToolCalls(
       await emitStepFn(requestId, siteId, stepNumber, "web_search", "complete", `Searching: "${(args.query || "").slice(0, 50)}"`, undefined, sessionId);
     } else if (name === "web_scrape") {
       await emitStepFn(requestId, siteId, stepNumber, "web_scrape", "complete", `Reading ${(args.url || "").slice(0, 60)}`, undefined, sessionId);
+    } else if (name === "search_and_replace") {
+      // search_and_replace modifies virtualFS directly — emit FILE_OPs for each modified file
+      // Since the tool already ran, scan virtualFS for files that now contain the replacement text
+      const searchText = args.search || "";
+      const replaceText = args.replace || "";
+      let modifiedCount = 0;
+      if (replaceText && searchText) {
+        const alreadyTracked = new Set(fileOperations.map(op => op.path));
+        for (const [filePath, content] of virtualFS.entries()) {
+          if (filePath.includes("node_modules/") || filePath.includes(".lock")) continue;
+          // Check if this file contains the replacement text (meaning it was modified)
+          if (content.includes(replaceText) && !alreadyTracked.has(filePath)) {
+            const op: FileOperation = { type: "write", path: filePath, content };
+            fileOperations.push(op);
+            sendFileOp(op);
+            modifiedCount++;
+          }
+        }
+      }
+      await emitStepFn(requestId, siteId, 200 + fileOperations.length, "search_and_replace", "complete",
+        `Replaced "${searchText.slice(0, 30)}" → "${replaceText.slice(0, 30)}" across ${modifiedCount} file(s)`,
+        undefined, sessionId);
     } else if (name === "list_files" || name === "search_files") {
       await emitStepFn(requestId, siteId, stepNumber, name, "complete", "Listing project files", undefined, sessionId);
     } else if (name === "execute_sql") {
@@ -1289,9 +1368,10 @@ async function handleUITask({
 // --- Question Handler ---
 
 async function handleQuestion({
-  message, files, conversationHistory, requestId, siteId, sessionId,
+  message, image, files, conversationHistory, requestId, siteId, sessionId,
 }: {
   message: string;
+  image?: string;
   files: Record<string, string>;
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
   requestId: string;
@@ -1316,8 +1396,13 @@ async function handleQuestion({
 
           const result = await generateTextBase({
             model: getFlashModel(),
-            system: "You are a helpful web development assistant. Answer questions concisely based on the project context provided.",
-            prompt,
+            system: "You are a helpful web development assistant. Answer questions concisely based on the project context provided. If the user attached an image/screenshot, analyze it and respond accordingly.",
+            ...(image
+              ? { messages: [{ role: "user" as const, content: [
+                  { type: "text" as const, text: prompt },
+                  { type: "image" as const, image },
+                ]}]}
+              : { prompt }),
           });
 
           await emitStep(requestId, siteId, 999, "complete", "complete", "Question answered", undefined, sessionId);

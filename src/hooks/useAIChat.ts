@@ -298,8 +298,8 @@ export function useAIChat({
     // sessionIdOverride: allows caller to pass the correct session ID when it
     // was just created and React hasn't re-rendered the hook yet (first message flow)
     const send = useCallback(
-        async (content: string, _image?: File, sessionIdOverride?: string) => {
-            if (!content.trim()) return;
+        async (content: string, imageBase64?: string, sessionIdOverride?: string) => {
+            if (!content.trim() && !imageBase64) return;
 
             // Use override if provided (handles first-message race condition),
             // otherwise fall back to the prop value
@@ -372,6 +372,7 @@ export function useAIChat({
                 requestId: newRequestId,
                 siteId,
                 conversationId: effectiveSessionId,
+                ...(imageBase64 && { image: imageBase64 }),
                 ...(supabaseContext && { supabaseContext }),
                 ...(selectedModel && { selectedModel }),
             };

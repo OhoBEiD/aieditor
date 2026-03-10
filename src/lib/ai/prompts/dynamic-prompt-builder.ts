@@ -110,14 +110,12 @@ function detectProjectPatterns(virtualFS: Map<string, string>): ProjectPattern[]
   let hasGsap = false;
   let hasFramerMotion = false;
   let hasLenis = false;
-  let hasR3F = false;
   let hasReactSpring = false;
   let hasAnimeJs = false;
   for (const [path, content] of virtualFS.entries()) {
     if (content.includes("gsap") || content.includes("ScrollTrigger")) hasGsap = true;
     if (content.includes("framer-motion") || content.includes("motion/react") || content.includes("from \"motion\"")) hasFramerMotion = true;
     if (content.includes("lenis") || content.includes("@studio-freight/lenis")) hasLenis = true;
-    if (content.includes("@react-three/fiber") || content.includes("from \"three\"")) hasR3F = true;
     if (content.includes("@react-spring")) hasReactSpring = true;
     if (content.includes("animejs") || content.includes("from \"animejs\"")) hasAnimeJs = true;
   }
@@ -137,12 +135,6 @@ function detectProjectPatterns(virtualFS: Map<string, string>): ProjectPattern[]
     patterns.push({
       category: "Animation",
       description: "Lenis smooth scroll active — use for scroll-linked animations and parallax effects",
-    });
-  }
-  if (hasR3F) {
-    patterns.push({
-      category: "Animation",
-      description: "Three.js/R3F available — use Canvas from @react-three/fiber for 3D scenes, guard with typeof window",
     });
   }
   if (hasReactSpring) {

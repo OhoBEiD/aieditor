@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase/client';
 
 import { useThinkingSteps } from '@/hooks/useThinkingSteps';
 import type { ThinkingStep } from '@/components/chat/ThinkingSteps';
-import { cn } from '@/lib/utils';
+import { cn, compressImage } from '@/lib/utils';
 import { Bot, X, Settings, MessageSquare } from 'lucide-react';
 import { LandingPage } from '@/components/landing/LandingPage';
 import { gsap } from 'gsap';
@@ -21,6 +21,7 @@ import { getSupabaseClientTemplate, getSupabaseEnvTemplate } from '@/lib/webcont
 import VantaFogBackground from '@/components/common/VantaFogBackground';
 import { useAIChat } from '@/hooks/useAIChat';
 import { useContextUsage } from '@/hooks/useContextUsage';
+import { useBuildFixLoop } from '@/hooks/useBuildFixLoop';
 
 // Configuration - Can be overridden by active project
 const DEFAULT_CLIENT_ID = '00000000-0000-0000-0000-000000000001';
@@ -288,6 +289,20 @@ export default function Home() {
         injectSupabase();
     }, [supabaseConn.isConnected, supabaseConn.projectUrl, supabaseConn.anonKey, wcStatus, wcWriteFile, installPackage, restartDevServer]);
 
+    // Track whether file ops were applied during the current AI response
+    const fileOpsAppliedRef = useRef(false);
+
+    // Build-fix loop: runs real npm build after AI applies files, auto-fixes errors
+    const buildFixLoop = useBuildFixLoop({
+        runBuild,
+        getFileContext,
+        applyFileOperations,
+        requestId: currentRequestId,
+        siteId: activeProject?.siteKey || DEFAULT_CLIENT_ID,
+        sessionId: activeSessionId,
+        maxAttempts: 5,
+    });
+
     // AI Chat hook (Vercel AI SDK) - handles streaming for mastra mode
     const aiChat = useAIChat({
         sessionId: activeSessionId,
@@ -344,10 +359,24 @@ export default function Home() {
             if (!streaming) {
                 // Generation completed — clear active request marker
                 localStorage.removeItem('activeRequest');
+
+                // If file ops were applied during this AI response, run build-fix loop
+                if (fileOpsAppliedRef.current && wcStatus === 'running') {
+                    fileOpsAppliedRef.current = false;
+                    console.log('[BuildFixLoop] Streaming ended with file ops — starting build-fix loop');
+                    buildFixLoop.startBuildFixLoop().then((result) => {
+                        if (result.success) {
+                            console.log(`[BuildFixLoop] Build passed after ${result.attempts} attempt(s)`);
+                        } else {
+                            console.warn(`[BuildFixLoop] Build failed after ${result.attempts} attempts: ${result.reason}`);
+                        }
+                    });
+                }
             }
         },
         onFileOpsApplied: (count) => {
             console.log(`[AI SDK] ${count} file ops applied`);
+            fileOpsAppliedRef.current = true;
             // HMR handles preview updates automatically — no forced refresh needed
         },
         supabaseContext: supabaseConn.isConnected ? {
@@ -840,22 +869,26 @@ export default function Home() {
             });
             setRequestContexts(contexts);
 
-            // Load thinking steps for each assistant message
+            // Load thinking steps for all assistant messages in a single batch query
             const assistantMsgs = (data || []).filter(
                 (m: Message) => m.role === 'assistant' && m.metadata?.requestId
             );
             if (assistantMsgs.length > 0) {
-                const stepsMap: Record<string, ThinkingStep[]> = {};
-                await Promise.all(
-                    assistantMsgs.map(async (msg: Message) => {
-                        try {
-                            const { data: steps } = await supabase
-                                .from('thinking_steps')
-                                .select('*')
-                                .eq('request_id', msg.metadata!.requestId as string)
-                                .order('step_number', { ascending: true });
-                            if (steps && steps.length > 0) {
-                                stepsMap[msg.id] = steps.map((s: any) => ({
+                try {
+                    const requestIds = assistantMsgs.map(m => m.metadata!.requestId as string);
+                    const { data: allSteps } = await supabase
+                        .from('thinking_steps')
+                        .select('*')
+                        .in('request_id', requestIds)
+                        .order('step_number', { ascending: true });
+
+                    if (allSteps && allSteps.length > 0) {
+                        const stepsMap: Record<string, ThinkingStep[]> = {};
+                        for (const msg of assistantMsgs) {
+                            const reqId = msg.metadata!.requestId as string;
+                            const msgSteps = allSteps
+                                .filter((s: any) => s.request_id === reqId)
+                                .map((s: any) => ({
                                     id: s.id,
                                     tool_name: s.tool_name,
                                     toolName: s.tool_name,
@@ -864,14 +897,16 @@ export default function Home() {
                                     details: s.details,
                                     created_at: s.created_at,
                                 }));
+                            if (msgSteps.length > 0) {
+                                stepsMap[msg.id] = msgSteps;
                             }
-                        } catch {
-                            // Skip failed step loads
                         }
-                    })
-                );
-                if (Object.keys(stepsMap).length > 0) {
-                    setMessageStepsMap(stepsMap);
+                        if (Object.keys(stepsMap).length > 0) {
+                            setMessageStepsMap(stepsMap);
+                        }
+                    }
+                } catch {
+                    // Non-critical — steps just won't show for past messages
                 }
             }
         } catch (err) {
@@ -1045,14 +1080,19 @@ export default function Home() {
         };
         addMessage(optimisticMsg);
 
-        // Convert image to base64 if provided
+        // Compress and convert image to base64 if provided
         let imageData: string | undefined;
         if (image) {
-            imageData = await new Promise<string>((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.readAsDataURL(image);
-            });
+            try {
+                imageData = await compressImage(image);
+            } catch {
+                // Fallback to raw FileReader if compression fails
+                imageData = await new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.readAsDataURL(image);
+                });
+            }
         }
 
         // Create session if none exists
@@ -1162,7 +1202,7 @@ export default function Home() {
                 // Pass sessionId explicitly — on the first message, the hook's sessionId
                 // prop is still null (React hasn't re-rendered yet), so we pass the
                 // locally-created sessionId as an override.
-                await aiChat.sendMessage(content.trim(), image || undefined, sessionId || undefined);
+                await aiChat.sendMessage(content.trim(), imageData, sessionId || undefined);
 
                 // Don't set isStreaming=false here — useAIChat's onFinish does it
                 // AFTER persisting the message. Setting it here would trigger loadMessages
@@ -1575,6 +1615,42 @@ export default function Home() {
                                         messageStepsMap={messageStepsMap}
                                     />
                                 </div>
+
+                                {/* Build-Fix Loop Status */}
+                                {buildFixLoop.state.isRunning && (
+                                    <div className="flex-shrink-0 px-4 py-2 border-t border-[rgba(182,145,97,0.12)]">
+                                        <div className="flex items-center gap-2 text-xs">
+                                            <div className="w-2 h-2 rounded-full animate-pulse bg-[#b69161]" />
+                                            <span className="text-white/60">
+                                                {buildFixLoop.state.status === 'building'
+                                                    ? `Building (attempt ${buildFixLoop.state.attempt}/${buildFixLoop.state.maxAttempts})...`
+                                                    : `Fixing errors (attempt ${buildFixLoop.state.attempt}/${buildFixLoop.state.maxAttempts})...`}
+                                            </span>
+                                        </div>
+                                        {buildFixLoop.state.lastErrors.length > 0 && (
+                                            <div className="mt-1 text-[10px] text-red-400/70 truncate max-w-full">
+                                                {buildFixLoop.state.lastErrors[0]}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                {buildFixLoop.state.status === 'success' && !buildFixLoop.state.isRunning && (
+                                    <div className="flex-shrink-0 px-4 py-2 border-t border-[rgba(182,145,97,0.12)]">
+                                        <div className="flex items-center gap-2 text-xs text-green-400/80">
+                                            <span>Build passed</span>
+                                            {buildFixLoop.state.attempt > 1 && (
+                                                <span className="text-white/40">after {buildFixLoop.state.attempt} attempts</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                                {buildFixLoop.state.status === 'failed' && !buildFixLoop.state.isRunning && (
+                                    <div className="flex-shrink-0 px-4 py-2 border-t border-[rgba(182,145,97,0.12)]">
+                                        <div className="flex items-center gap-2 text-xs text-red-400/70">
+                                            <span>Build failed after {buildFixLoop.state.attempt} attempts</span>
+                                        </div>
+                                    </div>
+                                )}
                             </>
                         )}
                     </div>

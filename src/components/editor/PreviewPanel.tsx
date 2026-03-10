@@ -957,25 +957,35 @@ export function PreviewPanel({
                             >
                                 {/* Render only the active device iframe to prevent resource contention */}
                                 {deviceMode === 'desktop' ? (
-                                    <div
-                                        className="absolute inset-0 rounded-2xl"
-                                        style={{ overflow: 'hidden' }}
-                                    >
-                                        <iframe
-                                            ref={iframeRef}
-                                            key={`desktop-${iframeKey}`}
-                                            src={getFullPreviewUrl()}
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                        <div
                                             style={{
-                                                width: '100%',
-                                                height: '100%',
-                                                border: 'none',
+                                                width: `${DESKTOP_WIDTH * desktopScale}px`,
+                                                height: `${DESKTOP_HEIGHT * desktopScale}px`,
                                                 borderRadius: '1rem',
+                                                overflow: 'hidden',
+                                                position: 'relative',
                                                 background: 'white',
                                             }}
-                                            title="Preview Desktop"
-                                            onLoad={handleIframeLoad}
-                                            onError={handleIframeError}
-                                        />
+                                        >
+                                            <iframe
+                                                ref={iframeRef}
+                                                key={`desktop-${iframeKey}`}
+                                                src={getFullPreviewUrl()}
+                                                style={{
+                                                    width: `${DESKTOP_WIDTH}px`,
+                                                    height: `${DESKTOP_HEIGHT}px`,
+                                                    transform: `scale(${desktopScale})`,
+                                                    transformOrigin: 'top left',
+                                                    border: 'none',
+                                                    borderRadius: '1rem',
+                                                    background: 'white',
+                                                }}
+                                                title="Preview Desktop"
+                                                onLoad={handleIframeLoad}
+                                                onError={handleIframeError}
+                                            />
+                                        </div>
                                     </div>
                                 ) : (
                                     <div

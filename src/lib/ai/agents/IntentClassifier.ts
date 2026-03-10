@@ -24,6 +24,11 @@ const SIMPLE_EDIT_PATTERNS = [
   /^(add|put|insert)\s+(a\s+)?(comma|period|space|word)/i,
   /^(change|update|swap|switch)\s+(the\s+)?(icon|image|photo|logo)/i,
   /^(move|align|center)\s/i,
+  // Global text replacement patterns: "change Furry to Omar", "rename X to Y"
+  /^(change|rename|replace|swap|update)\s+.{1,40}\s+(to|with|into)\s+/i,
+  // Color/theme change patterns: "change color theme to blue", "make it white and blue"
+  /^(change|update|switch)\s+(the\s+)?(color|theme|palette|scheme|colors)/i,
+  /^make\s+(it|the|everything|all|this)\s+(blue|red|green|white|black|dark|light|purple|orange|pink|yellow)/i,
 ];
 
 const QUESTION_PATTERNS = [

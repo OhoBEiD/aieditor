@@ -78,7 +78,7 @@ export async function saveConversationMemory(params: SaveConversationParams): Pr
 
 /**
  * Load previous conversation memories for context.
- * Prefers session-specific memories; falls back to project-wide.
+ * Strictly session-scoped — each chat session has independent memory.
  */
 export async function loadConversationMemory(params: {
   projectId: string;
@@ -87,37 +87,22 @@ export async function loadConversationMemory(params: {
 }): Promise<ConversationMemoryEntry[]> {
   const supabase = getSupabaseClient();
   if (!supabase || !params.projectId || params.projectId === "unknown") return [];
+  if (!params.sessionId) return [];
 
   const limit = params.limit || 10;
 
   try {
-    // Try session-specific first
-    if (params.sessionId) {
-      const { data, error } = await supabase
-        .from("agent_memory")
-        .select("content, content_json, created_at")
-        .eq("project_id", params.projectId)
-        .eq("session_id", params.sessionId)
-        .eq("memory_type", "conversation")
-        .order("created_at", { ascending: false })
-        .limit(limit);
-
-      if (!error && data && data.length > 0) {
-        return data.reverse(); // Chronological order
-      }
-    }
-
-    // Fallback: project-wide conversation memories
     const { data, error } = await supabase
       .from("agent_memory")
       .select("content, content_json, created_at")
       .eq("project_id", params.projectId)
+      .eq("session_id", params.sessionId)
       .eq("memory_type", "conversation")
       .order("created_at", { ascending: false })
       .limit(limit);
 
     if (error || !data) return [];
-    return data.reverse();
+    return data.reverse(); // Chronological order
   } catch (err) {
     console.error("[agent-memory] Failed to load conversation memory:", err);
     return [];

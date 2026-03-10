@@ -3,7 +3,6 @@
 
 import { TOOLS, FileOperation, ToolResult } from '../tools';
 import { listFiles, readFile, writeFile, strReplace, deleteFile, resetOperations, getOperations } from '../tools/file';
-import { generateImage } from '../tools/image';
 import { webSearch, webScrape } from '../tools/web';
 import { EXECUTOR_SYSTEM_PROMPT } from '../prompts/system';
 
@@ -103,8 +102,6 @@ async function runTool(name: string, args: Record<string, any>, context: Executo
             }
             return result;
         }
-        case 'generate_image':
-            return generateImage(args.prompt);
         case 'web_search':
             return webSearch(args.query, args.maxResults);
         case 'web_scrape':
@@ -228,9 +225,6 @@ export async function executeWithTools(context: ExecutorContext): Promise<Execut
                     const toolName = toolCall.function.name;
                     const toolId = toolCall.id;
 
-                    // Skip generate_image steps from UI as requested
-                    const shouldEmit = toolName !== 'generate_image';
-
                     // Emit step for UI feedback
                     let stepMessage = `Executing ${toolName}`;
                     const details: Record<string, any> = {};
@@ -247,8 +241,6 @@ export async function executeWithTools(context: ExecutorContext): Promise<Execut
                         if (args.new_text) {
                             details.content = args.new_text.length > 500 ? args.new_text.substring(0, 500) + '...' : args.new_text;
                         }
-                    } else if (toolName === 'generate_image') {
-                        stepMessage = `Generating image...`;
                     } else if (toolName === 'web_search' && args.query) {
                         stepMessage = `Searching: "${args.query.substring(0, 50)}"`;
                     } else if (toolName === 'web_scrape' && args.url) {
@@ -257,7 +249,7 @@ export async function executeWithTools(context: ExecutorContext): Promise<Execut
                         stepMessage = `Deleting ${args.path.split('/').pop() || args.path}`;
                     }
 
-                    if (context.onStep && shouldEmit) {
+                    if (context.onStep) {
                         const stepIndex = 100 + iterations; // Stable index for this iterations
                         await context.onStep(toolName, 'running', stepMessage, details, stepIndex);
                     }
@@ -271,7 +263,7 @@ export async function executeWithTools(context: ExecutorContext): Promise<Execut
                         buildValidationMessage = result.buildMessage || 'Validating build...';
                     }
 
-                    if (context.onStep && shouldEmit) {
+                    if (context.onStep) {
                         const stepIndex = 100 + (iterations - 1); // Reuse the same index
                         await context.onStep(toolName, 'complete', stepMessage, details, stepIndex);
                     }

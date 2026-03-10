@@ -60,7 +60,6 @@ function getStepCategory(step: ThinkingStep): string {
     if (LOOKUP_TOOLS.has(name)) return 'lookup';
     if (QUALITY_TOOLS.has(name)) return 'quality';
     if (COMPLETE_TOOLS.has(name)) return 'complete';
-    if (name === 'generate_image') return 'hidden';
     if (name.includes('write') || name.includes('create') || name.includes('modify') || name.includes('replace') || name.includes('edit') || name.includes('delete') || name.includes('read')) return 'file';
     return 'other';
 }
@@ -328,8 +327,19 @@ function StepCard({
                     !hasContent && 'cursor-default',
                 )}
             >
-                <div className={cn('w-6 h-6 rounded-lg flex items-center justify-center shrink-0', iconBg, iconColor)}>
-                    {isRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : icon}
+                <div className={cn(
+                    'w-6 h-6 rounded-lg flex items-center justify-center shrink-0',
+                    status === 'complete' ? 'bg-emerald-400/15 text-emerald-400' :
+                    status === 'error' ? 'bg-red-400/15 text-red-400' :
+                    `${iconBg} ${iconColor}`,
+                )}>
+                    {isRunning
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : status === 'complete'
+                            ? <Check className="w-3.5 h-3.5" />
+                            : status === 'error'
+                                ? <AlertCircle className="w-3.5 h-3.5" />
+                                : icon}
                 </div>
                 <span className="flex-1 text-left text-xs font-semibold text-white/90 truncate">
                     {title}

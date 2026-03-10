@@ -7,7 +7,7 @@ import { selectModel, type Complexity } from "../router";
 import { getExecutorTools, type FileOperation, type DatabaseContext } from "../tools/enhanced-tools";
 import type { ExecutionPlan, PlanTask } from "./PlanAgent";
 import { compactToolResults } from "../context/compaction";
-import { ANIMATION_SKILLS } from "../prompts/skills";
+import { ANIMATION_SKILLS, IMAGE_RULES } from "../prompts/skills";
 
 // --- Types ---
 
@@ -53,15 +53,20 @@ const EXECUTOR_SYSTEM_PROMPT = `You are an expert full-stack developer executing
 - "content" for write_file must be the COMPLETE file source code.
 - For edit_file, the oldText must be an EXACT unique match. Read the file first.
 - Ensure all imports and syntax are correct.
-- ALWAYS use real Unsplash image URLs for any visual content.
+- For images, use curated Unsplash IDs from the IMAGE RULES section or picsum.photos. NEVER invent Unsplash photo IDs.
 - When modifying layout.tsx, PRESERVE <html> and <body> tags.
 - After writing important files, use read_file to verify the content.
 
-## MODIFICATION RULES
+## BRAND RULES (CRITICAL)
+- ALWAYS use the brand/store/company name from the user's request. If they say "for Furry", the brand name is "Furry" — use it in navbar, hero, footer, metadata. NEVER invent a different name.
+- ALWAYS use the color theme the user specified. Do not override with defaults.
+
+## MODIFICATION RULES (CRITICAL)
 When modifying existing files:
 - ONLY change what the task explicitly describes. Do not alter unrelated code.
 - Preserve brand names, content text, layout structure, and image URLs unless the task says otherwise.
 - Prefer edit_file (surgical edits) over write_file (full rewrite) for existing files.
+- When user says "change X to Y", find X and replace with Y. Do NOT rewrite the entire file.
 
 ## RESPONSE FORMAT
 After completing the task, respond with a ONE-SENTENCE summary of what was done.`;
@@ -95,7 +100,7 @@ export async function executeFastPath(
   try {
     const result = await generateText({
       model: config.model,
-      system: EXECUTOR_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS,
+      system: EXECUTOR_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS + "\n\n" + IMAGE_RULES,
       prompt,
       tools,
       stopWhen: stepCountIs(config.maxSteps),
@@ -257,7 +262,7 @@ Execute this task using the tools. Remember: search/read first, then write, then
   try {
     const result = await generateText({
       model: config.model,
-      system: EXECUTOR_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS,
+      system: EXECUTOR_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS + "\n\n" + IMAGE_RULES,
       prompt,
       tools,
       stopWhen: stepCountIs(Math.min(config.maxSteps, 8)), // Cap at 8 steps per task

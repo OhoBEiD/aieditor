@@ -56,19 +56,26 @@ export function ChatPanel({
     const chatPanelRef = useRef<HTMLDivElement>(null);
 
     // Derive which proposal messages have been selected
-    // Primary: read from message metadata (persisted to Supabase on selection)
+    // Primary: read from message metadata (persisted to Supabase on selection click)
     // Fallback: scan for "Option X" user messages (backwards compat for older messages)
     const proposalSelections = useMemo(() => {
         const selections: Record<string, number> = {};
         for (let i = 0; i < displayedMessages.length; i++) {
             const msg = displayedMessages[i];
-            if (msg.role === 'assistant' && msg.content.includes('PROPOSAL_OPTIONS')) {
-                // Primary: check metadata
-                const meta = msg.metadata as Record<string, any> | null;
-                if (meta?.selectedOption) {
-                    selections[msg.id] = meta.selectedOption as number;
-                    continue;
-                }
+            if (msg.role !== 'assistant') continue;
+
+            // Check metadata first (most reliable — persisted on selection click)
+            const meta = msg.metadata as Record<string, any> | null;
+            if (meta?.selectedOption) {
+                selections[msg.id] = meta.selectedOption as number;
+                continue;
+            }
+
+            // Check if this is a proposal message (ARTIFACT or legacy PROPOSAL_OPTIONS format)
+            const isProposal = msg.content.includes('PROPOSAL_OPTIONS')
+                || (msg.content.includes('ARTIFACT') && msg.content.includes('"type":"proposal"'));
+
+            if (isProposal) {
                 // Fallback: scan for "Option X" in next user message
                 for (let j = i + 1; j < displayedMessages.length; j++) {
                     const next = displayedMessages[j];

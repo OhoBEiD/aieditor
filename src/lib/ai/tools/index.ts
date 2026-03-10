@@ -93,20 +93,6 @@ export const TOOLS: ToolDefinition[] = [
     {
         type: 'function',
         function: {
-            name: 'generate_image',
-            description: 'Get an Unsplash image URL for any image needed. ALWAYS call this for images - returns a ready-to-use URL',
-            parameters: {
-                type: 'object',
-                properties: {
-                    prompt: { type: 'string', description: 'Description of the image needed' }
-                },
-                required: ['prompt']
-            }
-        }
-    },
-    {
-        type: 'function',
-        function: {
             name: 'web_search',
             description: 'Search the web for current information using Tavily. Use this when you need up-to-date documentation, API references, tutorials, or to research a topic before implementing.',
             parameters: {

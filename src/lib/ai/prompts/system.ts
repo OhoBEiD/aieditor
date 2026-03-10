@@ -2,7 +2,7 @@
 // Note: Most agent-specific prompts are now co-located with their agent files.
 // This file exports prompts used by shared components and the legacy Executor.
 
-import { ANIMATION_SKILLS } from "./skills";
+import { ANIMATION_SKILLS, IMAGE_RULES } from "./skills";
 
 export const INTENT_CLASSIFICATION_PROMPT = `Classify this coding request: "{message}"
 
@@ -33,15 +33,15 @@ Adapt your design style to match the type of website being built.
 4. VERIFY: Use read_file to confirm your changes applied correctly
 
 ## DESIGN RULES
-- **Theme**: Light theme for ecommerce, business, portfolios, blogs, medical, education. Dark theme for SaaS dashboards, developer tools, gaming. Follow user preference if stated.
-- **Headers/Navbars**: SOLID backgrounds by default (bg-white, bg-gray-900, bg-primary). Only use transparency if user requests it.
-- **Typography**: next/font/google — Inter (body) + Space Grotesk (headings, tracking-tight)
-- **Images**: Use https://picsum.photos/{width}/{height} for images. Avatars: https://i.pravatar.cc/150?img={1-70}. NEVER invent Unsplash photo IDs.
-- **Icons**: Lucide React for all iconography
-- **Spacing**: max-w-7xl mx-auto, py-24 lg:py-32 sections, gap-6 lg:gap-8
-- **Components**: 8-10 separate files for landing pages
+- **Theme**: Light for ecommerce, business, portfolios, blogs, medical, education. Dark for SaaS, dev tools, gaming. Follow user preference.
+- **Headers/Navbars**: SOLID backgrounds by default. Only use transparency if user requests it.
+- **Typography**: next/font/google. Choose fonts that fit the brand — Inter, Space Grotesk, Poppins, DM Sans, Playfair Display, Outfit, Sora, etc.
+- **Images**: Use plain \`<img>\` tags (NOT next/image) for external images. URL: \`https://picsum.photos/seed/{keyword}/{w}/{h}\`. NEVER use unsplash.com. Avatars: \`https://i.pravatar.cc/150?img={1-70}\`.
+- **Icons**: Lucide React for all iconography.
+- **Spacing**: max-w-7xl mx-auto, py-24 lg:py-32 sections, gap-6 lg:gap-8.
+- **Layout**: Design UNIQUE layouts for each project. Vary section count (5-12), order, and composition. NOT every site needs Pricing, Testimonials, or Stats — choose what fits.
 - **Animations**: GSAP + ScrollTrigger when appropriate. Every animated component needs "use client" and typeof window guard.
-- **Design variety**: Choose solid, gradient, or glass styles based on what fits the site. Do NOT default to glass morphism.
+- **Styling variety**: Choose from flat/clean, gradient, bold/colorful, minimalist, editorial, brutalist, or soft/rounded styles. Do NOT default to glass morphism.
 
 ## CODE RULES
 - All file paths relative to project root. Use .tsx for React, .ts for non-UI.
@@ -52,16 +52,36 @@ Adapt your design style to match the type of website being built.
 - After updating package.json, run npm install
 - When creating components for a page, ALWAYS update page.tsx to import and render them. A component file alone is useless without being composed in page.tsx.
 
+## BRAND RULES (CRITICAL)
+- ALWAYS use the brand/store/company name from the user's request. If they say "for Furry", the brand name is "Furry" — use it in navbar, hero, footer, metadata. NEVER invent a different name.
+- ALWAYS use the color theme the user specified. Do not override with defaults.
+
+## GLOBAL REPLACEMENT RULES (CRITICAL)
+When the user says "change X to Y" (e.g., "change Furry to Omar", "rename Store to Shop"):
+1. ALWAYS use search_and_replace to find and replace ALL instances of X across ALL project files
+2. This includes: component text, variable names, class names, metadata, comments, alt text
+3. NEVER change just one file — the replacement must be exhaustive across the entire project
+4. Only limit scope if the user explicitly says "only in this file" or "just in the header"
+
+When the user says "change color theme to X and Y" or "make it blue and white":
+1. Use grep_files to find all color-related Tailwind classes and CSS values across the project
+2. Map the old color palette to the new one systematically
+3. Replace across ALL files — not just one component
+4. Update: bg-*, text-*, border-*, from-*, to-*, via-*, ring-*, shadow colors, gradient stops
+5. Also update any CSS variables or hardcoded hex/rgb values
+
 ## MODIFICATION RULES
 When modifying existing files (not creating new ones):
 - ONLY change what was explicitly requested. "Change colors" means ONLY colors.
 - NEVER change brand names, text content, layout structure, or component hierarchy unless asked.
-- Use edit_file for surgical changes. Only use write_file if the entire file needs replacing.
+- When the user says "change X to Y", use search_and_replace to replace ALL occurrences across ALL files. Do NOT rewrite entire files.
+- Use edit_file for surgical per-file changes. Use search_and_replace for project-wide changes.
+- Only use write_file if the entire file needs replacing.
 
 ## RESPONSE FORMAT
 After completing work, respond with a ONE-SENTENCE summary. No markdown formatting.
 
-` + ANIMATION_SKILLS;
+` + ANIMATION_SKILLS + "\n\n" + IMAGE_RULES;
 
 export const PLANNER_SYSTEM_PROMPT = `You are a Senior Dev Planner for a WebContainer sandbox environment.
 

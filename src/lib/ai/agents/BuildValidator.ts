@@ -363,7 +363,6 @@ function validateReact(path: string, content: string): ClassifiedError[] {
   const hasGsap = content.includes("gsap") || content.includes("ScrollTrigger");
   const hasLenis = content.includes("lenis") || content.includes("ReactLenis") || content.includes("useLenis");
   const hasAnime = content.includes("animejs") || /\bimport\s+anime\s+from\b/.test(content);
-  const hasR3F = content.includes("@react-three/fiber") || content.includes("Canvas");
   const hasSSRUnsafeLib = hasGsap || hasLenis || hasAnime;
   const hasWindowGuard = content.includes("typeof window") || content.includes("useLayoutEffect") || content.includes("useEffect");
   const isClientComponent = content.includes('"use client"') || content.includes("'use client'");
@@ -384,7 +383,7 @@ function validateReact(path: string, content: string): ClassifiedError[] {
   const hasClientHooks = /\b(useState|useEffect|useLayoutEffect|useRef|useCallback|useMemo|useContext|useReducer)\b/.test(content);
   const hasAnimationHooks = /\b(useSpring|useTransition|useTrail|useScroll|useTransform|useFrame|useLenis)\b/.test(content);
   const hasMotionComponents = content.includes("motion.") || content.includes("<motion") || content.includes("AnimatePresence");
-  const needsClientDirective = hasClientHooks || hasAnimationHooks || hasMotionComponents || hasR3F || hasSSRUnsafeLib;
+  const needsClientDirective = hasClientHooks || hasAnimationHooks || hasMotionComponents || hasSSRUnsafeLib;
 
   if (needsClientDirective && !isClientComponent) {
     errors.push({
@@ -580,7 +579,7 @@ function findLineNumber(content: string, pattern: RegExp): number {
 
 // --- Fixer Agent ---
 
-async function runFixerAgent(
+export async function runFixerAgent(
   virtualFS: Map<string, string>,
   errors: ClassifiedError[],
   emitStep: (stepNum: number, toolName: string, status: string, message: string, details?: any) => Promise<void>,

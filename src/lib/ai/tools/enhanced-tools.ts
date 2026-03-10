@@ -331,22 +331,29 @@ export function createEnhancedTools(virtualFS: Map<string, string>, dbContext?: 
 
     edit_file: {
       description:
-        "Edit a file by replacing specific text. The oldText must be an EXACT, UNIQUE match in the file. Read the file first to get the exact text.",
+        "Edit a file by replacing specific text. By default oldText must be UNIQUE in the file. Set replaceAll=true to replace ALL occurrences.",
       inputSchema: z.object({
         path: z.string().describe("File path to modify"),
         oldText: z
           .string()
-          .describe("Exact text to find and replace (must be unique in the file)"),
+          .describe("Exact text to find and replace"),
         newText: z.string().describe("Replacement text"),
+        replaceAll: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("If true, replace ALL occurrences of oldText in the file (default false)"),
       }),
       execute: async ({
         path,
         oldText,
         newText,
+        replaceAll = false,
       }: {
         path: string;
         oldText: string;
         newText: string;
+        replaceAll?: boolean;
       }) => {
         const normalized = normalizePath(path);
         const content = virtualFS.get(normalized);
@@ -358,7 +365,7 @@ export function createEnhancedTools(virtualFS: Map<string, string>, dbContext?: 
           };
         }
 
-        // Check for uniqueness
+        // Check for occurrences
         const occurrences = content.split(oldText).length - 1;
         if (occurrences === 0) {
           // Try to find similar text for a helpful error
@@ -379,15 +386,17 @@ export function createEnhancedTools(virtualFS: Map<string, string>, dbContext?: 
           };
         }
 
-        if (occurrences > 1) {
+        if (occurrences > 1 && !replaceAll) {
           return {
             success: false,
-            error: `oldText matches ${occurrences} locations in ${path}. Provide more surrounding context to make it unique.`,
+            error: `oldText matches ${occurrences} locations in ${path}. Use replaceAll=true to replace all, or provide more surrounding context to make it unique.`,
           };
         }
 
-        // Apply the edit
-        const newContent = content.replace(oldText, newText);
+        // Apply the edit (replace all occurrences if replaceAll, otherwise just first)
+        const newContent = replaceAll
+          ? content.split(oldText).join(newText)
+          : content.replace(oldText, newText);
         virtualFS.set(normalized, newContent);
 
         // Return the modified region with context
@@ -409,7 +418,80 @@ export function createEnhancedTools(virtualFS: Map<string, string>, dbContext?: 
           success: true,
           path: normalized,
           operation: "modify",
+          replacements: replaceAll ? occurrences : 1,
           preview,
+        };
+      },
+    },
+
+    search_and_replace: {
+      description:
+        "Find and replace text across ALL project files. Use this for global renames (e.g., 'change Furry to Omar'), text changes, and color/theme updates. Returns which files were modified and how many replacements per file.",
+      inputSchema: z.object({
+        search: z
+          .string()
+          .describe("Exact text to find across all files"),
+        replace: z
+          .string()
+          .describe("Replacement text"),
+        glob: z
+          .string()
+          .optional()
+          .describe("Optional file pattern filter (e.g., '*.tsx', 'src/**')"),
+        matchCase: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe("Case-sensitive matching (default true). Set false to match 'Furry', 'furry', 'FURRY' etc."),
+      }),
+      execute: async ({
+        search,
+        replace,
+        glob,
+        matchCase = true,
+      }: {
+        search: string;
+        replace: string;
+        glob?: string;
+        matchCase?: boolean;
+      }) => {
+        const modifiedFiles: Array<{ path: string; replacements: number }> = [];
+        const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const flags = matchCase ? "g" : "gi";
+        const regex = new RegExp(escapedSearch, flags);
+
+        for (const [filePath, content] of virtualFS.entries()) {
+          if (glob && !matchGlob(filePath, glob)) continue;
+
+          // Skip binary-looking files and node_modules
+          if (filePath.includes("node_modules/") || filePath.includes(".lock")) continue;
+
+          const matches = content.match(regex);
+          if (matches && matches.length > 0) {
+            const newContent = content.replace(regex, replace);
+            virtualFS.set(filePath, newContent);
+            modifiedFiles.push({
+              path: filePath,
+              replacements: matches.length,
+            });
+          }
+        }
+
+        if (modifiedFiles.length === 0) {
+          return {
+            success: false,
+            message: `No occurrences of "${search}" found in project files${glob ? ` matching ${glob}` : ""}.`,
+            filesSearched: virtualFS.size,
+          };
+        }
+
+        const totalReplacements = modifiedFiles.reduce((sum, f) => sum + f.replacements, 0);
+        return {
+          success: true,
+          totalReplacements,
+          filesModified: modifiedFiles.length,
+          files: modifiedFiles,
+          message: `Replaced ${totalReplacements} occurrence(s) of "${search}" → "${replace}" across ${modifiedFiles.length} file(s).`,
         };
       },
     },

@@ -81,11 +81,17 @@ You MUST output valid JSON in this exact structure:
 }
 \`\`\`
 
+## BRAND RULES (CRITICAL)
+- Extract the brand/store/company name from the user's request. If they say "for Furry", the brand is "Furry".
+- Use that EXACT brand name in ALL generated files: navbar logo text, hero heading, footer, layout.tsx metadata title.
+- NEVER invent a different brand name. The user's specified name is the brand identity.
+- If the user specifies a color theme (e.g. "white and green"), include a task to set those exact colors in globals.css.
+
 ## IMPORTANT
 - For NEW PROJECTS: include config files (package.json, tailwind.config) as task 1
 - For MODIFICATIONS: only plan the files that need to change
 - Use Tailwind CSS, React 18+, TypeScript, Next.js App Router
-- Always include real image URLs (Unsplash) for visual elements
+- Always include real image URLs using picsum.photos/seed/{keyword}/{w}/{h} — NEVER use unsplash.com
 - Keep tasks atomic - each task should be independently verifiable
 
 ## PAGE COMPOSITION (CRITICAL)
