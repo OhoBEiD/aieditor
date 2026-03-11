@@ -71,14 +71,14 @@ const TEMPERATURE: Record<string, number> = {
 export function selectModel(task: TaskType, complexity: Complexity = "moderate", userModel?: UserModel): ModelConfig {
   const temp = TEMPERATURE[task] ?? 0.2;
 
-  // For plan + execute: use user's selected model if provided
-  if (userModel && userModel !== "flash" && (task === "plan" || task === "execute")) {
+  // Only the planner uses user's selected model — executors always use Flash
+  if (userModel && userModel !== "flash" && task === "plan") {
     const modelId = MODEL_REGISTRY[userModel];
     return {
       model: openrouter.chat(modelId),
       modelId,
-      thinkingLevel: task === "plan" ? "high" : "medium",
-      maxSteps: task === "plan" ? 10 : 20,
+      thinkingLevel: "high",
+      maxSteps: 10,
       temperature: temp,
     };
   }
@@ -121,15 +121,6 @@ export function selectModel(task: TaskType, complexity: Complexity = "moderate",
       };
 
     case "execute":
-      if (complexity === "complex") {
-        return {
-          model: openrouter.chat(PRO_MODEL),
-          modelId: PRO_MODEL,
-          thinkingLevel: "medium",
-          maxSteps: 20,
-          temperature: temp,
-        };
-      }
       return {
         model: openrouter.chat(FLASH_MODEL),
         modelId: FLASH_MODEL,
@@ -149,9 +140,9 @@ export function selectModel(task: TaskType, complexity: Complexity = "moderate",
 
     case "replan":
       return {
-        model: openrouter.chat(PRO_MODEL),
-        modelId: PRO_MODEL,
-        thinkingLevel: "high",
+        model: openrouter.chat(FLASH_MODEL),
+        modelId: FLASH_MODEL,
+        thinkingLevel: "medium",
         maxSteps: 5,
         temperature: temp,
       };

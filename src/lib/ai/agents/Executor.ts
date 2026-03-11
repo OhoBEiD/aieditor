@@ -131,9 +131,9 @@ export async function executeWithTools(context: ExecutorContext): Promise<Execut
 
     // Build the prompt context
     const preloadedFiles = Object.entries(context.fileContents || {})
-        .map(([f, c]) => `=== ${f} ===\n${c.slice(0, 1500)}`)
+        .map(([f, c]) => `=== ${f} ===\n${c.slice(0, 3000)}`)
         .join('\n')
-        .slice(0, 4000);
+        .slice(0, 12000);
 
     let systemPrompt = EXECUTOR_SYSTEM_PROMPT;
     let userContent = 'USER REQUEST: ' + context.message;
@@ -292,8 +292,8 @@ export async function executeWithTools(context: ExecutorContext): Promise<Execut
         .replace(/^[-*]\s/gm, '')
         .trim();
 
-    if (output.length > 300) {
-        output = output.substring(0, 300) + '...';
+    if (output.length > 2000) {
+        output = output.substring(0, 2000) + '...';
     }
 
     const operations = getOperations();

@@ -41,12 +41,18 @@ export const STARTER_TEMPLATE = {
             contents: `/** @type {import('next').NextConfig} */
 const nextConfig = {
     reactStrictMode: true,
+    webpack: (config) => {
+        config.cache = false;
+        return config;
+    },
     images: {
         remotePatterns: [
             { protocol: 'https', hostname: 'randomuser.me' },
             { protocol: 'https', hostname: 'picsum.photos' },
             { protocol: 'https', hostname: 'fastly.picsum.photos' },
             { protocol: 'https', hostname: 'i.pravatar.cc' },
+
+            { protocol: 'https', hostname: 'images.unsplash.com' },
         ],
     },
 }

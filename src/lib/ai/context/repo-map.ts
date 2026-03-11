@@ -395,7 +395,7 @@ function isReactFile(path: string): boolean {
 
 // --- Compact Summary for Prompt Injection ---
 
-export function getCompactRepoMap(repoMap: RepoMap, maxTokens: number = 800): string {
+export function getCompactRepoMap(repoMap: RepoMap, maxTokens: number = 1500): string {
   const lines: string[] = [];
 
   // Components (most useful for the agent)

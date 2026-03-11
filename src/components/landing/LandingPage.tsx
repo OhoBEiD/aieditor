@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Send, Loader2, Paperclip, Github, ChevronDown, Check, Zap, Cpu, Sparkles, Crown } from 'lucide-react';
+import { Send, Loader2, Paperclip, Github, ChevronDown, Check, Zap, Cpu, Sparkles, Crown, X } from 'lucide-react';
 import { gsap } from 'gsap';
 import { ClaudeLogo } from '@/components/icons/ClaudeLogo';
 import { RecentProjectsTable } from './RecentProjectsTable';
@@ -15,8 +15,8 @@ import { cn } from '@/lib/utils';
 import VantaFogBackground from '@/components/common/VantaFogBackground';
 
 interface LandingPageProps {
-    onSendMessage: (message: string) => void;
-    onCreateProject?: (message: string) => Promise<void>;
+    onSendMessage: (message: string, image?: File) => void;
+    onCreateProject?: (message: string, image?: File) => Promise<void>;
     onImportRepo?: (repoUrl: string) => Promise<void>;
     onOpenPreview?: (project?: any) => void;
     isLoading?: boolean;
@@ -30,7 +30,10 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [authModalMessage, setAuthModalMessage] = useState('Sign in to start building with Automate');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [selectedImage, setSelectedImage] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [isModeDropdownOpen, setIsModeDropdownOpen] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const dropdownMenuRef = useRef<HTMLDivElement>(null);
     const modeBtnRef = useRef<HTMLButtonElement>(null);
@@ -346,9 +349,41 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
         return () => ctx.revert();
     }, [isAuthenticated, authLoading]); // Re-run when auth state is ready so login/signup refs exist
 
+    const processImageFile = (file: File) => {
+        if (!file.type.startsWith('image/')) return;
+        setSelectedImage(file);
+        const reader = new FileReader();
+        reader.onloadend = () => setImagePreview(reader.result as string);
+        reader.readAsDataURL(file);
+    };
+
+    const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) processImageFile(file);
+    };
+
+    const handlePaste = (e: React.ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.startsWith('image/')) {
+                e.preventDefault();
+                const file = items[i].getAsFile();
+                if (file) processImageFile(file);
+                break;
+            }
+        }
+    };
+
+    const removeImage = () => {
+        setSelectedImage(null);
+        setImagePreview(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (message.trim() && !isLoading && !isSubmitting) {
+        if ((message.trim() || selectedImage) && !isLoading && !isSubmitting) {
             // Check if user is authenticated
             if (!isAuthenticated) {
                 setShowAuthModal(true);
@@ -359,11 +394,13 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
             try {
                 // If onCreateProject is provided, create a new project
                 if (onCreateProject) {
-                    await onCreateProject(message.trim());
+                    await onCreateProject(message.trim(), selectedImage || undefined);
                 } else {
-                    onSendMessage(message.trim());
+                    onSendMessage(message.trim(), selectedImage || undefined);
                 }
                 setMessage('');
+                setSelectedImage(null);
+                setImagePreview(null);
             } finally {
                 setIsSubmitting(false);
             }
@@ -512,6 +549,24 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
 
                 <div ref={inputRef} className="w-full max-w-3xl flex flex-col items-center opacity-0">
                     <form onSubmit={handleSubmit} className="w-full relative z-50 rounded-3xl">
+                        {/* Image Preview */}
+                        {imagePreview && (
+                            <div className="mb-2 ml-2 relative inline-block">
+                                <img
+                                    src={imagePreview}
+                                    alt="Preview"
+                                    className="h-16 rounded-xl border border-[#b69161]/30 object-contain"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={removeImage}
+                                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                            </div>
+                        )}
+
                         <div
                             className="relative rounded-3xl backdrop-blur-xl border border-[#b69161]/30"
                             style={{
@@ -519,16 +574,24 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                 boxShadow: '0 20px 60px rgba(132, 116, 91, 0.15), 0 8px 32px rgba(132, 116, 91, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.5)',
                             }}
                         >
-
+                            {/* Hidden file input */}
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                onChange={handleImageSelect}
+                                className="hidden"
+                            />
 
                             {/* Input Field */}
-                            <input
-                                type="text"
+                            <textarea
                                 value={message}
                                 onChange={(e) => setMessage(e.target.value)}
                                 onKeyDown={handleKeyDown}
+                                onPaste={handlePaste}
                                 placeholder={placeholderText}
-                                className="w-full pl-8 pr-32 pt-6 pb-24 text-base text-[#2c2418] placeholder-[#7a6f60] bg-transparent outline-none rounded-3xl"
+                                rows={1}
+                                className="w-full pl-8 pr-32 pt-6 pb-24 text-base text-[#2c2418] placeholder-[#7a6f60] bg-transparent outline-none rounded-3xl resize-none"
                                 style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
                                 disabled={isLoading || isSubmitting}
                             />
@@ -538,17 +601,18 @@ export function LandingPage({ onSendMessage, onCreateProject, onImportRepo, onOp
                                 <button
                                     type="button"
                                     className="p-2.5 text-[#2c2418] hover:text-[#2c2418] transition-colors rounded-full hover:bg-[#b69161]/15"
-                                    onClick={() => {/* Handle attach */ }}
+                                    onClick={() => fileInputRef.current?.click()}
+                                    title="Attach screenshot"
                                 >
                                     <Paperclip className="w-5 h-5" />
                                 </button>
 
                                 <button
                                     type="submit"
-                                    disabled={!message.trim() || isLoading || isSubmitting}
+                                    disabled={(!message.trim() && !selectedImage) || isLoading || isSubmitting}
                                     className={cn(
                                         "p-3.5 rounded-full text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105",
-                                        message.trim()
+                                        (message.trim() || selectedImage)
                                             ? "bg-[#b69161] hover:bg-[#c9a474] shadow-lg shadow-[#b69161]/40"
                                             : "bg-[#a89d8e]"
                                     )}

@@ -54,6 +54,22 @@ export function classifyErrors(buildOutput: string): ClassifiedError[] {
       continue;
     }
 
+    // Webpack runtime error: wrong import specifier (default/named mismatch, wrong subpath)
+    const webpackCallError = line.match(
+      /TypeError:\s*Cannot read propert(?:y|ies) of undefined \(reading '(?:call|apply|default)'\)/i
+    );
+    if (webpackCallError) {
+      errors.push({
+        type: "runtime_error",
+        file: "unknown",
+        line: 0,
+        message: `Webpack runtime error: ${line.trim().slice(0, 150)} — likely wrong import path or default/named mismatch`,
+        fixStrategy: `Check all imports for: 1) gsap must be default import (import gsap from "gsap"), not named ({gsap}), 2) motion must import from "motion/react" not "motion" or "framer-motion", 3) lenis React hooks must import from "lenis/react" not "lenis". Search for import statements and fix each one.`,
+        severity: "error",
+      });
+      continue;
+    }
+
     // TypeScript errors (TS2xxx format)
     const tsError = line.match(/(.+?)\((\d+),\d+\):\s*error\s*TS(\d+):\s*(.+)/);
     if (tsError) {

@@ -148,9 +148,10 @@ export function useAIChat({
             const text = getMessageText(message);
             const ops = parseFileOps(text);
 
-            // Apply any ops we haven't processed yet
-            for (const op of ops) {
-                const key = `${op.type}:${op.path}`;
+            // Apply any ops we haven't processed yet (index-based key so same file can be written multiple times)
+            for (let i = 0; i < ops.length; i++) {
+                const op = ops[i];
+                const key = `${i}:${op.type}:${op.path}`;
                 if (!processedOpsRef.current.has(key)) {
                     processedOpsRef.current.add(key);
                     await applyFileOperations([op]);
@@ -249,10 +250,11 @@ export function useAIChat({
         const text = getMessageText(lastMessage);
         const ops = parseFileOps(text);
 
-        // Apply any new ops
+        // Apply any new ops (use index-based key so same file can be written multiple times)
         const applyNewOps = async () => {
-            for (const op of ops) {
-                const key = `${op.type}:${op.path}`;
+            for (let i = 0; i < ops.length; i++) {
+                const op = ops[i];
+                const key = `${i}:${op.type}:${op.path}`;
                 if (!processedOpsRef.current.has(key)) {
                     processedOpsRef.current.add(key);
                     await applyFileOperations([op]);
@@ -298,7 +300,7 @@ export function useAIChat({
     // sessionIdOverride: allows caller to pass the correct session ID when it
     // was just created and React hasn't re-rendered the hook yet (first message flow)
     const send = useCallback(
-        async (content: string, imageBase64?: string, sessionIdOverride?: string) => {
+        async (content: string, imageBase64?: string, sessionIdOverride?: string, uploadedFilePath?: string) => {
             if (!content.trim() && !imageBase64) return;
 
             // Use override if provided (handles first-message race condition),
@@ -373,6 +375,7 @@ export function useAIChat({
                 siteId,
                 conversationId: effectiveSessionId,
                 ...(imageBase64 && { image: imageBase64 }),
+                ...(uploadedFilePath && { uploadedFiles: [{ path: uploadedFilePath }] }),
                 ...(supabaseContext && { supabaseContext }),
                 ...(selectedModel && { selectedModel }),
             };

@@ -37,11 +37,11 @@ export function compactToolResults(
     if (priority === "critical") {
       // Always keep errors and file ops verbatim
       compacted.push(msg);
-    } else if (msg.role === "tool" && msg.content.length > 200) {
+    } else if (msg.role === "tool" && msg.content.length > 500) {
       const summary = summarizeToolOutput(msg.content);
       compacted.push({ role: msg.role, content: summary });
-    } else if (msg.role === "assistant" && msg.content.length > 500) {
-      const maxLen = priority === "high" ? 500 : 300;
+    } else if (msg.role === "assistant" && msg.content.length > 1500) {
+      const maxLen = priority === "high" ? 1500 : 800;
       compacted.push({
         role: msg.role,
         content: msg.content.slice(0, maxLen) + "\n[...truncated...]",
@@ -137,7 +137,7 @@ function summarizeToolOutput(content: string): string {
     }
   }
 
-  return content.slice(0, 150) + (content.length > 150 ? "..." : "");
+  return content.slice(0, 400) + (content.length > 400 ? "..." : "");
 }
 
 // --- Conversation Trimming ---
@@ -168,7 +168,7 @@ export function trimConversationHistory(
   const normalSummary = normalMessages
     .map((m) => {
       const prefix = m.role === "user" ? "User" : "AI";
-      return `${prefix}: ${m.content.slice(0, 80)}`;
+      return `${prefix}: ${m.content.slice(0, 200)}`;
     })
     .join("\n");
 
@@ -185,7 +185,7 @@ export function trimConversationHistory(
   for (const errMsg of errorMessages.slice(-2)) {
     result.push({
       role: errMsg.role,
-      content: `[Earlier error: ${errMsg.content.slice(0, 200)}]`,
+      content: `[Earlier error: ${errMsg.content.slice(0, 500)}]`,
     });
   }
 
@@ -202,8 +202,8 @@ export function trimConversationHistory(
 export function buildFileContext(
   virtualFS: Map<string, string>,
   relevantPaths: string[],
-  maxCharsPerFile: number = 2000,
-  maxTotalChars: number = 10000,
+  maxCharsPerFile: number = 4000,
+  maxTotalChars: number = 20000,
 ): string {
   let context = "";
   let totalChars = 0;

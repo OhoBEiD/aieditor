@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, Suspense } from 'react';
 import { ChatSelector } from '@/components/chat/ChatSelector';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import type { ModelOption } from '@/components/chat/MessageInput';
@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase/client';
 
 import { useThinkingSteps } from '@/hooks/useThinkingSteps';
 import type { ThinkingStep } from '@/components/chat/ThinkingSteps';
-import { cn, compressImage } from '@/lib/utils';
+import { cn, compressImage, base64ToUint8Array } from '@/lib/utils';
 import { Bot, X, Settings, MessageSquare } from 'lucide-react';
 import { LandingPage } from '@/components/landing/LandingPage';
 import { gsap } from 'gsap';
@@ -22,6 +22,7 @@ import VantaFogBackground from '@/components/common/VantaFogBackground';
 import { useAIChat } from '@/hooks/useAIChat';
 import { useContextUsage } from '@/hooks/useContextUsage';
 import { useBuildFixLoop } from '@/hooks/useBuildFixLoop';
+import { useSearchParams } from 'next/navigation';
 
 // Configuration - Can be overridden by active project
 const DEFAULT_CLIENT_ID = '00000000-0000-0000-0000-000000000001';
@@ -118,6 +119,15 @@ interface Project {
 }
 
 export default function Home() {
+    return (
+        <Suspense>
+            <HomeInner />
+        </Suspense>
+    );
+}
+
+function HomeInner() {
+    const searchParams = useSearchParams();
     const [showPreview, setShowPreview] = useState(false);
     const [isPanelOpen, setIsPanelOpen] = useState(true);
     const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -206,6 +216,7 @@ export default function Home() {
         applyFileOperations,
         runBuild,
         writeFile: wcWriteFile,
+        writeBinaryFile,
         readFile: wcReadFile,
         deleteFile: wcDeleteFile,
         installPackage,
@@ -534,12 +545,13 @@ export default function Home() {
         }
     };
 
-    // Exit preview - hide panel but keep WebContainer running for instant re-open
+    // Exit preview - go back to landing page and clear active project
     const handleExitPreview = useCallback(async () => {
         setShowPreview(false);
-        // Don't clear previewUrl or kill WebContainer - keep server running
-        // so reopening the same project is instant
-        console.log('[Preview] Preview hidden (WebContainer still running)');
+        setActiveProject(null);
+        localStorage.removeItem('activeProject');
+        // Keep WebContainer running so reopening the same project is instant
+        console.log('[Preview] Exited to landing page, cleared active project');
     }, []);
 
     // No longer need to stop external preview server - WebContainers run in browser
@@ -646,25 +658,29 @@ export default function Home() {
     useEffect(() => {
         setIsClient(true);
 
-        // Restore active project first
+        // Restore active project first — but skip if URL has ?site= param
+        // (the ?site= effect will handle loading the correct project)
+        const siteFromUrl = searchParams.get('site');
         let hasActiveProject = false;
-        try {
-            const savedProject = localStorage.getItem('activeProject');
-            if (savedProject) {
-                const parsedProject = JSON.parse(savedProject);
-                console.log('[App] Restoring active project:', parsedProject);
-                setActiveProject(parsedProject);
-                hasActiveProject = true;
+        if (!siteFromUrl) {
+            try {
+                const savedProject = localStorage.getItem('activeProject');
+                if (savedProject) {
+                    const parsedProject = JSON.parse(savedProject);
+                    console.log('[App] Restoring active project:', parsedProject);
+                    setActiveProject(parsedProject);
+                    hasActiveProject = true;
+                }
+            } catch (e) {
+                console.error('Failed to restore active project:', e);
             }
-        } catch (e) {
-            console.error('Failed to restore active project:', e);
         }
 
-        // Only restore preview mode if there's an active project
+        // Only restore preview mode if there's an active project (and no URL override)
         const savedShowPreview = localStorage.getItem('showPreview');
         if (savedShowPreview === 'true' && hasActiveProject) {
             setShowPreview(true);
-        } else {
+        } else if (!siteFromUrl) {
             // Default to landing page for first-time visitors or when no project
             setShowPreview(false);
         }
@@ -710,6 +726,59 @@ export default function Home() {
         }
     }, []);
 
+    // Handle ?site= URL parameter (e.g. coming from /projects page)
+    useEffect(() => {
+        const siteKey = searchParams.get('site');
+        if (!siteKey || !isClient) return;
+
+        // Don't re-fetch if we already have this project active
+        if (activeProject?.siteKey === siteKey) {
+            if (!showPreview) {
+                setShowPreview(true);
+                startPreview();
+            }
+            return;
+        }
+
+        (async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('sites')
+                    .select('*')
+                    .eq('site_key', siteKey)
+                    .single();
+
+                if (error || !data) {
+                    console.error('[App] Failed to load project from site param:', error);
+                    return;
+                }
+
+                const project: Project = {
+                    id: data.id,
+                    siteKey: data.site_key,
+                    name: data.name,
+                    repoUrl: data.repo_url,
+                    previewSubdomain: data.preview_subdomain,
+                    branch: data.branch,
+                };
+
+                setActiveProject(project);
+                setActiveSessionId(null); // Clear session for the new project
+                setMessages([]); // Clear messages
+                setPreviewUrl(undefined);
+                setShowPreview(true);
+                startPreview(project);
+
+                // Clean up the ?site= param from URL to prevent stale re-triggers
+                const url = new URL(window.location.href);
+                url.searchParams.delete('site');
+                window.history.replaceState({}, '', url.pathname);
+            } catch (err) {
+                console.error('[App] Error loading project from URL:', err);
+            }
+        })();
+    }, [searchParams, isClient]);
+
     // Load sessions on mount
     useEffect(() => {
         if (isClient) {
@@ -734,10 +803,12 @@ export default function Home() {
             // Don't save previewUrl to localStorage - it's ephemeral (WebContainer URL)
             // and won't work after page refresh. WebContainer will provide a fresh URL on boot.
 
-            // Save active project (or clear if null/undefined? No, only save truthy to persist)
+            // Save active project or clear it from localStorage
             if (activeProject) {
                 console.log('[App] Saving active project:', activeProject);
                 localStorage.setItem('activeProject', JSON.stringify(activeProject));
+            } else {
+                localStorage.removeItem('activeProject');
             }
         }
     }, [isClient, showPreview, isPanelOpen, previewUrl, activeProject, selectedModel]);
@@ -1095,6 +1166,19 @@ export default function Home() {
             }
         }
 
+        // Write uploaded image to WebContainer's public/ folder so AI can reference it in code
+        let uploadedFilePath: string | undefined;
+        if (imageData) {
+            const filename = `upload-${Date.now()}.jpg`;
+            uploadedFilePath = `public/${filename}`;
+            try {
+                const bytes = base64ToUint8Array(imageData);
+                await writeBinaryFile(uploadedFilePath, bytes);
+            } catch (e) {
+                console.error('[Upload] Failed to write image to WebContainer:', e);
+            }
+        }
+
         // Create session if none exists
         let sessionId = activeSessionId;
 
@@ -1202,7 +1286,7 @@ export default function Home() {
                 // Pass sessionId explicitly — on the first message, the hook's sessionId
                 // prop is still null (React hasn't re-rendered yet), so we pass the
                 // locally-created sessionId as an override.
-                await aiChat.sendMessage(content.trim(), imageData, sessionId || undefined);
+                await aiChat.sendMessage(content.trim(), imageData, sessionId || undefined, uploadedFilePath);
 
                 // Don't set isStreaming=false here — useAIChat's onFinish does it
                 // AFTER persisting the message. Setting it here would trigger loadMessages
@@ -1396,7 +1480,7 @@ export default function Home() {
     }, [getFileContext, activeProject, requestContexts]);
 
     // Create a new project from a message
-    const createNewProject = useCallback(async (initialMessage: string) => {
+    const createNewProject = useCallback(async (initialMessage: string, image?: File) => {
         // Don't manage isSending here - handleSendMessage will manage it
         try {
             // Get session to retrieve provider token
@@ -1448,7 +1532,7 @@ export default function Home() {
             // Send the initial message to the AI IMMEDIATELY to show it in UI
             // handleSendMessage will manage isSending state
             // We don't await this because we want to start preview in parallel/after
-            handleSendMessage(initialMessage, undefined, data.project);
+            handleSendMessage(initialMessage, image, data.project);
 
             // Show preview panel but DON'T set URL yet - wait for AI response
             // This prevents showing 502 errors before the AI creates content
@@ -1616,41 +1700,6 @@ export default function Home() {
                                     />
                                 </div>
 
-                                {/* Build-Fix Loop Status */}
-                                {buildFixLoop.state.isRunning && (
-                                    <div className="flex-shrink-0 px-4 py-2 border-t border-[rgba(182,145,97,0.12)]">
-                                        <div className="flex items-center gap-2 text-xs">
-                                            <div className="w-2 h-2 rounded-full animate-pulse bg-[#b69161]" />
-                                            <span className="text-white/60">
-                                                {buildFixLoop.state.status === 'building'
-                                                    ? `Building (attempt ${buildFixLoop.state.attempt}/${buildFixLoop.state.maxAttempts})...`
-                                                    : `Fixing errors (attempt ${buildFixLoop.state.attempt}/${buildFixLoop.state.maxAttempts})...`}
-                                            </span>
-                                        </div>
-                                        {buildFixLoop.state.lastErrors.length > 0 && (
-                                            <div className="mt-1 text-[10px] text-red-400/70 truncate max-w-full">
-                                                {buildFixLoop.state.lastErrors[0]}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                                {buildFixLoop.state.status === 'success' && !buildFixLoop.state.isRunning && (
-                                    <div className="flex-shrink-0 px-4 py-2 border-t border-[rgba(182,145,97,0.12)]">
-                                        <div className="flex items-center gap-2 text-xs text-green-400/80">
-                                            <span>Build passed</span>
-                                            {buildFixLoop.state.attempt > 1 && (
-                                                <span className="text-white/40">after {buildFixLoop.state.attempt} attempts</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                                {buildFixLoop.state.status === 'failed' && !buildFixLoop.state.isRunning && (
-                                    <div className="flex-shrink-0 px-4 py-2 border-t border-[rgba(182,145,97,0.12)]">
-                                        <div className="flex items-center gap-2 text-xs text-red-400/70">
-                                            <span>Build failed after {buildFixLoop.state.attempt} attempts</span>
-                                        </div>
-                                    </div>
-                                )}
                             </>
                         )}
                     </div>
@@ -1676,11 +1725,11 @@ export default function Home() {
                 </div>
             ) : (
                 <LandingPage
-                    onSendMessage={async (content: string) => {
+                    onSendMessage={async (content: string, image?: File) => {
                         // Start preview first
                         await startPreview();
                         // Then send the message
-                        handleSendMessage(content);
+                        handleSendMessage(content, image);
                     }}
                     onCreateProject={createNewProject}
                     onImportRepo={importGitHubRepo}

@@ -262,7 +262,7 @@ function createFallbackProposal(userRequest: string): ProposalResult {
         id: 3,
         title: "Premium & Animated",
         description: "Full premium implementation with GSAP scroll animations, cinematic layout, and polished visual effects.",
-        approach: `Implement "${userRequest}" with premium design: GSAP scroll animations with ScrollTrigger, parallax images, staggered card reveals, word-by-word hero text animation, counter stats with animation, and full responsive design. Choose a design style (solid, gradient, or glass) that best fits the site type. Create 8-10 separate components.`,
+        approach: `Implement "${userRequest}" with premium design: scroll animations, parallax images, staggered reveals, and full responsive design. Choose a unique design style (flat, gradient, bold, editorial, soft, or dark premium) that best fits the site type. Create 7-12 separate component files depending on what the site needs.`,
         complexity: "complex",
         estimatedFiles: 16,
         tradeoffs: {

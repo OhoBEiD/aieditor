@@ -46,10 +46,10 @@ export function readFile(context: FileContext, path: string, startLine?: number,
         const start = Math.max(0, (startLine || 1) - 1);
         const end = Math.min(lines.length, endLine || lines.length);
         const slice = lines.slice(start, end).map((l, i) => `${start + i + 1}: ${l}`).join('\n');
-        return { success: true, data: slice.slice(0, 3000) };
+        return { success: true, data: slice.slice(0, 6000) };
     }
 
-    return { success: true, data: content.slice(0, 4000) };
+    return { success: true, data: content.slice(0, 8000) };
 }
 
 export function writeFile(path: string, content: string): ToolResult {

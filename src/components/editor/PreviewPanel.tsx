@@ -214,11 +214,6 @@ export function PreviewPanel({
     // Supabase connection state
     const supabaseConnection = useSupabaseConnection(projectId);
 
-    // Desktop iframe target resolution
-    const DESKTOP_WIDTH = 1920;
-    const DESKTOP_HEIGHT = 1080;
-
-
     // Mobile iframe target resolution
     const MOBILE_WIDTH = 390;
     const MOBILE_HEIGHT = 844;
@@ -240,11 +235,6 @@ export function PreviewPanel({
 
         return () => resizeObserver.disconnect();
     }, []);
-
-    // Calculate scale factor for desktop mode
-    const desktopScale = containerSize.width > 0 && containerSize.height > 0
-        ? Math.min(containerSize.width / DESKTOP_WIDTH, containerSize.height / DESKTOP_HEIGHT)
-        : 1;
 
     // Calculate scale factor for mobile mode
     const mobileScale = containerSize.width > 0 && containerSize.height > 0
@@ -915,7 +905,7 @@ export function PreviewPanel({
                         style={{ background: 'rgba(44, 36, 24, 0.82)' }}
                     >
                         {/* Phase Loader - show during any loading state */}
-                        {(isLoading || (previewUrl && (!isServerReady || loadState === 'loading'))) && (
+                        {(isLoading || (previewUrl && !isServerReady)) && (
                             <PhaseLoader
                                 logoRef={logoRef}
                                 wcStatus={wcStatus}
@@ -951,41 +941,27 @@ export function PreviewPanel({
                             <div
                                 className="relative w-full h-full flex items-center justify-center transition-opacity duration-500 ease-out"
                                 style={{
-                                    opacity: (isServerReady && loadState !== 'loading' && loadState !== 'error') ? 1 : 0,
-                                    pointerEvents: (isServerReady && loadState !== 'loading' && loadState !== 'error') ? 'auto' : 'none',
+                                    opacity: isServerReady ? 1 : 0,
+                                    pointerEvents: isServerReady ? 'auto' : 'none',
                                 }}
                             >
                                 {/* Render only the active device iframe to prevent resource contention */}
                                 {deviceMode === 'desktop' ? (
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                        <div
+                                    <div className="absolute inset-0 overflow-hidden" style={{ borderRadius: '1rem' }}>
+                                        <iframe
+                                            ref={iframeRef}
+                                            key={`desktop-${iframeKey}`}
+                                            src={getFullPreviewUrl()}
                                             style={{
-                                                width: `${DESKTOP_WIDTH * desktopScale}px`,
-                                                height: `${DESKTOP_HEIGHT * desktopScale}px`,
-                                                borderRadius: '1rem',
-                                                overflow: 'hidden',
-                                                position: 'relative',
+                                                width: '100%',
+                                                height: '100%',
+                                                border: 'none',
                                                 background: 'white',
                                             }}
-                                        >
-                                            <iframe
-                                                ref={iframeRef}
-                                                key={`desktop-${iframeKey}`}
-                                                src={getFullPreviewUrl()}
-                                                style={{
-                                                    width: `${DESKTOP_WIDTH}px`,
-                                                    height: `${DESKTOP_HEIGHT}px`,
-                                                    transform: `scale(${desktopScale})`,
-                                                    transformOrigin: 'top left',
-                                                    border: 'none',
-                                                    borderRadius: '1rem',
-                                                    background: 'white',
-                                                }}
-                                                title="Preview Desktop"
-                                                onLoad={handleIframeLoad}
-                                                onError={handleIframeError}
-                                            />
-                                        </div>
+                                            title="Preview Desktop"
+                                            onLoad={handleIframeLoad}
+                                            onError={handleIframeError}
+                                        />
                                     </div>
                                 ) : (
                                     <div

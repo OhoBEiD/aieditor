@@ -182,7 +182,7 @@ Complexity:
 - simple: 1-2 files, < 5 minutes of work
 - moderate: 3-5 files, needs planning
 - complex: 6+ files, needs exploration + planning + verification`,
-      prompt: message.slice(0, 400),
+      prompt: message.slice(0, 4000),
     });
 
     const text = result.text || "{}";

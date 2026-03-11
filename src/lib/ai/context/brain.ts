@@ -168,7 +168,7 @@ export async function extractAndSaveLearnings(
  */
 export function formatBrainForPrompt(
   entries: BrainEntry[],
-  maxTokens: number = 1500,
+  maxTokens: number = 800,
 ): string {
   if (entries.length === 0) return "";
 
@@ -208,7 +208,7 @@ export function formatBrainForPrompt(
     lines.push(`### ${label}`);
     tokenEstimate += 5;
 
-    for (const entry of entries.slice(0, 5)) {
+    for (const entry of entries.slice(0, 3)) {
       const confidenceTag = entry.confidence >= 0.8 ? " [high confidence]" : "";
       const line = `- ${entry.content}${confidenceTag}`;
       const lineTokens = Math.ceil(line.length / 4);

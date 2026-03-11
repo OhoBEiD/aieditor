@@ -103,6 +103,42 @@ async function deleteFileFromSupabase(projectId: string, path: string) {
 let webcontainerInstance: WebContainer | null = null;
 let bootPromise: Promise<WebContainer> | null = null;
 
+// Track last installed package.json hash to skip redundant npm installs
+let lastPkgHash: number | null = null;
+
+function simpleHash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return hash;
+}
+
+async function shouldSkipInstall(wc: WebContainer): Promise<boolean> {
+    try {
+        const entries = await wc.fs.readdir('/node_modules');
+        if (entries.length < 5) return false; // Too few = broken install
+
+        const pkgJson = await wc.fs.readFile('/package.json', 'utf-8');
+        const currentHash = simpleHash(pkgJson);
+        if (lastPkgHash !== null && lastPkgHash === currentHash) {
+            console.log('📦 Skipping npm install — package.json unchanged');
+            return true;
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+async function recordPkgHash(wc: WebContainer): Promise<void> {
+    try {
+        const pkgJson = await wc.fs.readFile('/package.json', 'utf-8');
+        lastPkgHash = simpleHash(pkgJson);
+    } catch { /* ignore */ }
+}
+
 // SANDBOX_KILL: Tab visibility management constants
 const HIDDEN_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes before killing hidden container
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes of inactivity before killing
@@ -336,6 +372,20 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
         return true;
     }, [boot, mapToProjectPath]);
 
+    // Write a binary file (e.g. images) — skips Supabase persistence
+    const writeBinaryFile = useCallback(async (path: string, data: Uint8Array) => {
+        const mappedPath = mapToProjectPath(path);
+        if (!mappedPath) return false;
+        const wc = await boot();
+        const dir = mappedPath.substring(0, mappedPath.lastIndexOf('/'));
+        if (dir) {
+            await wc.fs.mkdir(dir, { recursive: true });
+        }
+        await wc.fs.writeFile(mappedPath, data);
+        console.log('📁 Wrote binary file:', mappedPath);
+        return true;
+    }, [boot, mapToProjectPath]);
+
     // Read a file
     const readFile = useCallback(async (path: string): Promise<string> => {
         const mappedPath = mapToProjectPath(path);
@@ -375,7 +425,6 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
         const errors: string[] = [];
 
         console.log('🔨 Running npm run build for validation...');
-        setState(s => ({ ...s, status: 'installing' })); // Show as building
 
         try {
             const process = await wc.spawn('npm', ['run', 'build']);
@@ -602,7 +651,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                 await installProcess.output.pipeTo(new WritableStream({
                     write(data) {
                         const cleaned = data.replace(/\x1b\[[0-9;]*[a-zA-Z]|\[[\d;]*[GKH]/g, '').trim();
-                        if (cleaned) {
+                        if (cleaned && !/^[\\|/\-]$/.test(cleaned)) {
                             output.push(cleaned);
                             console.log('[npm install]', cleaned);
                         }
@@ -613,6 +662,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
 
                 if (exitCode === 0) {
                     console.log('📦 Dependencies installed successfully');
+                    await recordPkgHash(wc);
                     return;
                 }
 
@@ -715,9 +765,12 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                     await restoreFilesFromSupabase(wc);
                 }
 
-                setState(s => ({ ...s, status: 'installing' }));
-                console.log('📦 Installing dependencies...');
-                await installDependencies();
+                if (!await shouldSkipInstall(wc)) {
+                    setState(s => ({ ...s, status: 'installing' }));
+                    console.log('📦 Installing dependencies...');
+                    await installDependencies();
+                    await recordPkgHash(wc);
+                }
                 setState(s => ({ ...s, status: 'starting' }));
                 console.log('🚀 Starting dev server...');
                 await startDevServer();
@@ -743,9 +796,12 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                     await restoreFilesFromSupabase(wc);
                 }
 
-                setState(s => ({ ...s, status: 'installing' }));
-                console.log('📦 Installing dependencies...');
-                await installDependencies();
+                if (!await shouldSkipInstall(wc)) {
+                    setState(s => ({ ...s, status: 'installing' }));
+                    console.log('📦 Installing dependencies...');
+                    await installDependencies();
+                    await recordPkgHash(wc);
+                }
                 setState(s => ({ ...s, status: 'starting' }));
                 console.log('🚀 Starting dev server...');
                 await startDevServer();
@@ -784,9 +840,12 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                         await restoreFilesFromSupabase(wc);
                     }
 
-                    setState(s => ({ ...s, status: 'installing' }));
-                    console.log('📦 Installing dependencies...');
-                    await installDependencies();
+                    if (!await shouldSkipInstall(wc)) {
+                        setState(s => ({ ...s, status: 'installing' }));
+                        console.log('📦 Installing dependencies...');
+                        await installDependencies();
+                        await recordPkgHash(wc);
+                    }
                     setState(s => ({ ...s, status: 'starting' }));
                     console.log('🚀 Starting dev server...');
                     await startDevServer();
@@ -856,9 +915,12 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
                 await restoreFilesFromSupabase(wc);
             }
 
-            setState(s => ({ ...s, status: 'installing' }));
-            console.log('📦 Installing dependencies...');
-            await installDependencies();
+            if (!await shouldSkipInstall(wc)) {
+                setState(s => ({ ...s, status: 'installing' }));
+                console.log('📦 Installing dependencies...');
+                await installDependencies();
+                await recordPkgHash(wc);
+            }
 
             setState(s => ({ ...s, status: 'starting' }));
             console.log('🚀 Starting dev server...');
@@ -1070,6 +1132,7 @@ export function useWebContainer(options: UseWebContainerOptions = {}) {
         ...state,
         boot,
         writeFile,
+        writeBinaryFile,
         readFile,
         listFiles,
         getFileContext,

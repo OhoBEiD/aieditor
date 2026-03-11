@@ -4,6 +4,7 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput, type ModelOption } from './MessageInput';
 import { ThinkingSteps, type ThinkingStep } from './ThinkingSteps';
+import { TaskDrawer, type TaskItem } from './TaskDrawer';
 import { Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/lib/supabase/types';
@@ -56,27 +57,22 @@ export function ChatPanel({
     const chatPanelRef = useRef<HTMLDivElement>(null);
 
     // Derive which proposal messages have been selected
-    // Primary: read from message metadata (persisted to Supabase on selection click)
-    // Fallback: scan for "Option X" user messages (backwards compat for older messages)
     const proposalSelections = useMemo(() => {
         const selections: Record<string, number> = {};
         for (let i = 0; i < displayedMessages.length; i++) {
             const msg = displayedMessages[i];
             if (msg.role !== 'assistant') continue;
 
-            // Check metadata first (most reliable — persisted on selection click)
             const meta = msg.metadata as Record<string, any> | null;
             if (meta?.selectedOption) {
                 selections[msg.id] = meta.selectedOption as number;
                 continue;
             }
 
-            // Check if this is a proposal message (ARTIFACT or legacy PROPOSAL_OPTIONS format)
             const isProposal = msg.content.includes('PROPOSAL_OPTIONS')
                 || (msg.content.includes('ARTIFACT') && msg.content.includes('"type":"proposal"'));
 
             if (isProposal) {
-                // Fallback: scan for "Option X" in next user message
                 for (let j = i + 1; j < displayedMessages.length; j++) {
                     const next = displayedMessages[j];
                     if (next.role === 'user') {
@@ -89,6 +85,58 @@ export function ChatPanel({
         }
         return selections;
     }, [displayedMessages]);
+
+    // Derive task list from plan artifacts + thinking step events
+    const derivedTasks = useMemo((): TaskItem[] => {
+        // 1. Find plan artifact in messages (scan all assistant messages for latest plan)
+        let planTasks: Array<{ id: string; description: string }> = [];
+
+        const allMessages = isStreaming ? messages : displayedMessages;
+        for (let i = allMessages.length - 1; i >= 0; i--) {
+            const msg = allMessages[i];
+            if (msg.role !== 'assistant') continue;
+
+            const artifactMatches = msg.content.match(/<!--ARTIFACT:([\s\S]*?)-->/g);
+            if (!artifactMatches) continue;
+
+            for (const match of artifactMatches) {
+                try {
+                    const jsonStr = match.replace('<!--ARTIFACT:', '').replace('-->', '');
+                    const json = JSON.parse(jsonStr);
+                    if (json.type === 'plan' && json.data?.tasks?.length > 0) {
+                        planTasks = json.data.tasks.map((t: any) => ({
+                            id: String(t.id),
+                            description: t.description || `Task ${t.id}`,
+                        }));
+                        break;
+                    }
+                } catch { /* skip malformed */ }
+            }
+            if (planTasks.length > 0) break;
+        }
+
+        if (planTasks.length === 0) return [];
+
+        // 2. Match with thinking step events for status
+        const taskStatuses = new Map<string, 'pending' | 'running' | 'completed' | 'failed'>();
+        for (const step of thinkingSteps) {
+            const toolName = (step.tool_name || step.toolName || '').toLowerCase();
+            const msg = step.message || step.text || '';
+            const idMatch = msg.match(/Task\s+(\d+)/i);
+            if (!idMatch) continue;
+            const taskId = idMatch[1];
+
+            if (toolName.includes('start')) taskStatuses.set(taskId, 'running');
+            if (toolName.includes('complete')) taskStatuses.set(taskId, 'completed');
+            if (toolName.includes('failed')) taskStatuses.set(taskId, 'failed');
+        }
+
+        return planTasks.map(t => ({
+            id: t.id,
+            description: t.description,
+            status: taskStatuses.get(t.id) || 'pending',
+        }));
+    }, [messages, displayedMessages, thinkingSteps, isStreaming]);
 
     useEffect(() => {
         if (isLoadingMessages && messages.length === 0) {
@@ -156,6 +204,12 @@ export function ChatPanel({
                     background-color: rgba(182, 145, 97, 0.40);
                 }
             `}</style>
+
+            {/* Task Drawer — shows above messages during streaming */}
+            <TaskDrawer
+                tasks={derivedTasks}
+                isVisible={(isStreaming || isLoading) && derivedTasks.length > 0}
+            />
 
             {/* Messages */}
             <div className="chat-scrollbar flex-1 overflow-y-auto overflow-x-hidden">

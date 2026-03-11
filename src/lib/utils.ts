@@ -94,6 +94,17 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 /**
+ * Convert a base64 data URL to a Uint8Array for binary file writing.
+ */
+export function base64ToUint8Array(dataUrl: string): Uint8Array {
+    const base64 = dataUrl.replace(/^data:[^;]+;base64,/, '');
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+}
+
+/**
  * Compress an image File for vision model input.
  * Resizes to max dimension, converts to JPEG, returns base64 data URL.
  * Client-side only (uses canvas).

@@ -18,6 +18,10 @@ export interface PlanTask {
   dependencies?: number[];      // IDs of tasks this depends on
   verification: string;         // How to verify this task completed correctly
   complexity: "simple" | "moderate" | "complex";
+  // Detailed executor instructions — the executor follows these precisely
+  instructions: string;         // Step-by-step what the executor must do
+  libraries?: string[];         // npm packages needed (e.g. ["gsap", "framer-motion"])
+  codeHints?: string;           // Key imports, component signatures, code patterns to use
 }
 
 export interface ExecutionPlan {
@@ -55,21 +59,27 @@ You MUST output valid JSON in this exact structure:
   "tasks": [
     {
       "id": 1,
-      "description": "What this task does",
+      "description": "Create globals.css with brand color scheme",
       "type": "create",
-      "files": ["src/lib/utils.ts"],
+      "files": ["src/app/globals.css"],
       "dependencies": [],
-      "verification": "File exports cn() function",
-      "complexity": "simple"
+      "verification": "globals.css has @tailwind directives and CSS variables for brand colors",
+      "complexity": "simple",
+      "instructions": "Write globals.css with: 1) @tailwind base/components/utilities 2) :root CSS variables: --background: #0a0a0a, --foreground: #fafafa, --primary: #6366f1, --primary-foreground: #fff, --muted: #27272a, --muted-foreground: #a1a1aa 3) body base styles with antialiased",
+      "libraries": [],
+      "codeHints": "@tailwind base;\\n@tailwind components;\\n@tailwind utilities;"
     },
     {
       "id": 2,
-      "description": "Create Hero component with animation",
+      "description": "Create Hero component with scroll animation",
       "type": "create",
       "files": ["src/components/Hero.tsx"],
       "dependencies": [1],
-      "verification": "Component renders, imports cn from utils, uses Tailwind",
-      "complexity": "moderate"
+      "verification": "Hero.tsx exports default, uses 'use client', imports gsap",
+      "complexity": "moderate",
+      "instructions": "Create Hero with: 1) 'use client' directive 2) Full-viewport section with bg-[#0a0a0a] 3) h1 'Acme' in text-6xl font-bold text-white 4) Subtitle 'AI-powered solutions' in text-xl text-gray-400 5) Two CTA buttons (Get Started with bg-indigo-500, Learn More with border border-white/20) 6) GSAP fadeUp animation with ScrollTrigger, typeof window guard in useEffect",
+      "libraries": ["gsap"],
+      "codeHints": "import { useEffect, useRef } from 'react';\\nimport gsap from 'gsap';\\nimport { ScrollTrigger } from 'gsap/ScrollTrigger';"
     }
   ],
   "verificationPlan": {
@@ -81,17 +91,52 @@ You MUST output valid JSON in this exact structure:
 }
 \`\`\`
 
+## TASK DETAIL RULES (CRITICAL)
+Each task MUST include these fields:
+- "instructions": Precise step-by-step instructions for a code-writing agent. Include exact content (headings, text, section names), exact styling (colors, spacing, Tailwind classes), and exact behavior (animations, interactions). The executor is a fast model that follows instructions — it does NOT make design decisions.
+- "libraries": Any npm packages the task needs that are NOT already in package.json (empty array if none)
+- "codeHints": Key imports, component signatures, or code patterns the executor should use
+
+Be VERY SPECIFIC in instructions. Instead of "Create a hero section", write "Create a full-viewport hero with: dark bg-[#0a0a0a], centered h1 'Acme' in text-6xl font-bold text-white, subtitle 'AI-powered solutions' in text-xl text-gray-400, two CTA buttons (Get Started primary bg-indigo-500, Learn More outline border-white/20), GSAP fadeUp on scroll."
+
+## DESIGN VARIETY (CRITICAL)
+Do NOT default to the same layout patterns every time. Vary hero designs across projects:
+- Full-screen background image with text overlay and dark gradient overlay
+- Centered text-only with gradient background and animated elements
+- Video or image background with bold typography
+- Asymmetric layouts with text on one side and creative graphics
+- Split hero with angled dividers or clip paths
+Choose the style that best fits the project type and brand. Do NOT always use "text left, image right" split layout.
+
 ## BRAND RULES (CRITICAL)
 - Extract the brand/store/company name from the user's request. If they say "for Furry", the brand is "Furry".
 - Use that EXACT brand name in ALL generated files: navbar logo text, hero heading, footer, layout.tsx metadata title.
 - NEVER invent a different brand name. The user's specified name is the brand identity.
 - If the user specifies a color theme (e.g. "white and green"), include a task to set those exact colors in globals.css.
 
+## DEPENDENCY MANAGEMENT (CRITICAL — prevents missing module errors)
+Pre-installed packages: next, react, react-dom, gsap, lucide-react, motion, lenis
+- If ANY task needs a package NOT in the list above, you MUST include an EARLY task (before component tasks) that updates package.json to add the new dependency
+- The "libraries" field on each task is for documentation — the executor still needs package.json updated
+- Prefer pre-installed packages: use \`motion\` (not framer-motion), \`gsap\` for timelines, \`lenis\` for smooth scroll
+- ONLY use @react-spring/web or animejs if specifically requested — they require adding to package.json first
+
+## "use client" RULES (CRITICAL — prevents hydration errors)
+- Every component using React hooks (useState, useEffect, useRef, etc.), event handlers, animation libraries, or browser APIs MUST have "use client" as line 1
+- Include this in your task instructions: "Add 'use client' directive as line 1"
+- layout.tsx must remain a Server Component — NEVER add "use client" to layout.tsx
+- GSAP/Lenis code must be inside useEffect — never in the component body
+
+## HYDRATION PREVENTION
+- Never instruct nesting <div>/<section>/<h1>-<h6> inside <p> tags
+- Never nest <a> inside <a> or <button> inside <button>
+- For conditional client rendering, use useState + useEffect pattern, NOT typeof window in JSX
+
 ## IMPORTANT
 - For NEW PROJECTS: include config files (package.json, tailwind.config) as task 1
 - For MODIFICATIONS: only plan the files that need to change
 - Use Tailwind CSS, React 18+, TypeScript, Next.js App Router
-- Always include real image URLs using picsum.photos/seed/{keyword}/{w}/{h} — NEVER use unsplash.com
+- Always include real image URLs using \`https://images.unsplash.com/photo-{ID}?w={w}&h={h}&fit=crop\` with REAL photo IDs from the curated bank — NEVER use source.unsplash.com or picsum.photos
 - Keep tasks atomic - each task should be independently verifiable
 
 ## PAGE COMPOSITION (CRITICAL)
@@ -157,7 +202,7 @@ export async function runPlanAgent(
     const recent = conversationHistory.slice(-10);
     prompt += `## Recent Conversation\n`;
     for (const msg of recent) {
-      prompt += `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content.slice(0, 500)}\n`;
+      prompt += `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content.slice(0, 2000)}\n`;
     }
     prompt += "\n";
   }
@@ -300,6 +345,9 @@ function parsePlanOutput(
         dependencies: t.dependencies || [],
         verification: t.verification || "Files created successfully",
         complexity: t.complexity || "moderate",
+        instructions: t.instructions || t.description || `Task ${i + 1}`,
+        libraries: Array.isArray(t.libraries) ? t.libraries : [],
+        codeHints: t.codeHints || "",
       })),
       verificationPlan: plan.verificationPlan || {
         buildMustPass: true,
@@ -330,6 +378,9 @@ function createFallbackPlan(
           files: ["package.json", "tailwind.config.ts", "src/lib/utils.ts", "src/app/globals.css"],
           verification: "Config files exist with correct content",
           complexity: "simple",
+          instructions: "Create package.json with Next.js 14, React 18, Tailwind CSS, TypeScript. Create tailwind.config with content paths. Create globals.css with @tailwind directives. Create utils.ts with cn() helper.",
+          libraries: [],
+          codeHints: "",
         },
         {
           id: 2,
@@ -339,6 +390,9 @@ function createFallbackPlan(
           dependencies: [1],
           verification: "page.tsx imports and renders all created components",
           complexity: "moderate",
+          instructions: `Implement the user's request: ${userRequest}. Create layout.tsx with html/body structure, appropriate fonts, and metadata. Create page.tsx with all necessary sections and components.`,
+          libraries: [],
+          codeHints: "",
         },
       ]
     : [
@@ -349,6 +403,9 @@ function createFallbackPlan(
           files: Array.from(virtualFS.keys()).slice(0, 5),
           verification: "Changes applied correctly",
           complexity: "moderate",
+          instructions: userRequest,
+          libraries: [],
+          codeHints: "",
         },
       ];
 

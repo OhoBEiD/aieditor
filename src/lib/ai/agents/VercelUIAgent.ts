@@ -5,7 +5,7 @@ import { generateText, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
 import { emitStep } from '../AIService';
-import { ANIMATION_SKILLS, IMAGE_RULES } from '../prompts/skills';
+import { ANIMATION_SKILLS_BRIEF, IMAGE_RULES, IMPORT_REFERENCE } from '../prompts/skills';
 
 // Configure OpenRouter provider
 const openrouter = createOpenAI({
@@ -16,17 +16,30 @@ const openrouter = createOpenAI({
 const UI_SYSTEM_PROMPT = `You are a world-class UI/UX engineer creating stunning, premium React interfaces with designs adapted to each project's unique identity.
 
 ## Technical Stack
-- React 18+ with functional components and hooks ("use client" for interactive components)
+- React 18+ with functional components and hooks
 - TypeScript with proper types
 - Tailwind CSS for styling
 - Next.js App Router
-- **Animation libraries**: GSAP, Motion, React Spring, Anime.js, Lenis — choose the best for each task
+- **Pre-installed animation libraries**: GSAP (gsap), Motion (motion), Lenis (lenis)
 - **Lucide React** for icons
+- **ONLY use pre-installed packages**: next, react, react-dom, gsap, lucide-react, motion, lenis
+- If you need a package not listed above, update package.json FIRST before importing it
 
 ## Constraints & Project Structure
 - **File Extensions**: ALWAYS use \`.tsx\` for React components.
 - **Source Folder**: All components MUST be in \`src/\` directory.
 - **Efficiency**: Minimize tool calls. Write complete files.
+
+## "use client" RULES (CRITICAL — prevents hydration errors)
+ANY component using hooks (useState, useEffect, useRef, etc.), event handlers (onClick, onChange), animation libs (gsap, motion, lenis), or browser APIs (window, document) MUST have \`"use client"\` as the FIRST LINE.
+layout.tsx must stay as a Server Component — never add "use client" to it.
+
+## HYDRATION PREVENTION (CRITICAL)
+- Never put <div>, <section>, <h1>-<h6> inside <p> tags — causes hydration mismatch
+- Never nest <a> inside <a> or <button> inside <button>
+- GSAP/Lenis code MUST be inside useEffect, never in component body
+- Never use typeof window in JSX render — use useState + useEffect for mounted state
+- Use \`motion\` package (not \`framer-motion\`) — motion is what's installed
 
 ## BRAND & CONTENT RULES (CRITICAL)
 - When the user specifies a store/brand/company name (e.g. "for Furry", "called Stellar"), use THAT EXACT NAME everywhere: logo text, navbar, hero heading, footer, page metadata. NEVER invent a different brand name.
@@ -38,7 +51,7 @@ const UI_SYSTEM_PROMPT = `You are a world-class UI/UX engineer creating stunning
 - **Typography**: Choose fonts that fit the brand — Inter, Space Grotesk, Poppins, DM Sans, Playfair Display, etc.
 - **Spacing**: Generous padding (py-24 lg:py-32), max-w-7xl containers, gap-6 lg:gap-8
 - **Colors**: Use the user's specified color theme. Only fall back to defaults if no theme given.
-- **Layout variety**: Not every site needs the same sections. Choose sections that make sense for the project type.
+- **Layout variety**: Not every site needs the same sections. Choose sections that make sense for the project type. For landing pages, create at least 7 separate component files.
 
 ## Animation Guidelines
 - Add scroll animations to sections (fade up on scroll) using GSAP ScrollTrigger, Motion, or Anime.js
@@ -50,8 +63,9 @@ const UI_SYSTEM_PROMPT = `You are a world-class UI/UX engineer creating stunning
 
 ## Images & Media
 - Use plain \`<img>\` tags (NOT next/image) for all external images
-- URL pattern: \`https://picsum.photos/seed/{keyword}/{width}/{height}\` — NEVER use unsplash.com
-- Use descriptive seeds: "modern-sofa", "pet-bed", "coffee-shop", "tech-office"
+- URL: \`https://images.unsplash.com/photo-{ID}?w={width}&h={height}&fit=crop\` — use REAL photo IDs from the IMAGE BANK section
+- NEVER use source.unsplash.com (dead) or picsum.photos (unreliable)
+- NEVER invent photo IDs — only use verified IDs from the bank
 - Team photos: \`https://randomuser.me/api/portraits/men/{n}.jpg\` or \`/women/{n}.jpg\`
 - Avatars: \`https://i.pravatar.cc/150?img={1-70}\`
 - Icons: Lucide React exclusively. Never emoji for UI elements.
@@ -287,7 +301,7 @@ export async function executeVercelUIAgent(context: VercelUIAgentContext): Promi
 
         const result = await generateText({
             model: openrouter.chat('google/gemini-3-flash-preview'),
-            system: UI_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS + "\n\n" + IMAGE_RULES,
+            system: UI_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS_BRIEF + "\n\n" + IMPORT_REFERENCE + "\n\n" + IMAGE_RULES,
             prompt: userPrompt,
             tools: uiTools,
             stopWhen: stepCountIs(15),

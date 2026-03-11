@@ -165,7 +165,7 @@ function parseExplorationOutput(
   }
 
   return {
-    summary: text.slice(0, 2000), // Cap at ~2000 chars
+    summary: text.slice(0, 5000), // Cap at ~5000 chars (~1250 tokens)
     relevantFiles,
     patterns,
     suggestions,

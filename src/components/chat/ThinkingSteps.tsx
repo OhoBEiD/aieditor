@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
-import { Loader2, Check, AlertCircle, ChevronDown, Brain, Wrench, FileCode, Search, Globe, Layout, Zap, Settings2, File, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
+import { Loader2, Check, AlertCircle, ChevronDown, Brain, FileCode, Search, Globe, Layout, Zap, Settings2, File, ShieldCheck, Sparkles } from 'lucide-react';
 import { getFileIconUrl } from '@/components/editor/FileTree';
 
 // File icon with fallback
@@ -46,16 +46,16 @@ interface ThinkingStepsProps {
 // --- Step classification helpers ---
 
 const PHASE_TOOLS = new Set(['thinking', 'classifying', 'exploring', 'planning', 'replanning', 'routing', 'verifying', 'replan', 'executing']);
-const TASK_TOOLS = new Set(['task_start', 'task_started', 'task_complete', 'task_completed', 'task_failed']);
+const HIDDEN_TOOLS = new Set(['task_start', 'task_started', 'task_complete', 'task_completed', 'task_failed']);
 const BUILD_TOOLS = new Set(['build_check', 'build_fix', 'build_validation', 'validate_build', 'fix_write', 'fix_edit', 'fix_read', 'fix_search']);
 const LOOKUP_TOOLS = new Set(['list_files', 'grep_search', 'glob_search', 'check_syntax', 'repo_map']);
-const QUALITY_TOOLS = new Set(['quality_check', 'test_gen', 'brain_save']);
+const QUALITY_TOOLS = new Set(['quality_check', 'brain_save']);
 const COMPLETE_TOOLS = new Set(['complete']);
 
 function getStepCategory(step: ThinkingStep): string {
     const name = (step.tool_name || step.toolName || '').toLowerCase();
     if (PHASE_TOOLS.has(name)) return 'phase';
-    if (TASK_TOOLS.has(name)) return 'task';
+    if (HIDDEN_TOOLS.has(name)) return 'hidden';
     if (BUILD_TOOLS.has(name)) return 'build';
     if (LOOKUP_TOOLS.has(name)) return 'lookup';
     if (QUALITY_TOOLS.has(name)) return 'quality';
@@ -97,12 +97,9 @@ function extractDiffStats(step: ThinkingStep): { additions: number; deletions: n
 // --- Grouping logic ---
 
 interface GroupedItem {
-    type: 'phase' | 'file_group' | 'task_group' | 'build_group' | 'quality' | 'complete' | 'lookup_group';
+    type: 'phase' | 'file_group' | 'build_group' | 'quality' | 'complete' | 'lookup_group';
     steps: ThinkingStep[];
     files?: { name: string; step: ThinkingStep; additions: number; deletions: number }[];
-    completed?: number;
-    total?: number;
-    failed?: number;
     buildStatus?: 'passed' | 'failed' | 'running';
     issueCount?: number;
 }
@@ -110,7 +107,6 @@ interface GroupedItem {
 function groupSteps(steps: ThinkingStep[]): GroupedItem[] {
     const groups: GroupedItem[] = [];
     let currentFileSteps: ThinkingStep[] = [];
-    let currentTaskSteps: ThinkingStep[] = [];
     let currentBuildSteps: ThinkingStep[] = [];
     let currentLookupSteps: ThinkingStep[] = [];
 
@@ -134,19 +130,6 @@ function groupSteps(steps: ThinkingStep[]): GroupedItem[] {
             files: Array.from(fileMap.values()),
         });
         currentFileSteps = [];
-    };
-
-    const flushTasks = () => {
-        if (currentTaskSteps.length === 0) return;
-        let completed = 0, total = 0, failed = 0;
-        for (const s of currentTaskSteps) {
-            const name = (s.tool_name || s.toolName || '').toLowerCase();
-            if (name.includes('start')) total++;
-            if (name.includes('complete')) completed++;
-            if (name.includes('failed')) { failed++; total++; }
-        }
-        groups.push({ type: 'task_group', steps: currentTaskSteps, completed, total, failed });
-        currentTaskSteps = [];
     };
 
     const flushBuild = () => {
@@ -173,29 +156,26 @@ function groupSteps(steps: ThinkingStep[]): GroupedItem[] {
 
     for (const step of steps) {
         const cat = getStepCategory(step);
-        if (cat === 'hidden') continue;
+        if (cat === 'hidden' || cat === 'other') continue;
 
         if (cat === 'file') {
-            flushTasks(); flushBuild(); flushLookups();
+            flushBuild(); flushLookups();
             currentFileSteps.push(step);
-        } else if (cat === 'task') {
-            flushFiles(); flushBuild(); flushLookups();
-            currentTaskSteps.push(step);
         } else if (cat === 'build') {
-            flushFiles(); flushTasks(); flushLookups();
+            flushFiles(); flushLookups();
             currentBuildSteps.push(step);
         } else if (cat === 'lookup') {
-            flushFiles(); flushTasks(); flushBuild();
+            flushFiles(); flushBuild();
             currentLookupSteps.push(step);
         } else {
-            flushFiles(); flushTasks(); flushBuild(); flushLookups();
+            flushFiles(); flushBuild(); flushLookups();
             if (cat === 'phase' || cat === 'quality' || cat === 'complete') {
                 groups.push({ type: cat as any, steps: [step] });
             }
         }
     }
 
-    flushFiles(); flushTasks(); flushBuild(); flushLookups();
+    flushFiles(); flushBuild(); flushLookups();
     return groups;
 }
 
@@ -288,7 +268,7 @@ function StreamingText({ text, isStreaming }: { text: string; isStreaming: boole
     );
 }
 
-// --- Reusable StepCard matching ArtifactCard design ---
+// --- Reusable StepCard ---
 
 function StepCard({
     icon,
@@ -471,7 +451,6 @@ export function ThinkingSteps({ steps, isComplete = false, thinking = [], onFile
                             else if (step.details && Object.keys(step.details).length > 0) stepDetails = JSON.stringify(step.details, null, 2);
                             const hasMeaningfulDetails = stepDetails && stepDetails !== '{}';
 
-                            // Get phase-specific styling
                             let icon: React.ReactNode;
                             let badge: string;
                             let iconBg: string;
@@ -520,38 +499,30 @@ export function ThinkingSteps({ steps, isComplete = false, thinking = [], onFile
                             );
                         }
 
-                        // --- File operations group ---
+                        // --- File operations — always visible with per-file loaders ---
                         if (group.type === 'file_group') {
                             const files = group.files || [];
-                            const totalAdditions = files.reduce((sum, f) => sum + f.additions, 0);
-                            const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);
-                            const anyRunning = group.steps.some(s => s.status === 'running' || s.status === 'pending');
-
-                            const diffBadge = [
-                                totalAdditions > 0 ? `+${totalAdditions}` : '',
-                                totalDeletions > 0 ? `-${totalDeletions}` : '',
-                            ].filter(Boolean).join(' ');
+                            if (files.length === 0) return null;
 
                             return (
-                                <StepCard
-                                    key={gIdx}
-                                    icon={<FileCode className="w-3.5 h-3.5" />}
-                                    iconBg="bg-emerald-400/10"
-                                    iconColor="text-emerald-400"
-                                    title={`${files.length} file${files.length !== 1 ? 's' : ''}`}
-                                    badge={diffBadge || undefined}
-                                    badgeColor={totalDeletions > 0 ? 'text-white/40' : 'text-emerald-400'}
-                                    isExpanded={isGroupExpanded}
-                                    onToggle={() => toggleGroup(gIdx)}
-                                    status={anyRunning ? 'running' : 'complete'}
-                                >
-                                    <div className="space-y-0.5">
+                                <div key={gIdx} className="rounded-xl overflow-hidden dark-glass-subtle">
+                                    <div className="px-3.5 py-2 space-y-0.5">
                                         {files.map((file, fIdx) => (
                                             <button
                                                 key={fIdx}
                                                 onClick={() => onFileClick?.(file.name)}
                                                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors text-left"
                                             >
+                                                {/* Per-file status indicator */}
+                                                <div className="w-4 h-4 flex items-center justify-center shrink-0">
+                                                    {file.step.status === 'running' || file.step.status === 'pending' ? (
+                                                        <Loader2 className="w-3 h-3 animate-spin text-[#c9a474]" />
+                                                    ) : file.step.status === 'error' ? (
+                                                        <AlertCircle className="w-3 h-3 text-red-400" />
+                                                    ) : (
+                                                        <Check className="w-3 h-3 text-emerald-400" />
+                                                    )}
+                                                </div>
                                                 <StepFileIcon fileName={file.name} />
                                                 <span className="text-[11px] text-white/70 truncate flex-1">{file.name}</span>
                                                 {(file.additions > 0 || file.deletions > 0) && (
@@ -563,49 +534,7 @@ export function ThinkingSteps({ steps, isComplete = false, thinking = [], onFile
                                             </button>
                                         ))}
                                     </div>
-                                </StepCard>
-                            );
-                        }
-
-                        // --- Task group ---
-                        if (group.type === 'task_group') {
-                            const { completed = 0, total = 0, failed = 0 } = group;
-                            const anyRunning = group.steps.some(s => s.status === 'running' || s.status === 'pending');
-                            const allDone = completed + failed >= total;
-
-                            const title = anyRunning
-                                ? `Running tasks (${completed}/${total})`
-                                : `Completed ${completed}/${total} tasks`;
-                            const badge = failed > 0 ? `${failed} FAILED` : `${completed}/${total}`;
-
-                            return (
-                                <StepCard
-                                    key={gIdx}
-                                    icon={<Zap className="w-3.5 h-3.5" />}
-                                    iconBg="bg-amber-400/10"
-                                    iconColor="text-amber-400"
-                                    title={title}
-                                    badge={badge}
-                                    badgeColor={failed > 0 ? 'text-red-400' : 'text-white/40'}
-                                    isExpanded={isGroupExpanded}
-                                    onToggle={() => toggleGroup(gIdx)}
-                                    status={anyRunning ? 'running' : allDone && failed === 0 ? 'complete' : 'error'}
-                                >
-                                    <div className="space-y-0.5">
-                                        {group.steps.filter(s => {
-                                            const n = (s.tool_name || s.toolName || '').toLowerCase();
-                                            return n.includes('start');
-                                        }).map((s, tIdx) => {
-                                            const text = s.message || s.text || '';
-                                            return (
-                                                <div key={tIdx} className="flex items-center gap-2 px-2 py-1 text-[11px] text-white/70">
-                                                    <Zap className="w-3 h-3 text-amber-500 shrink-0" />
-                                                    <span className="truncate">{text}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </StepCard>
+                                </div>
                             );
                         }
 

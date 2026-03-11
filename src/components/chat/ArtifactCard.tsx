@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import {
-    ListChecks, Eye, BarChart3, Camera, TestTube, Brain, GitCompare,
+    ListChecks, Eye, BarChart3, Camera, Brain, GitCompare,
     ChevronDown, Check, X, AlertTriangle, FileCode
 } from 'lucide-react';
 import type { Artifact, ArtifactType } from '@/lib/ai/artifacts/types';
@@ -13,7 +13,7 @@ const artifactMeta: Record<ArtifactType, { icon: React.ReactNode; color: string;
     component_preview: { icon: <Eye className="w-3.5 h-3.5" />, color: 'text-violet-600', bg: 'bg-violet-50' },
     quality_report: { icon: <BarChart3 className="w-3.5 h-3.5" />, color: 'text-amber-600', bg: 'bg-amber-50' },
     screenshot: { icon: <Camera className="w-3.5 h-3.5" />, color: 'text-teal-600', bg: 'bg-teal-50' },
-    test_result: { icon: <TestTube className="w-3.5 h-3.5" />, color: 'text-green-600', bg: 'bg-green-50' },
+    test_result: { icon: <ListChecks className="w-3.5 h-3.5" />, color: 'text-green-600', bg: 'bg-green-50' },
     brain_update: { icon: <Brain className="w-3.5 h-3.5" />, color: 'text-purple-600', bg: 'bg-purple-50' },
     diff: { icon: <FileCode className="w-3.5 h-3.5" />, color: 'text-[#b69161]', bg: 'bg-[#b69161]/10' },
     branch_comparison: { icon: <GitCompare className="w-3.5 h-3.5" />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
@@ -27,6 +27,9 @@ interface ArtifactCardProps {
 export function ArtifactCard({ artifact }: ArtifactCardProps) {
     const [expanded, setExpanded] = useState(false);
     const meta = artifactMeta[artifact.type] || artifactMeta.diff;
+
+    // Skip plan and test_result artifacts (plan is shown in TaskDrawer, tests removed)
+    if (artifact.type === 'plan' || artifact.type === 'test_result') return null;
 
     return (
         <div className="my-2 rounded-xl overflow-hidden border border-[#b69161]/12 bg-white/70 backdrop-blur-sm">
@@ -53,10 +56,8 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
             {/* Expanded content */}
             {expanded && (
                 <div className="px-3.5 pb-3 border-t border-[#b69161]/8 pt-2.5 animate-slide-up">
-                    {artifact.type === 'plan' && <PlanContent data={artifact.data as any} />}
                     {artifact.type === 'quality_report' && <QualityContent data={artifact.data as any} />}
                     {artifact.type === 'branch_comparison' && <BranchContent data={artifact.data as any} />}
-                    {artifact.type === 'test_result' && <TestContent data={artifact.data as any} />}
                     {artifact.type === 'brain_update' && <BrainContent data={artifact.data as any} />}
                     {artifact.type === 'screenshot' && <ScreenshotContent data={artifact.data as any} />}
                     {(artifact.type === 'diff' || artifact.type === 'component_preview') && (
@@ -64,30 +65,6 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
                     )}
                 </div>
             )}
-        </div>
-    );
-}
-
-function PlanContent({ data }: { data: { tasks: Array<{ id: string; description: string; status: string; complexity: string }> } }) {
-    return (
-        <div className="space-y-1.5">
-            {data.tasks.map((task, i) => (
-                <div key={task.id || i} className="flex items-start gap-2">
-                    <div className={cn(
-                        'mt-0.5 w-4 h-4 rounded-full flex items-center justify-center shrink-0',
-                        task.status === 'completed' ? 'bg-emerald-100 text-emerald-600' :
-                        task.status === 'in_progress' ? 'bg-blue-100 text-blue-600' :
-                        task.status === 'failed' ? 'bg-red-100 text-red-500' :
-                        'bg-[#d6cfc9]/40 text-[#84745b]',
-                    )}>
-                        {task.status === 'completed' ? <Check className="w-2.5 h-2.5" /> :
-                         task.status === 'failed' ? <X className="w-2.5 h-2.5" /> :
-                         <span className="w-1.5 h-1.5 rounded-full bg-current" />}
-                    </div>
-                    <span className="text-[11px] text-[#4a3f32] leading-relaxed">{task.description}</span>
-                    <span className="ml-auto text-[9px] text-[#84745b] shrink-0">{task.complexity}</span>
-                </div>
-            ))}
         </div>
     );
 }
@@ -133,20 +110,6 @@ function BranchContent({ data }: { data: { branches: Array<{ id: number; strateg
                 </div>
             ))}
             {data.reason && <p className="text-[10px] text-[#84745b] leading-relaxed">{data.reason}</p>}
-        </div>
-    );
-}
-
-function TestContent({ data }: { data: { testsGenerated: number; testFiles: Array<{ path: string; testCount: number }> } }) {
-    return (
-        <div className="space-y-1">
-            {data.testFiles.map((file, i) => (
-                <div key={i} className="flex items-center gap-2 text-[11px]">
-                    <TestTube className="w-3 h-3 text-green-500 shrink-0" />
-                    <span className="text-[#4a3f32] truncate flex-1">{file.path}</span>
-                    <span className="text-[#84745b] shrink-0">{file.testCount} tests</span>
-                </div>
-            ))}
         </div>
     );
 }

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \":*)",
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:cursor.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(wc -l /Users/omarobeid/Desktop/Projects/aieditor/src/lib/ai/agents/*.ts)",
+      "Read(//Users/omarobeid/Desktop/Projects/automate-ide/test/mcp/src/**)"
+    ]
+  }
+}

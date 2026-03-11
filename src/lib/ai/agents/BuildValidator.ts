@@ -3,7 +3,7 @@
 // classifies them, and generates targeted fixes. Loops up to 3 times.
 
 import { generateText, stepCountIs } from "ai";
-import { selectModel } from "../router";
+import { selectModel, type UserModel } from "../router";
 import { createEnhancedTools, type FileOperation } from "../tools/enhanced-tools";
 import { classifyErrors, type ClassifiedError } from "./ErrorClassifier";
 
@@ -21,28 +21,32 @@ export interface BuildValidationResult {
 
 const FIXER_SYSTEM_PROMPT = `You are an expert code fixer for Next.js/React projects. You receive specific build/syntax errors and must fix them precisely.
 
-## RULES
-1. Fix ONLY the errors listed. Do not refactor or improve other code.
-2. File contents are provided with each error — use them to understand context immediately.
-3. For import errors (missing_import): use grep_files to search for the correct export name across the codebase, then use edit_file to fix the import path. Common patterns:
-   - "@/components/ui" might export from "@/components/ui/index.ts" or individual files
-   - A component might have been created in a different path than expected
-   - Try searching for "export.*ComponentName" to find where it's actually exported
-4. For type errors: read the type definition, then align the usage.
-5. For syntax errors: fix the exact issue at the reported line.
-6. For "use client" missing: add "use client" as the very first line of the file using edit_file.
-7. For missing files: check if the file was renamed, or create it with write_file if truly missing.
-8. For "Unsupported Server Component type: undefined" or undefined exports:
-   - This means a component's default export is undefined at runtime.
-   - Read the file and check if it has a valid "export default function ComponentName() { return (...) }".
-   - Check if the component name in "export default X;" matches an actual function/const defined in the file.
-   - If the component is imported then re-exported, verify the source file actually exports it.
-   - Fix by ensuring every component file has a properly defined and exported React component.
-9. For missing default exports in page.tsx/layout.tsx:
-   - Next.js requires these files to have a default export.
-   - Add "export default function Page() { return (...) }" or add "export default" before the component.
+## WORKFLOW (follow this order for EVERY error)
+1. **READ** the file with read_file to understand the full context around the error
+2. **SEARCH** if needed — for import errors, use grep_files to find where the export actually lives (e.g. "export.*ComponentName")
+3. **FIX** using edit_file (for surgical changes) or write_file (for rewrites). You MUST call a file tool.
+4. Move to the next error and repeat.
 
-IMPORTANT: You MUST use write_file or edit_file tools to apply fixes. Do NOT just describe fixes in text — actually apply them using the tools. Fix EVERY error listed, not just some of them. Read files first to understand the full context before making changes.
+## ERROR-SPECIFIC FIXES
+- **missing_import**: grep_files for the export name, then fix the import path with edit_file. Check @/components/*, @/lib/*, and subdirectories. For npm packages, verify the import path is correct (see IMPORT PATTERNS below).
+- **missing_dependency**: First check if it's a wrong import path (e.g., "framer-motion" should be "motion/react"). If genuinely missing, add to package.json.
+- **syntax_error**: Read the file, find unbalanced braces/parens, fix with edit_file.
+- **missing_directive**: Add "use client" as line 1 with edit_file.
+- **runtime_error** (webpack "Cannot read properties of undefined" or wrong import): Check import patterns:
+  - gsap: MUST be \`import gsap from "gsap"\` (default), NOT \`import { gsap } from "gsap"\`
+  - gsap/ScrollTrigger: MUST be \`import { ScrollTrigger } from "gsap/ScrollTrigger"\` (named)
+  - motion: MUST be \`import { motion } from "motion/react"\`, NOT from "motion" or "framer-motion"
+  - lenis: \`import { ReactLenis, useLenis } from "lenis/react"\`, NOT from "lenis"
+  - lucide-react: \`import { Icon } from "lucide-react"\` (named only)
+  Read the file, find the wrong import, and fix it.
+- **runtime_error** (undefined export): Read the file, ensure a valid "export default function" exists.
+- **layout_error**: Ensure layout.tsx has <html> and <body> tags.
+- **type errors**: Read the type definition, then fix the usage.
+
+## CRITICAL RULES
+- You MUST use write_file or edit_file tools. Do NOT describe fixes in text only.
+- Fix EVERY error listed, not just some of them.
+- Read files first to understand context before editing.
 
 ## RESPONSE
 After fixing all errors with tools, respond with a brief summary of what was fixed.`;
@@ -55,6 +59,7 @@ export async function runBuildValidationLoop(
   emitStep: (stepNum: number, toolName: string, status: string, message: string, details?: any) => Promise<void>,
   stepBase: number,
   maxIterations: number = 3,
+  selectedModel?: UserModel,
 ): Promise<BuildValidationResult> {
   let allFixOps: FileOperation[] = [];
   let currentErrors: ClassifiedError[] = [];
@@ -85,7 +90,7 @@ export async function runBuildValidationLoop(
   // Fix loop: attempt fixes, then re-validate
   for (let fixAttempt = 0; fixAttempt < maxFixAttempts; fixAttempt++) {
     // Attempt to fix errors using the Fixer Agent
-    const fixResult = await runFixerAgent(virtualFS, currentErrors, emitStep, stepCounter);
+    const fixResult = await runFixerAgent(virtualFS, currentErrors, emitStep, stepCounter, false, selectedModel);
     stepCounter = fixResult.nextStep;
     allFixOps.push(...fixResult.fileOperations);
 
@@ -93,7 +98,7 @@ export async function runBuildValidationLoop(
       // Fixer couldn't make any changes — retry once with explicit prompt
       if (!fixResult.retried) {
         await emitStep(stepCounter++, "build_fix", "running", "Retrying fix with explicit instructions...");
-        const retryResult = await runFixerAgent(virtualFS, currentErrors, emitStep, stepCounter, true);
+        const retryResult = await runFixerAgent(virtualFS, currentErrors, emitStep, stepCounter, true, selectedModel);
         stepCounter = retryResult.nextStep;
         allFixOps.push(...retryResult.fileOperations);
 
@@ -153,6 +158,10 @@ export function validateBuild(virtualFS: Map<string, string>): ClassifiedError[]
     const importErrors = validateImports(path, content, virtualFS);
     errors.push(...importErrors);
 
+    // Check import specifier correctness (default vs named, correct subpaths)
+    const specifierErrors = validateImportSpecifiers(path, content);
+    errors.push(...specifierErrors);
+
     // Check for syntax issues
     const syntaxErrors = validateSyntax(path, content);
     errors.push(...syntaxErrors);
@@ -198,8 +207,22 @@ function validateImports(path: string, content: string, virtualFS: Map<string, s
 
     const importPath = importMatch[1];
 
-    // Skip external packages
-    if (!importPath.startsWith(".") && !importPath.startsWith("@/") && !importPath.startsWith("~/")) continue;
+    // Check npm packages against package.json
+    if (!importPath.startsWith(".") && !importPath.startsWith("@/") && !importPath.startsWith("~/")) {
+      // Validate that the npm package exists in package.json
+      const packageName = getPackageName(importPath);
+      if (!isPackageInstalled(packageName, virtualFS)) {
+        errors.push({
+          type: "missing_dependency",
+          file: path,
+          line: i + 1,
+          message: `Package "${packageName}" is imported but not listed in package.json`,
+          fixStrategy: `Add "${packageName}" to package.json dependencies. Read package.json first, then add the package with a reasonable version.`,
+          severity: "error",
+        });
+      }
+      continue;
+    }
 
     // Try to resolve the import
     const resolved = resolveImportPath(importPath, path, virtualFS);
@@ -214,6 +237,145 @@ function validateImports(path: string, content: string, virtualFS: Map<string, s
         line: i + 1,
         message: `Import "${importPath}" not found (importing ${importedNames})`,
         fixStrategy: `Find the correct path for "${importPath}" using grep, then fix the import in ${path} line ${i + 1}`,
+        severity: "error",
+      });
+    }
+  }
+
+  return errors;
+}
+
+// --- Import Specifier Validation (default vs named, correct subpaths) ---
+
+interface ImportPattern {
+  importType: "default" | "named";
+  validSubpaths?: Record<string, "default" | "named">;
+  invalidSubpaths?: string[];
+  requiredSubpath?: string;
+}
+
+const KNOWN_IMPORT_PATTERNS: Record<string, ImportPattern> = {
+  gsap: {
+    importType: "default", // import gsap from "gsap" — NOT { gsap }
+    validSubpaths: {
+      "gsap/ScrollTrigger": "named",
+      "gsap/Flip": "named",
+      "gsap/TextPlugin": "named",
+      "gsap/MotionPathPlugin": "named",
+      "gsap/Observer": "named",
+      "gsap/Draggable": "named",
+      "gsap/EasePack": "named",
+    },
+  },
+  motion: {
+    importType: "named",
+    requiredSubpath: "motion/react", // base "motion" doesn't export React components
+    validSubpaths: { "motion/react": "named" },
+    invalidSubpaths: ["motion/react-client"],
+  },
+  lenis: {
+    importType: "default", // import Lenis from "lenis"
+    validSubpaths: { "lenis/react": "named" },
+  },
+  "lucide-react": {
+    importType: "named", // import { Icon } from "lucide-react"
+  },
+};
+
+function validateImportSpecifiers(path: string, content: string): ClassifiedError[] {
+  const errors: ClassifiedError[] = [];
+  const lines = content.split("\n");
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line.startsWith("import") || line.startsWith("import type")) continue;
+
+    // Parse import statement
+    const defaultMatch = line.match(/^import\s+(\w+)\s+from\s+["']([^"']+)["']/);
+    const namedMatch = line.match(/^import\s+\{([^}]+)\}\s+from\s+["']([^"']+)["']/);
+    const mixedMatch = line.match(/^import\s+(\w+)\s*,\s*\{([^}]+)\}\s+from\s+["']([^"']+)["']/);
+
+    let importPath: string | null = null;
+    let isDefault = false;
+    let isNamed = false;
+
+    if (mixedMatch) {
+      importPath = mixedMatch[3];
+      isDefault = true;
+      isNamed = true;
+    } else if (defaultMatch) {
+      importPath = defaultMatch[2];
+      isDefault = true;
+    } else if (namedMatch) {
+      importPath = namedMatch[2];
+      isNamed = true;
+    }
+
+    if (!importPath) continue;
+
+    const packageName = getPackageName(importPath);
+    const pattern = KNOWN_IMPORT_PATTERNS[packageName];
+    if (!pattern) continue;
+
+    // Check: using base path when requiredSubpath is set
+    if (pattern.requiredSubpath && importPath === packageName) {
+      errors.push({
+        type: "runtime_error",
+        file: path,
+        line: i + 1,
+        message: `Import from "${packageName}" should use "${pattern.requiredSubpath}" — base path causes webpack runtime crash`,
+        fixStrategy: `Change import path from "${packageName}" to "${pattern.requiredSubpath}" in ${path} line ${i + 1}`,
+        severity: "error",
+      });
+      continue;
+    }
+
+    // Check: invalid subpath
+    if (pattern.invalidSubpaths?.includes(importPath)) {
+      const suggested = pattern.requiredSubpath || packageName;
+      errors.push({
+        type: "runtime_error",
+        file: path,
+        line: i + 1,
+        message: `"${importPath}" is not a valid import path — use "${suggested}" instead`,
+        fixStrategy: `Change import path from "${importPath}" to "${suggested}" in ${path} line ${i + 1}`,
+        severity: "error",
+      });
+      continue;
+    }
+
+    // Determine expected export type for this import path
+    let expectedType: "default" | "named" | undefined;
+    if (importPath === packageName) {
+      expectedType = pattern.importType;
+    } else if (importPath === pattern.requiredSubpath) {
+      expectedType = pattern.validSubpaths?.[importPath] || pattern.importType;
+    } else if (pattern.validSubpaths?.[importPath]) {
+      expectedType = pattern.validSubpaths[importPath];
+    }
+
+    if (!expectedType) continue;
+
+    // Check: named import of a default-only export
+    if (expectedType === "default" && isNamed && !isDefault) {
+      errors.push({
+        type: "runtime_error",
+        file: path,
+        line: i + 1,
+        message: `"${importPath}" uses a default export — use \`import ${packageName} from "${importPath}"\` instead of destructured import`,
+        fixStrategy: `Change to default import: \`import ${packageName} from "${importPath}"\` in ${path} line ${i + 1}`,
+        severity: "error",
+      });
+    }
+
+    // Check: default import of a named-only export
+    if (expectedType === "named" && isDefault && !isNamed) {
+      errors.push({
+        type: "runtime_error",
+        file: path,
+        line: i + 1,
+        message: `"${importPath}" uses named exports — use \`import { ... } from "${importPath}"\` instead of default import`,
+        fixStrategy: `Change to named import in ${path} line ${i + 1}. Example: import { motion, AnimatePresence } from "motion/react"`,
         severity: "error",
       });
     }
@@ -393,6 +555,58 @@ function validateReact(path: string, content: string): ClassifiedError[] {
       message: 'Uses React hooks or animation libraries but missing "use client" directive',
       fixStrategy: `Add "use client" as the first line of ${path}`,
       severity: "error",
+    });
+  }
+
+  // Check for event handlers without "use client"
+  const hasEventHandlers = /\bon(?:Click|Change|Submit|MouseEnter|MouseLeave|MouseMove|KeyDown|KeyUp|Scroll|Focus|Blur|Input|TouchStart|TouchEnd)\s*=\s*\{/.test(content);
+  if (hasEventHandlers && !isClientComponent) {
+    errors.push({
+      type: "missing_directive",
+      file: path,
+      line: 1,
+      message: 'Uses event handlers (onClick, onChange, etc.) but missing "use client" directive',
+      fixStrategy: `Add "use client" as the first line of ${path}`,
+      severity: "error",
+    });
+  }
+
+  // Check for hydration-prone HTML nesting: <p> containing block-level elements
+  const pWithBlockContent = /<p[\s>][^]*?<(?:div|section|h[1-6]|ul|ol|li|table|form|blockquote|pre|hr|article|aside|header|footer|nav|main|figure)[\s>]/;
+  if (pWithBlockContent.test(content)) {
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (/<p[\s>]/.test(lines[i])) {
+        // Scan forward for block elements before closing </p>
+        let depth = 0;
+        for (let j = i; j < Math.min(i + 20, lines.length); j++) {
+          if (/<p[\s>]/.test(lines[j])) depth++;
+          if (/<\/p>/.test(lines[j])) { depth--; if (depth <= 0) break; }
+          if (j > i && /<(?:div|section|h[1-6]|ul|ol|table|form|blockquote)[\s>]/.test(lines[j])) {
+            errors.push({
+              type: "runtime_error",
+              file: path,
+              line: i + 1,
+              message: `<p> tag contains block-level element — causes React hydration error`,
+              fixStrategy: `In ${path} around line ${i + 1}, change the <p> wrapper to <div> to avoid hydration mismatch`,
+              severity: "error",
+            });
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Check for "use client" on layout.tsx (it should be a server component)
+  if (path.includes("layout.tsx") && isClientComponent) {
+    errors.push({
+      type: "runtime_error",
+      file: path,
+      line: 1,
+      message: 'layout.tsx should NOT have "use client" — it must be a Server Component in Next.js App Router',
+      fixStrategy: `Remove the "use client" directive from ${path}. If you need client-side interactivity in layout, extract it to a separate client component.`,
+      severity: "warning",
     });
   }
 
@@ -585,8 +799,9 @@ export async function runFixerAgent(
   emitStep: (stepNum: number, toolName: string, status: string, message: string, details?: any) => Promise<void>,
   stepBase: number,
   forceExplicit: boolean = false,
+  selectedModel?: UserModel,
 ): Promise<{ fileOperations: FileOperation[]; nextStep: number; retried: boolean }> {
-  const config = selectModel("execute", "moderate");
+  const config = selectModel("fix");
   const tools = createEnhancedTools(virtualFS);
   const fileOperations: FileOperation[] = [];
   let stepCounter = stepBase;
@@ -600,8 +815,8 @@ export async function runFixerAgent(
       const fileContent = virtualFS.get(e.file);
       if (fileContent && e.line) {
         const lines = fileContent.split("\n");
-        const start = Math.max(0, e.line - 6);
-        const end = Math.min(lines.length, e.line + 5);
+        const start = Math.max(0, e.line - 20);
+        const end = Math.min(lines.length, e.line + 19);
         context = `\n   File context (${e.file} lines ${start + 1}-${end}):\n${lines.slice(start, end).map((l, idx) => `   ${start + idx + 1}${start + idx + 1 === e.line ? " >>>" : "    "} ${l}`).join("\n")}`;
       }
       return `${i + 1}. [${e.type}] ${e.file}:${e.line} — ${e.message}\n   Fix: ${e.fixStrategy}${context}`;
@@ -624,7 +839,7 @@ export async function runFixerAgent(
       system: FIXER_SYSTEM_PROMPT,
       prompt,
       tools,
-      stopWhen: stepCountIs(Math.min(errors.length * 4, 16)),
+      stopWhen: stepCountIs(Math.min(errors.length * 5, 25)),
       onStepFinish: async (step) => {
         const toolCalls = Array.isArray(step.toolCalls) ? step.toolCalls : [];
         for (const tc of toolCalls) {
@@ -662,6 +877,54 @@ export async function runFixerAgent(
 }
 
 // --- Helpers ---
+
+// --- NPM Package Validation Helpers ---
+
+/** Extract the package name from an import path (e.g. "@react-spring/web" → "@react-spring/web", "gsap/ScrollTrigger" → "gsap") */
+function getPackageName(importPath: string): string {
+  if (importPath.startsWith("@")) {
+    // Scoped package: @scope/name or @scope/name/subpath
+    const parts = importPath.split("/");
+    return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : importPath;
+  }
+  // Regular package: name or name/subpath
+  return importPath.split("/")[0];
+}
+
+/** Known built-in Node/Next.js modules that don't need to be in package.json */
+const BUILTIN_MODULES = new Set([
+  "react", "react-dom", "next", "fs", "path", "os", "crypto", "stream", "util", "url",
+  "http", "https", "events", "buffer", "querystring", "child_process", "assert",
+  "next/font", "next/font/google", "next/font/local", "next/image", "next/link",
+  "next/navigation", "next/router", "next/head", "next/script", "next/dynamic",
+  "next/server", "next/headers", "next/cache", "react/jsx-runtime",
+]);
+
+/** Check if a package is available (in package.json or is a built-in) */
+function isPackageInstalled(packageName: string, virtualFS: Map<string, string>): boolean {
+  // Built-in modules are always available
+  if (BUILTIN_MODULES.has(packageName)) return true;
+  // next/* subpaths are always available
+  if (packageName.startsWith("next/")) return true;
+  // react/* subpaths
+  if (packageName.startsWith("react/") || packageName.startsWith("react-dom/")) return true;
+
+  // Parse package.json to check dependencies
+  const pkgJsonContent = virtualFS.get("package.json");
+  if (!pkgJsonContent) return true; // If no package.json, skip validation
+
+  try {
+    const pkg = JSON.parse(pkgJsonContent);
+    const allDeps = {
+      ...pkg.dependencies,
+      ...pkg.devDependencies,
+      ...pkg.peerDependencies,
+    };
+    return packageName in allDeps;
+  } catch {
+    return true; // If package.json is malformed, skip validation
+  }
+}
 
 function shouldSkipValidation(path: string): boolean {
   return (

@@ -60,11 +60,11 @@ export async function saveConversationMemory(params: SaveConversationParams): Pr
       memory_type: "conversation",
       content,
       content_json: {
-        userMessage: userMessage.slice(0, 500),
+        userMessage: userMessage.slice(0, 1000),
         classificationType: classification.type,
         complexity: classification.complexity,
         selectedApproach: selectedApproach || null,
-        planSummary: planSummary?.slice(0, 300) || null,
+        planSummary: planSummary?.slice(0, 500) || null,
         filesChanged: filesChanged.slice(0, 20),
       },
       sequence_number: sequenceNumber,
@@ -117,7 +117,7 @@ export async function loadConversationMemory(params: {
  */
 export function formatMemoryForPrompt(
   memories: ConversationMemoryEntry[],
-  maxEntries: number = 8,
+  maxEntries: number = 5,
 ): string {
   if (memories.length === 0) return "";
 
@@ -130,11 +130,11 @@ export function formatMemoryForPrompt(
     const json = mem.content_json as Record<string, any> | null;
     if (json?.userMessage) {
       const summary = json.planSummary
-        ? `User asked: "${json.userMessage.slice(0, 100)}". Built: ${json.planSummary.slice(0, 100)}`
-        : `User asked: "${json.userMessage.slice(0, 150)}"`;
+        ? `User asked: "${json.userMessage.slice(0, 150)}". Built: ${json.planSummary.slice(0, 150)}`
+        : `User asked: "${json.userMessage.slice(0, 200)}"`;
       lines.push(`- ${summary}`);
     } else {
-      lines.push(`- ${mem.content.slice(0, 200)}`);
+      lines.push(`- ${mem.content.slice(0, 250)}`);
     }
   }
 

@@ -7,7 +7,7 @@ import { selectModel, type Complexity } from "../router";
 import { getExecutorTools, type FileOperation, type DatabaseContext } from "../tools/enhanced-tools";
 import type { ExecutionPlan, PlanTask } from "./PlanAgent";
 import { compactToolResults } from "../context/compaction";
-import { ANIMATION_SKILLS, IMAGE_RULES } from "../prompts/skills";
+import { ANIMATION_SKILLS_BRIEF, IMAGE_RULES, IMPORT_REFERENCE } from "../prompts/skills";
 
 // --- Types ---
 
@@ -53,9 +53,28 @@ const EXECUTOR_SYSTEM_PROMPT = `You are an expert full-stack developer executing
 - "content" for write_file must be the COMPLETE file source code.
 - For edit_file, the oldText must be an EXACT unique match. Read the file first.
 - Ensure all imports and syntax are correct.
-- For images, use curated Unsplash IDs from the IMAGE RULES section or picsum.photos. NEVER invent Unsplash photo IDs.
+- For images, use plain \`<img>\` tags with \`https://images.unsplash.com/photo-{ID}?w={w}&h={h}&fit=crop\` URLs using REAL photo IDs from the IMAGE BANK. NEVER use source.unsplash.com or next/image \`<Image>\`.
 - When modifying layout.tsx, PRESERVE <html> and <body> tags.
 - After writing important files, use read_file to verify the content.
+
+## "use client" RULES (CRITICAL — prevents hydration errors)
+ANY component using hooks (useState, useEffect, useRef, etc.), event handlers (onClick, onChange), animation libraries (gsap, motion, lenis), or browser APIs (window, document) MUST start with \`"use client"\` as the very first line.
+layout.tsx must remain a Server Component — never add "use client" to it.
+
+## HYDRATION PREVENTION (CRITICAL)
+- Never put <div>, <section>, <h1>-<h6> inside <p> tags
+- Never nest <a> inside <a> or <button> inside <button>
+- GSAP/Lenis/Anime.js code MUST be inside useEffect, never in component body
+- Never use typeof window checks in render — use useState + useEffect for mounted state
+
+## DEPENDENCY RULES (CRITICAL — wrong imports cause webpack "Cannot read properties of undefined" runtime crashes)
+- ONLY import packages listed in the project's package.json
+- If a task lists "Libraries needed", update package.json FIRST before importing them
+- Pre-installed: next, react, react-dom, gsap, lucide-react, motion, lenis
+- Use EXACTLY the import patterns from the IMPORT REFERENCE section — especially:
+  - gsap: \`import gsap from "gsap"\` (DEFAULT import, NOT \`{ gsap }\`)
+  - motion: \`import { motion } from "motion/react"\` (NOT from "motion" or "framer-motion")
+  - lenis: \`import { ReactLenis } from "lenis/react"\` (NOT from "lenis")
 
 ## BRAND RULES (CRITICAL)
 - ALWAYS use the brand/store/company name from the user's request. If they say "for Furry", the brand name is "Furry" — use it in navbar, hero, footer, metadata. NEVER invent a different name.
@@ -94,13 +113,13 @@ export async function executeFastPath(
 
   if (conversationHistory.length > 0) {
     const recent = conversationHistory.slice(-4);
-    prompt = recent.map((m) => `${m.role}: ${m.content.slice(0, 300)}`).join("\n") + "\n\nUser: " + prompt;
+    prompt = recent.map((m) => `${m.role}: ${m.content.slice(0, 1500)}`).join("\n") + "\n\nUser: " + prompt;
   }
 
   try {
     const result = await generateText({
       model: config.model,
-      system: EXECUTOR_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS + "\n\n" + IMAGE_RULES,
+      system: EXECUTOR_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS_BRIEF + "\n\n" + IMPORT_REFERENCE + "\n\n" + IMAGE_RULES,
       prompt,
       tools,
       stopWhen: stepCountIs(config.maxSteps),
@@ -249,20 +268,23 @@ async function executeTask(
 **${task.description}**
 Type: ${task.type}
 Files: ${taskFiles}
-Verification: ${task.verification}${deps}
 
-## Overall Plan Summary
-${plan.summary}
+## INSTRUCTIONS (follow these exactly)
+${task.instructions || task.description}
+${task.codeHints ? `\n## Code Hints\n${task.codeHints}` : ""}
+${task.libraries?.length ? `\n## Libraries needed: ${task.libraries.join(", ")}` : ""}
+
+Verification: ${task.verification}${deps}
 
 ## Available Files
 ${Array.from(virtualFS.keys()).sort().join("\n")}
 
-Execute this task using the tools. Remember: search/read first, then write, then verify.`;
+Execute this task. Follow the instructions precisely. Write complete, working code.`;
 
   try {
     const result = await generateText({
       model: config.model,
-      system: EXECUTOR_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS + "\n\n" + IMAGE_RULES,
+      system: EXECUTOR_SYSTEM_PROMPT + "\n\n" + ANIMATION_SKILLS_BRIEF + "\n\n" + IMPORT_REFERENCE + "\n\n" + IMAGE_RULES,
       prompt,
       tools,
       stopWhen: stepCountIs(Math.min(config.maxSteps, 8)), // Cap at 8 steps per task
