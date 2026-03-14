@@ -27,6 +27,7 @@ import { generateProposals, parseOptionSelection, shouldUseInteractiveMode, type
 import { z } from "zod";
 import { generateText as generateTextBase, stepCountIs } from "ai";
 import { IMAGE_RULES, IMPORT_REFERENCE } from "@/lib/ai/prompts/skills";
+import { getSkillsForContext } from "@/lib/ai/skills/loader";
 
 export const maxDuration = 300;
 
@@ -146,9 +147,20 @@ Adapt your design style to match the type of website being built.
 - **Styling variety**: Choose from flat/clean, gradient, bold/colorful, minimalist, editorial, brutalist, or soft/rounded styles based on the brand. Do NOT default to glass morphism on every site.
 - **Animations**: GSAP + ScrollTrigger for scroll animations when appropriate. Guard with "use client" + typeof window !== "undefined". Don't over-animate — sometimes subtle is better.
 
-## BRAND RULES (CRITICAL)
-- ALWAYS use the brand/store/company name from the user's request. If they say "for Furry", the brand name is "Furry" — use it in navbar logo, hero heading, footer, layout.tsx metadata. NEVER invent a different name.
-- ALWAYS use the color theme the user specified. Do not override with defaults.
+## BRAND RULES (CRITICAL - ZERO TOLERANCE FOR VIOLATIONS)
+- **BRAND NAME EXTRACTION (MANDATORY):**
+  * If the user uploads an image, **READ ALL VISIBLE TEXT** in the image to extract the brand/company name
+  * If the user says "for [Name]" in their message, **USE THAT EXACT NAME** everywhere
+  * Apply the brand name to: navbar logo, hero heading, footer text, layout.tsx metadata (title/description)
+  * **NEVER invent a different name** - if you see "Furry" in image or message, use "Furry" (not "FurryTech", "TechFurry", or any variation)
+- **COLOR THEME EXTRACTION (MANDATORY):**
+  * If the user uploads an image, **EXTRACT THE EXACT COLOR PALETTE** from the image (see VISUAL REFERENCE ANALYSIS workflow)
+  * If the user specifies colors ("white and blue"), **USE THOSE EXACT COLORS**
+  * **DO NOT override with defaults** - if the image shows purple/black gradient, build purple/black gradient (not blue/white)
+- **THEME MATCHING (MANDATORY):**
+  * If the image shows a dark theme, build a dark theme (not light)
+  * If the image shows a light theme, build a light theme (not dark)
+  * Match the exact aesthetic from the image (minimal, gradient, flat, bold, etc.)
 
 ## CODE RULES
 - "content" for write_file must be the COMPLETE file source code
@@ -475,6 +487,14 @@ If you need a package not listed above, you MUST add it to package.json first us
             const chain = selectModelWithFallback("execute", "simple");
             const tools = createEnhancedTools(virtualFS, dbContext);
 
+            // Inject Superpowers skills for fast path
+            const fastPathSkills = getSkillsForContext({
+              taskType: classification.type,
+              complexity: classification.complexity,
+              phase: "executing",
+            });
+            const systemPromptWithSkills = systemPrompt + fastPathSkills;
+
             // Include repo map summary in fast path
             const repoMapSummary = repoMap ? getCompactRepoMap(repoMap, 800) : "";
             const fileList = Array.from(virtualFS.keys())
@@ -497,6 +517,82 @@ If you need a package not listed above, you MUST add it to package.json first us
               prompt = `## Recent Conversation\n` + historyLines.join("\n") + "\n\n" + prompt;
             }
 
+            if (image) {
+              prompt += `\n\n## 🎨 VISUAL REFERENCE ANALYSIS (USER PROVIDED IMAGE)
+The user attached an image showing their desired design. Your PRIMARY GOAL is to **EXACTLY REPLICATE** this design with pixel-perfect fidelity.
+
+**CRITICAL EXTRACTION WORKFLOW (MANDATORY - FOLLOW EVERY STEP):**
+
+**STEP 1: BRAND NAME & TEXT EXTRACTION (HIGHEST PRIORITY)**
+- **READ ALL VISIBLE TEXT** in the image carefully
+- **EXTRACT THE BRAND/COMPANY NAME** exactly as it appears (logo text, navbar, heading, footer)
+- If the user says "for [Name]" in their message, cross-reference with the image to confirm
+- **USE THIS EXACT NAME** throughout the entire website (navbar logo, hero heading, footer, layout.tsx metadata)
+- **NEVER invent a different name** - if you see "Furry" in the image, use "Furry" everywhere
+- Extract any taglines, slogans, or key messaging visible in the image
+
+**STEP 2: COLOR PALETTE EXTRACTION (EXACT VALUES REQUIRED)**
+- **IDENTIFY EXACT HEX/RGB VALUES** for:
+  * Primary background color (body, sections)
+  * Secondary/accent backgrounds
+  * Text colors (headings, body, muted)
+  * Button/CTA colors (background, text, hover)
+  * Border/divider colors
+  * Gradient colors and stops (if present)
+- **DO NOT APPROXIMATE** - if you see a purple gradient, extract the exact purple shades
+- **WRITE THESE COLORS** to globals.css CSS variables:
+  \`\`\`css
+  --primary: <exact color from image>;
+  --background: <exact color from image>;
+  /* etc */
+  \`\`\`
+
+**STEP 3: TYPOGRAPHY EXTRACTION**
+- **IDENTIFY FONT CHARACTERISTICS:**
+  * Font family (serif/sans-serif/monospace/display)
+  * Font weights used (light 300, regular 400, medium 500, semibold 600, bold 700)
+  * Font sizes (hero: XXpx, headings: XXpx, body: XXpx)
+  * Letter spacing (tight -0.05em, normal, wide 0.1em)
+  * Line height (tight 1.2, normal 1.5, relaxed 1.8)
+  * Text transform (uppercase, capitalize, none)
+- **IMPORT THE CLOSEST MATCHING FONT** from next/font/google in layout.tsx
+- If the image shows wide letter-spacing on headings, apply \`tracking-wide\` or \`tracking-widest\`
+
+**STEP 4: LAYOUT STRUCTURE REPLICATION**
+- **ANALYZE AND RECREATE:**
+  * Grid structure (1-col, 2-col, 3-col, asymmetric)
+  * Section arrangement (navbar → hero → features → footer)
+  * Spacing patterns (tight py-8, normal py-16, spacious py-24)
+  * Alignment (left, center, right)
+  * Container widths (full-width, max-w-7xl, max-w-5xl)
+- **MATCH THE EXACT LAYOUT** - if the image shows a centered single-column layout, don't build a 3-column grid
+
+**STEP 5: COMPONENT & STYLE MATCHING**
+- **REPLICATE DESIGN PATTERNS:**
+  * Button styles (rounded, sharp, pill, gradient, solid)
+  * Card styles (flat, shadowed, bordered, glass)
+  * Navigation style (transparent, solid, sticky, centered)
+  * Border radius (0, sm, md, lg, xl, 2xl, full)
+  * Shadow depth (none, sm, md, lg, xl, 2xl)
+- **DETECT THEME AESTHETIC:**
+  * Minimal, bold, gradient, glassmorphism, brutalist, flat, editorial
+  * Apply this aesthetic consistently across all components
+
+**STEP 6: VERIFICATION & FIDELITY CHECK**
+- **BEFORE WRITING CODE, DESCRIBE ALOUD:**
+  "I see a [dark/light] theme with [color palette]. Brand name is [EXACT NAME]. Layout is [structure]. Fonts are [characteristics]. Style is [aesthetic]."
+- **THEN BUILD CODE TO MATCH THAT EXACT DESCRIPTION**
+- **ZERO TOLERANCE FOR DEFAULTS** - do NOT use generic blue/white themes if the image shows purple/black
+
+**EXECUTION RULES:**
+- ❌ NEVER use generic defaults (e.g., "TechStart", blue gradient) when the image shows specific details
+- ❌ NEVER invent a brand name - use the exact text from the image
+- ❌ NEVER approximate colors - extract exact values
+- ✅ ALWAYS describe what you see first, then code to match
+- ✅ ALWAYS cross-reference your output with the image before completing
+- ✅ PRIORITY ORDER: Brand name > Colors > Typography > Layout > Style`;
+            }
+
             if (isModificationRequest) {
               prompt += `\n\n## CRITICAL: GLOBAL REPLACEMENT REQUIRED
 This is a rename/replacement request. You MUST:
@@ -508,7 +604,7 @@ This is a rename/replacement request. You MUST:
 
             const result = await generateTextWithFallback({
               model: chain.primary.model,
-              system: systemPrompt,
+              system: systemPromptWithSkills,
               // When user attached an image, use multimodal messages format
               ...(image
                 ? { messages: [{ role: "user" as const, content: [
@@ -809,10 +905,86 @@ This is a rename/replacement request. You MUST:
                 ? `\n## UPLOADED FILES\nThe user uploaded file(s) available in the project: ${uploadedFiles.map(f => `/${f.path}`).join(", ")}\nUse them directly in code with src="/${uploadedFiles[0].path}" (public/ folder, served as static assets).\nReference uploaded files instead of picsum.photos when the user wants to use their own image.\n`
                 : "";
 
+              // Visual analysis context - only for task 1 when image is present
+              const visualAnalysisContext = (image && task.id === 1) ? `\n\n## 🎨 VISUAL REFERENCE ANALYSIS (USER PROVIDED IMAGE)
+The user attached an image showing their desired design. Your PRIMARY GOAL is to **EXACTLY REPLICATE** this design with pixel-perfect fidelity.
+
+**CRITICAL EXTRACTION WORKFLOW (MANDATORY - FOLLOW EVERY STEP):**
+
+**STEP 1: BRAND NAME & TEXT EXTRACTION (HIGHEST PRIORITY)**
+- **READ ALL VISIBLE TEXT** in the image carefully
+- **EXTRACT THE BRAND/COMPANY NAME** exactly as it appears (logo text, navbar, heading, footer)
+- If the user says "for [Name]" in their message, cross-reference with the image to confirm
+- **USE THIS EXACT NAME** throughout the entire website (navbar logo, hero heading, footer, layout.tsx metadata)
+- **NEVER invent a different name** - if you see "Furry" in the image, use "Furry" everywhere
+- Extract any taglines, slogans, or key messaging visible in the image
+
+**STEP 2: COLOR PALETTE EXTRACTION (EXACT VALUES REQUIRED)**
+- **IDENTIFY EXACT HEX/RGB VALUES** for:
+  * Primary background color (body, sections)
+  * Secondary/accent backgrounds
+  * Text colors (headings, body, muted)
+  * Button/CTA colors (background, text, hover)
+  * Border/divider colors
+  * Gradient colors and stops (if present)
+- **DO NOT APPROXIMATE** - if you see a purple gradient, extract the exact purple shades
+- **WRITE THESE COLORS** to globals.css CSS variables:
+  \`\`\`css
+  --primary: <exact color from image>;
+  --background: <exact color from image>;
+  /* etc */
+  \`\`\`
+
+**STEP 3: TYPOGRAPHY EXTRACTION**
+- **IDENTIFY FONT CHARACTERISTICS:**
+  * Font family (serif/sans-serif/monospace/display)
+  * Font weights used (light 300, regular 400, medium 500, semibold 600, bold 700)
+  * Font sizes (hero: XXpx, headings: XXpx, body: XXpx)
+  * Letter spacing (tight -0.05em, normal, wide 0.1em)
+  * Line height (tight 1.2, normal 1.5, relaxed 1.8)
+  * Text transform (uppercase, capitalize, none)
+- **IMPORT THE CLOSEST MATCHING FONT** from next/font/google in layout.tsx
+- If the image shows wide letter-spacing on headings, apply \`tracking-wide\` or \`tracking-widest\`
+
+**STEP 4: LAYOUT STRUCTURE REPLICATION**
+- **ANALYZE AND RECREATE:**
+  * Grid structure (1-col, 2-col, 3-col, asymmetric)
+  * Section arrangement (navbar → hero → features → footer)
+  * Spacing patterns (tight py-8, normal py-16, spacious py-24)
+  * Alignment (left, center, right)
+  * Container widths (full-width, max-w-7xl, max-w-5xl)
+- **MATCH THE EXACT LAYOUT** - if the image shows a centered single-column layout, don't build a 3-column grid
+
+**STEP 5: COMPONENT & STYLE MATCHING**
+- **REPLICATE DESIGN PATTERNS:**
+  * Button styles (rounded, sharp, pill, gradient, solid)
+  * Card styles (flat, shadowed, bordered, glass)
+  * Navigation style (transparent, solid, sticky, centered)
+  * Border radius (0, sm, md, lg, xl, 2xl, full)
+  * Shadow depth (none, sm, md, lg, xl, 2xl)
+- **DETECT THEME AESTHETIC:**
+  * Minimal, bold, gradient, glassmorphism, brutalist, flat, editorial
+  * Apply this aesthetic consistently across all components
+
+**STEP 6: VERIFICATION & FIDELITY CHECK**
+- **BEFORE WRITING CODE, DESCRIBE ALOUD:**
+  "I see a [dark/light] theme with [color palette]. Brand name is [EXACT NAME]. Layout is [structure]. Fonts are [characteristics]. Style is [aesthetic]."
+- **THEN BUILD CODE TO MATCH THAT EXACT DESCRIPTION**
+- **ZERO TOLERANCE FOR DEFAULTS** - do NOT use generic blue/white themes if the image shows purple/black
+
+**EXECUTION RULES:**
+- ❌ NEVER use generic defaults (e.g., "TechStart", blue gradient) when the image shows specific details
+- ❌ NEVER invent a brand name - use the exact text from the image
+- ❌ NEVER approximate colors - extract exact values
+- ✅ ALWAYS describe what you see first, then code to match
+- ✅ ALWAYS cross-reference your output with the image before completing
+- ✅ PRIORITY ORDER: Brand name > Colors > Typography > Layout > Style
+` : "";
+
               let taskPrompt = `## USER INTENT (CRITICAL — do NOT deviate from this request)
 THE USER WANTS: ${effectiveMessage}
 ${selectedApproach ? `SELECTED APPROACH: ${selectedApproach}` : ""}
-${uploadedFilesContext}
+${uploadedFilesContext}${visualAnalysisContext}
 ## Current Task (${task.id}/${plan.tasks.length})
 **${task.description}**
 Type: ${task.type}
@@ -845,10 +1017,18 @@ Execute this task. Follow the instructions precisely. Write complete, working co
                 }
               }
 
+              // Inject Superpowers skills for task execution
+              const taskSkills = getSkillsForContext({
+                taskType: classification.type,
+                complexity: classification.complexity,
+                phase: "executing",
+              });
+              const taskSystemPrompt = systemPrompt + taskSkills;
+
               try {
                 const taskResult = await generateTextWithFallback({
                   model: chain.primary.model,
-                  system: systemPrompt,
+                  system: taskSystemPrompt,
                   // Include user's image on the first task for visual context
                   ...(image && task.id === 1
                     ? { messages: [{ role: "user" as const, content: [

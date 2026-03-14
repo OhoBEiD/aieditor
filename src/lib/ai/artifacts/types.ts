@@ -12,7 +12,8 @@ export type ArtifactType =
   | "brain_update"
   | "diff"
   | "branch_comparison"
-  | "proposal";
+  | "proposal"
+  | "requirement_form";
 
 export interface Artifact {
   id: string;
@@ -33,7 +34,8 @@ export type ArtifactData =
   | BrainUpdateData
   | DiffData
   | BranchComparisonData
-  | ProposalData;
+  | ProposalData
+  | RequirementFormData;
 
 export interface PlanArtifactData {
   tasks: Array<{
@@ -121,4 +123,19 @@ export interface ProposalData {
   recommendation: number;
   recommendationReason: string;
   researchSummary: string;
+}
+
+export interface RequirementFormData {
+  questions: Array<{
+    id: string;
+    question: string;
+    type: "text" | "select" | "multi-select" | "radio" | "textarea";
+    required: boolean;
+    placeholder?: string;
+    options?: string[];
+    defaultValue?: string | string[];
+    helpText?: string;
+  }>;
+  detectedTaskType: string;
+  missingInfo: string[];
 }

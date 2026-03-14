@@ -2,10 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { Monitor, Smartphone, RefreshCw, Loader2, ExternalLink, AlertCircle, Terminal as TerminalIcon, FolderOpen } from 'lucide-react';
+import { Monitor, Smartphone, RefreshCw, Loader2, ExternalLink, AlertCircle, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useWebContainer } from '@/hooks/useWebContainer';
-import { Terminal } from './Terminal';
 
 type DeviceMode = 'desktop' | 'mobile';
 
@@ -27,7 +26,6 @@ export function WebContainerPreview({
     onFileChange,
 }: WebContainerPreviewProps) {
     const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
-    const [showTerminal, setShowTerminal] = useState(false);
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
     const {
@@ -38,7 +36,6 @@ export function WebContainerPreview({
         initFromGitHub,
         writeFile,
         terminalOutput,
-        spawn,
     } = useWebContainer({
         repoUrl,
         githubToken,
@@ -121,16 +118,6 @@ export function WebContainerPreview({
                         <Smartphone className="h-4 w-4" />
                     </Button>
 
-                    {/* Terminal toggle */}
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowTerminal(!showTerminal)}
-                        className={cn(showTerminal && 'bg-[#d6cfc9] text-[#2c2418]')}
-                    >
-                        <TerminalIcon className="h-4 w-4" />
-                    </Button>
-
                     {/* Open in new tab */}
                     {previewUrl && (
                         <Button
@@ -146,7 +133,7 @@ export function WebContainerPreview({
 
             {/* Main content */}
             <div className="flex-1 relative flex flex-col overflow-hidden">
-                {/* Preview area - always takes full height now, terminal overlays it */}
+                {/* Preview area */}
                 <div className="w-full h-full flex items-center justify-center bg-[#e6e0dd] overflow-hidden">
                     {status === 'error' ? (
                         <div className="flex flex-col items-center justify-center gap-4 text-red-500">
@@ -199,45 +186,6 @@ export function WebContainerPreview({
                         </div>
                     )}
                 </div>
-
-                {/* Terminal Drawer - Fixed at bottom */}
-                {showTerminal && (
-                    <div className="absolute bottom-0 left-0 right-0 h-72 z-20 border-t border-[#d6cfc9] bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] animate-in slide-in-from-bottom duration-300">
-                        <Terminal
-                            onTerminalReady={async (term: any) => {
-                                try {
-                                    const shell = await spawn('jsh', [], {
-                                        env: {
-                                            TERMINAL: 'xterm-256color',
-                                        },
-                                    });
-
-                                    // Pipe shell output to process
-                                    shell.output.pipeTo(
-                                        new WritableStream({
-                                            write(data) {
-                                                term.write(data);
-                                            },
-                                        })
-                                    );
-
-                                    // Pipe terminal input to shell
-                                    const input = shell.input.getWriter();
-                                    term.onData((data: string) => {
-                                        input.write(data);
-                                    });
-
-                                    // Start with a clean prompt
-                                    // term.write('\r\nWelcome to WebContainer Shell\r\n\r\n');
-
-                                } catch (e) {
-                                    console.error('Failed to spawn shell:', e);
-                                    term.write('\r\nFailed to spawn shell\r\n');
-                                }
-                            }}
-                        />
-                    </div>
-                )}
             </div>
         </div>
     );

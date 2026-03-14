@@ -37,6 +37,17 @@ const QUESTION_PATTERNS = [
   /\?\s*$/,
 ];
 
+// Visual recreation patterns (image-based design requests)
+const VISUAL_RECREATION_PATTERNS = [
+  /create\s+(a\s+)?(website|page|app|design)\s+like\s+(this|the)\s+(image|screenshot|photo)/i,
+  /based\s+on\s+(this|the)\s+(image|screenshot|design|photo)/i,
+  /recreate\s+(this|the)\s+(design|website|page)/i,
+  /build\s+(from|using)\s+(this|the)\s+(image|screenshot|reference)/i,
+  /\[User attached a screenshot\/image for visual reference\]/i,
+  /match\s+(this|the)\s+design/i,
+  /copy\s+(this|the)\s+(design|layout|style)/i,
+];
+
 // Complex tasks that need planning + exploration
 const COMPLEX_KEYWORDS = [
   "implement", "build from scratch", "new page", "new feature",
@@ -96,6 +107,13 @@ const REFACTOR_PATTERNS = [
 export function classifyIntentFast(message: string): ClassificationResult | null {
   const msgLower = message.toLowerCase();
   const wordCount = message.split(/\s+/).length;
+
+  // Visual recreation requests (image-to-code) - HIGHEST PRIORITY
+  // These always need full pipeline with visual analysis
+  const isVisualRecreation = VISUAL_RECREATION_PATTERNS.some((p) => p.test(message));
+  if (isVisualRecreation) {
+    return { type: "complex_feature", complexity: "complex", route: "full_pipeline", confidence: 0.95, source: "regex" };
+  }
 
   // Questions
   const isQuestion = QUESTION_PATTERNS.some((p) => p.test(message));
@@ -171,7 +189,7 @@ async function classifyIntentWithLLM(message: string): Promise<ClassificationRes
 
 Types:
 - simple_edit: Small changes (text, colors, styling, single-line fixes)
-- complex_feature: New pages, multi-file features, integrations, landing pages
+- complex_feature: New pages, multi-file features, integrations, landing pages, **visual recreation from images**
 - ui_task: Single UI component creation/modification (button, card, form)
 - backend_task: API endpoints, database changes, auth logic
 - question: User asking about something
@@ -181,7 +199,9 @@ Types:
 Complexity:
 - simple: 1-2 files, < 5 minutes of work
 - moderate: 3-5 files, needs planning
-- complex: 6+ files, needs exploration + planning + verification`,
+- complex: 6+ files, needs exploration + planning + verification, **OR when user mentions "like this image/screenshot" (visual recreation)**
+
+IMPORTANT: If the message mentions "image", "screenshot", "design", "like this", or "[User attached]", classify as complex_feature with complexity "complex".`,
       prompt: message.slice(0, 4000),
     });
 

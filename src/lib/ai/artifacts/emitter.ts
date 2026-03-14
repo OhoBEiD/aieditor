@@ -151,6 +151,31 @@ export function emitProposalArtifact(
 }
 
 /**
+ * Emit a requirement form artifact for gathering user input.
+ */
+export function emitRequirementFormArtifact(
+  writer: any,
+  questions: Array<{
+    id: string;
+    question: string;
+    type: "text" | "select" | "multi-select" | "radio" | "textarea";
+    required: boolean;
+    placeholder?: string;
+    options?: string[];
+    defaultValue?: string | string[];
+    helpText?: string;
+  }>,
+  detectedTaskType: string,
+  missingInfo: string[],
+): void {
+  emitArtifact(writer, "requirement_form", "Help me understand your vision", {
+    questions,
+    detectedTaskType,
+    missingInfo,
+  });
+}
+
+/**
  * Reset artifact counter (call at start of each request).
  */
 export function resetArtifactCounter(): void {

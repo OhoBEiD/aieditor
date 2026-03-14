@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import { Monitor, Smartphone, RefreshCw, X, Loader2, ExternalLink, AlertCircle, Download, Github, Terminal as TerminalIcon, Code, Eye, Check, Circle } from 'lucide-react';
+import { Monitor, Smartphone, RefreshCw, X, Loader2, ExternalLink, AlertCircle, Download, Github, Code, Eye, Check, Circle } from 'lucide-react';
 import { Button } from '@/components/ui';
 import Image from 'next/image';
 import { gsap } from 'gsap';
@@ -15,11 +15,6 @@ import { GitHubSyncDropdown } from './GitHubSyncDropdown';
 import { useSupabaseConnection } from '@/hooks/useSupabaseConnection';
 
 // Dynamic imports for SSR safety
-const Terminal = dynamic(() => import('./Terminal').then(mod => mod.Terminal), {
-    ssr: false,
-    loading: () => <div className="w-full h-full flex items-center justify-center text-white/50">Loading terminal...</div>
-});
-
 const CodeView = dynamic(() => import('./CodeView').then(mod => mod.CodeView), {
     ssr: false,
     loading: () => <div className="w-full h-full flex items-center justify-center bg-transparent text-white/50">Loading editor...</div>
@@ -191,7 +186,6 @@ export function PreviewPanel({
     const [isServerReady, setIsServerReady] = useState(false);
     const [serverCheckCount, setServerCheckCount] = useState(0);
     const [drawerType, setDrawerType] = useState<'supabase' | 'github' | null>(null);
-    const [showTerminal, setShowTerminal] = useState(false);
     const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
 
     // Auto-switch to code view when a file is selected from chat
@@ -208,8 +202,8 @@ export function PreviewPanel({
     const healthCheckRef = useRef<NodeJS.Timeout | null>(null);
     const MAX_RETRIES = 3;
 
-    // Get spawn, listFiles, readFile from WebContainer for terminal and code view
-    const { spawn, listFiles, readFile, writeFile } = useWebContainer();
+    // Get listFiles, readFile from WebContainer for code view
+    const { listFiles, readFile, writeFile } = useWebContainer();
 
     // Supabase connection state
     const supabaseConnection = useSupabaseConnection(projectId);
@@ -752,20 +746,6 @@ export function PreviewPanel({
                         >
                             <RefreshCw className={cn("w-4 h-4", loadState === 'loading' && "animate-spin")} />
                         </button>
-
-                        {/* Terminal Toggle */}
-                        <button
-                            onClick={() => setShowTerminal(!showTerminal)}
-                            className={cn(
-                                "p-1.5 rounded-lg transition-all",
-                                showTerminal
-                                    ? "text-white bg-[#b69161] hover:bg-[#c9a474]"
-                                    : "text-white/50 hover:text-white/85 hover:bg-white/8"
-                            )}
-                            title={showTerminal ? "Hide Terminal" : "Show Terminal"}
-                        >
-                            <TerminalIcon className="w-4 h-4" />
-                        </button>
                     </div>
                 </div>
 
@@ -1015,41 +995,6 @@ export function PreviewPanel({
                     </div>
                 )}
             </div>
-
-            {/* Terminal Drawer - Fixed at bottom of preview */}
-            {showTerminal && (
-                <div className="absolute bottom-0 left-0 right-0 h-72 z-[100] border-t border-[#b69161]/20 bg-[#f2efed] shadow-[0_-4px_20px_rgba(0,0,0,0.4)] animate-in slide-in-from-bottom duration-300 rounded-b-2xl">
-                    <Terminal
-                        onTerminalReady={async (term: any) => {
-                            try {
-                                const shell = await spawn('jsh', [], {
-                                    env: {
-                                        TERMINAL: 'xterm-256color',
-                                    },
-                                });
-
-                                // Pipe shell output to terminal
-                                shell.output.pipeTo(
-                                    new WritableStream({
-                                        write(data) {
-                                            term.write(data);
-                                        },
-                                    })
-                                );
-
-                                // Pipe terminal input to shell
-                                const input = shell.input.getWriter();
-                                term.onData((data: string) => {
-                                    input.write(data);
-                                });
-                            } catch (e) {
-                                console.error('Failed to spawn shell:', e);
-                                term.write('\r\nFailed to spawn shell\r\n');
-                            }
-                        }}
-                    />
-                </div>
-            )}
         </div>
     );
 }

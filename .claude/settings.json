@@ -7,6 +7,9 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(wc -l /Users/omarobeid/Desktop/Projects/aieditor/src/lib/ai/agents/*.ts)",
       "Read(//Users/omarobeid/Desktop/Projects/automate-ide/test/mcp/src/**)"
+    ],
+    "additionalDirectories": [
+      "/Users/omarobeid/Desktop/Projects/automate-ide/test/mcp/src/agents"
     ]
   }
 }

@@ -9,6 +9,7 @@ import type { Message } from '@/lib/supabase/types';
 import { supabase } from '@/lib/supabase/client';
 import { ProposalSelector, SelectedProposalBadge } from './ProposalSelector';
 import { ArtifactCard } from './ArtifactCard';
+import { RequirementForm } from './RequirementForm';
 import type { Artifact } from '@/lib/ai/artifacts/types';
 
 // Simple markdown-to-JSX renderer for AI messages
@@ -169,6 +170,9 @@ export function MessageBubble({ message, onRevert, onSendMessage, isStreaming = 
                     // Proposals with type 'proposal' get rendered as ProposalSelector
                     if (artifact.type === 'proposal' && artifact.data) {
                         parts.push({ type: 'proposal', data: artifact.data });
+                    } else if (artifact.type === 'requirement_form' && artifact.data) {
+                        // Requirement form gets rendered as RequirementForm
+                        parts.push({ type: 'requirement_form', data: artifact.data });
                     } else {
                         parts.push({ type: 'artifact', artifact });
                     }
@@ -359,6 +363,24 @@ export function MessageBubble({ message, onRevert, onSendMessage, isStreaming = 
                                     }}
                                 />
                             )
+                        ) : part.type === 'requirement_form' ? (
+                            <RequirementForm
+                                questions={part.data.questions || []}
+                                detectedTaskType={part.data.detectedTaskType || 'other'}
+                                missingInfo={part.data.missingInfo || []}
+                                onSubmit={(answers) => {
+                                    // Send answers back as a special formatted message
+                                    const formattedAnswers = Object.entries(answers)
+                                        .map(([key, value]) => {
+                                            if (Array.isArray(value)) {
+                                                return `${key}: ${value.join(', ')}`;
+                                            }
+                                            return `${key}: ${value}`;
+                                        })
+                                        .join('\n');
+                                    onSendMessage?.(`REQUIREMENT_ANSWERS:\n${formattedAnswers}`);
+                                }}
+                            />
                         ) : part.type === 'artifact' ? (
                             <ArtifactCard artifact={part.artifact} />
                         ) : (
